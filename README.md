@@ -30,6 +30,7 @@ cd your-project
 proclease run --owner claude --task preview --ttl 2h -- npm run dev
 proclease list
 proclease list --json
+proclease list --all
 proclease logs JOB_ID --tail 50
 proclease extend JOB_ID --by 1h
 proclease stop JOB_ID
@@ -95,6 +96,10 @@ when displaying logs. Logs and argv may contain private application data; keep t
 state directory out of repositories. Full environment values are not persisted.
 Finished metadata and capped logs remain until you deliberately remove that
 finished job's directory; automatic retention cleanup is not implemented yet.
+Normal `list` and `watch` show active and unverified jobs, keeping finished jobs
+out of the everyday view. Use `list --all` or `watch --all` for retained history;
+this also applies to JSON output. Agents checking completion should use
+`list --all --json`. Hiding a job does not delete its logs or retry identity.
 Use a filesystem that preserves atomic file replacement for the state directory.
 VM shared folders can violate that requirement; use native Linux storage when
 running inside a Linux VM or container.
@@ -143,6 +148,9 @@ Integration tests require `/usr/bin/python3` and launch disposable
 loopback services. Set `PROCLEASE_TEST_ROOT` to place fixtures on a chosen volume
 and `CARGO_TARGET_DIR` to keep build outputs outside the checkout. Tests stop their
 own jobs. Never point a test at your normal ProcLease state directory.
+Readiness and expiry tests use separate budgets: a fixture may take time to start,
+while the lease still runs from creation. Failure output includes the relevant
+fixture metadata and bounded supervisor/output logs.
 
 Start contributor work with [project context](docs/project-context.md).
 See [verification](docs/verification.md) for completed checks and current limits.

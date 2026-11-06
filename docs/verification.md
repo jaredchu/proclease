@@ -6,7 +6,7 @@ and in hosted macOS/Ubuntu CI.
 ## Completed checks
 
 - Formatting and Clippy with warnings denied.
-- One duration unit test and sixteen process integration tests. The suite includes
+- One duration unit test and eighteen process integration tests. The suite includes
   expiry without a continuing CLI call, TERM-resistant descendants, leader exit,
   explicit extension, observation without renewal, keeper/guardian crash cleanup,
   bounded output, idempotent/concurrent retries, unavailable control refusing to
@@ -14,9 +14,12 @@ and in hosted macOS/Ubuntu CI.
   Added regressions cover metadata permission failures after spawn, partial
   control requests during expiry, empty launch reservations, commands during
   shutdown grace, and output truncation during shutdown.
-- All seventeen tests passed on macOS and in a Linux aarch64 container as a
-  non-root user (UID 501), including the permission-failure regression. Final Linux
-  validation used native tmpfs state rather than a VM shared directory.
+  Additional cases verify expiry before application readiness and hidden finished
+  history with preserved logs/retry identity and visible unverified state.
+- All nineteen current tests passed locally on macOS. The earlier seventeen-test
+  suite passed in a Linux aarch64 container as a non-root user (UID 501), including
+  the permission-failure regression. That Linux validation used native tmpfs state
+  rather than a VM shared directory.
 - Skill frontmatter and structure validated with the skill-creator validator.
 - Real `npm run dev` smoke tests for Vite 8.3.6 and Next.js 16.4.5, using Node
   24.18.0. Both served HTTP 200 before expiry, reached `expired`, and released their
@@ -45,6 +48,28 @@ and in hosted macOS/Ubuntu CI.
   returned HTTP 200 and appeared in ordinary `list` and `watch --once`. The shared
   skill now preserves the user's normal state selection and explains intentional
   isolation; a live state directory must never be moved to repair visibility.
+
+## macOS timeout correction
+
+[Hosted diagnostics](https://github.com/jaredchu/proclease/actions/runs/42206087042)
+identified the wait as fixture readiness, not process cleanup. The 1.2-second
+lease expired before the Python fixture produced readiness; its persisted record
+was already `expired` with `reason: deadline`, finalized 173ms after expiry.
+A local delayed-start reproduction likewise expired before readiness.
+
+The process-group expiry test now allows its eight-second readiness budget within
+a ten-second lease, then bounds terminal observation relative to the actual
+deadline plus two seconds. A separate test verifies expiry without readiness.
+The slow-control test uses `/bin/sleep` rather than racing interpreter startup,
+and the metadata-failure fixture waits for an explicit gate after the permission
+fault is installed. Production deadline enforcement was unchanged.
+
+Four concurrent runs of both expiry tests passed locally using frozen executables.
+An initial harness running Cargo concurrently hit an executable replacement race;
+compilation was separated from stress execution. The corrected test suite at
+`8217498` passed [hosted macOS and Ubuntu CI](https://github.com/jaredchu/proclease/actions/runs/42206977634).
+Failure diagnostics and Rust backtraces remain enabled, and one platform's failure
+does not cancel the other platform's matrix job.
 
 ## Reproduction
 
@@ -85,11 +110,6 @@ No direct system sleep/wake, clock-change, simultaneous destruction of both
 supervisors or restricted Codex/Claude execution-profile test has
 been completed. A service can deliberately escape its process group. These
 remain explicit support/verification boundaries, not passing checks.
-
-At `6db3f70`, the hosted macOS expiry integration test timed out once in a generic
-lifecycle wait. [The failed job rerun](https://github.com/jaredchu/proclease/actions/runs/42204991750)
-passed with unchanged code; Ubuntu passed both times. The timeout's cause remains
-unconfirmed. A rerun passing does not resolve the intermittent failure.
 
 There is no pinned-version comparative benchmark against AgentProcs or other
 alternatives. The tests establish this implementation's inspected behaviour;

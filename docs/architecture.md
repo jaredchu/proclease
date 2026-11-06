@@ -73,6 +73,9 @@ This requires filesystem support for atomic replacement visible to concurrent
 readers; VM shared folders are not assumed to preserve those semantics.
 The keeper takes final write ownership after the guardian exits. Status reads
 do not write lifecycle state or renew leases.
+Default list/watch views select active jobs and `unknown` jobs whose cleanup is
+unverified. `--all` includes retained terminal records. This is a display filter;
+retry resolution and direct job control/log access still use complete stored state.
 Repeated stop while stopping polls existing state instead of waiting for an idle
 shutdown socket. A transport failure racing with shutdown is reconciled against
 the latest record; extensions are never automatically replayed.

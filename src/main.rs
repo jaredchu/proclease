@@ -78,8 +78,11 @@ enum Commands {
         )]
         command: Vec<String>,
     },
-    /// List managed leases; observing a lease never renews it.
-    List,
+    /// List active and unverified jobs; observing a lease never renews it.
+    List {
+        #[arg(long, help = "Include finished jobs from retained history")]
+        all: bool,
+    },
     /// Print bounded, terminal-safe output.
     Logs {
         id: String,
@@ -96,6 +99,8 @@ enum Commands {
     Stop { id: String },
     /// Show the live process table; Ctrl+C closes the view, not the jobs.
     Watch {
+        #[arg(long, help = "Include finished jobs from retained history")]
+        all: bool,
         #[arg(long, default_value = "1s")]
         interval: String,
         #[arg(long)]
@@ -147,7 +152,7 @@ fn print_record(record: &Record, reused: bool, json_output: bool) -> Result<()> 
             json!({"schema_version": SCHEMA_VERSION, "job": view(record), "reused": reused})
         );
     } else {
-        print_table(std::slice::from_ref(record))?;
+        print_table(std::slice::from_ref(record), true)?;
         if reused {
             println!("Existing lease returned; its deadline was not extended.");
         }
@@ -158,7 +163,15 @@ fn print_record(record: &Record, reused: bool, json_output: bool) -> Result<()> 
     Ok(())
 }
 
-fn print_table(records: &[Record]) -> Result<()> {
+fn visible_jobs(store: &Store, all: bool) -> Result<(Vec<Record>, Vec<String>)> {
+    let (mut jobs, warnings) = store.list()?;
+    if !all {
+        jobs.retain(|record| record.state.active() || record.state == State::Unknown);
+    }
+    Ok((jobs, warnings))
+}
+
+fn print_table(records: &[Record], all: bool) -> Result<()> {
     let mut out = std::io::stdout().lock();
     writeln!(
         out,
@@ -200,7 +213,11 @@ fn print_table(records: &[Record]) -> Result<()> {
         }
     }
     if records.is_empty() {
-        writeln!(out, "No managed jobs.")?;
+        if all {
+            writeln!(out, "No managed jobs.")?;
+        } else {
+            writeln!(out, "No active jobs. Use --all to view finished history.")?;
+        }
     }
     Ok(())
 }
@@ -327,15 +344,15 @@ fn dispatch(cli: &Cli) -> Result<i32> {
                 return Ok(1);
             }
         }
-        Commands::List => {
-            let (jobs, warnings) = store.list()?;
+        Commands::List { all } => {
+            let (jobs, warnings) = visible_jobs(&store, *all)?;
             if cli.json {
                 println!(
                     "{}",
                     json!({"schema_version": SCHEMA_VERSION, "jobs": jobs.iter().map(view).collect::<Vec<_>>(), "warnings": warnings})
                 );
             } else {
-                print_table(&jobs)?;
+                print_table(&jobs, *all)?;
                 for warning in warnings {
                     eprintln!("Warning: {}", clean(&warning));
                 }
@@ -386,7 +403,11 @@ fn dispatch(cli: &Cli) -> Result<i32> {
             let record = lifecycle::control(&store, id, Control::Stop)?;
             print_record(&record, false, cli.json)?;
         }
-        Commands::Watch { interval, once } => {
+        Commands::Watch {
+            all,
+            interval,
+            once,
+        } => {
             let interval = duration_ms(interval)?;
             if interval < 200 {
                 bail!("watch interval must be at least 200ms");
@@ -397,7 +418,7 @@ fn dispatch(cli: &Cli) -> Result<i32> {
             let interrupted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             signal_hook::flag::register(libc::SIGINT, interrupted.clone())?;
             loop {
-                let (jobs, warnings) = store.list()?;
+                let (jobs, warnings) = visible_jobs(&store, *all)?;
                 if cli.json {
                     println!(
                         "{}",
@@ -407,7 +428,7 @@ fn dispatch(cli: &Cli) -> Result<i32> {
                     if !once && std::io::stdout().is_terminal() {
                         print!("\x1b[2J\x1b[H");
                     }
-                    print_table(&jobs)?;
+                    print_table(&jobs, *all)?;
                     for warning in warnings {
                         eprintln!("Warning: {}", clean(&warning));
                     }

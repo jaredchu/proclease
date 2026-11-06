@@ -48,7 +48,7 @@ launching. Never move or copy a live job's state to make it appear elsewhere.
   without extending or resurrecting it. A key added after a keyless launch cannot
   identify that earlier job.
 - Preserve a stable `--task` label and record the returned job ID in the task
-  handoff. If launch returns an ambiguous error, inspect `list --json` and reconcile
+  handoff. If launch returns an ambiguous error, inspect `list --all --json` and reconcile
   that task's jobs before relaunching. A context/key mismatch is not permission to
   switch keys, duplicate the service, delete state or take over another task's job.
   Use a new key only for a deliberately new run after reconciling the previous one.
@@ -60,6 +60,7 @@ launching. Never move or copy a live job's state to make it appear elsewhere.
 
 ```sh
 proclease list --json
+proclease list --all --json
 proclease logs JOB_ID --tail 50 --json
 proclease extend JOB_ID --by 1h --json
 proclease stop JOB_ID --json
@@ -68,6 +69,12 @@ proclease stop JOB_ID --json
 Status and log reads never extend a lease. Extend only when continued operation
 is needed within the user's request. Extensions add time to the current deadline;
 expired or finished jobs cannot be revived. Do not use a renewal loop.
+
+Normal `list` and `watch` show active and unverified jobs. Use `list --all --json`
+when checking a job's terminal state or reconciling a previous launch; a finished
+job disappearing from the default view does not mean its history was deleted.
+`watch --all` includes that history in the human view. Finished metadata and logs
+remain available by ID, preserving retry identity and diagnostics.
 
 Stop services started solely for verification before completing that task. For
 a requested manual preview, leave the lease active and report the job ID, tested

@@ -71,7 +71,7 @@ impl Fixture {
         (id, ready)
     }
     fn job(&self, id: &str) -> Value {
-        self.call(&["list"])["jobs"]
+        self.call(&["list", "--all"])["jobs"]
             .as_array()
             .unwrap()
             .iter()
@@ -238,6 +238,55 @@ fn expiry_does_not_wait_for_application_readiness() {
 }
 
 #[test]
+fn default_views_hide_finished_history_but_keep_unverified_jobs() {
+    let fixture = Fixture::new();
+    let args = [
+        "run",
+        "--ttl",
+        "30s",
+        "--grace",
+        "100ms",
+        "--key",
+        "history-job",
+        "--",
+        "/bin/sleep",
+        "30",
+    ];
+    let launched = fixture.call(&args);
+    let id = launched["job"]["id"].as_str().unwrap();
+    assert_eq!(fixture.call(&["list"])["jobs"][0]["id"], id);
+    assert_eq!(fixture.call(&["stop", id])["job"]["state"], "stopped");
+
+    for view in [&["list"][..], &["watch", "--once"][..]] {
+        assert_eq!(fixture.call(view)["jobs"], serde_json::json!([]));
+    }
+    for view in [&["list", "--all"][..], &["watch", "--once", "--all"][..]] {
+        let jobs = fixture.call(view);
+        assert_eq!(jobs["jobs"][0]["id"], id);
+        assert_eq!(jobs["jobs"][0]["state"], "stopped");
+    }
+    let logs = fixture.call(&["logs", id]);
+    assert_eq!(logs["id"], id);
+    let retry = fixture.call(&args);
+    assert_eq!(retry["reused"], true);
+    assert_eq!(retry["job"]["id"], id);
+    assert_eq!(retry["job"]["state"], "stopped");
+
+    let record_path = fixture.state.join(id).join("record.json");
+    let mut record = wait(|| {
+        let record: Value = serde_json::from_slice(&fs::read(&record_path).ok()?).ok()?;
+        (record["state"] == "stopped").then_some(record)
+    });
+    // Unavailable supervision is not evidence of completion. Keep this state
+    // visible even though routine finished history is hidden.
+    record["state"] = serde_json::json!("running");
+    fs::write(&record_path, serde_json::to_vec(&record).unwrap()).unwrap();
+    for view in [&["list"][..], &["watch", "--once"][..]] {
+        assert_eq!(fixture.call(view)["jobs"][0]["state"], "unknown");
+    }
+}
+
+#[test]
 fn explicit_extension_and_observation_have_distinct_semantics() {
     let fixture = Fixture::new();
     let (id, path) = fixture.start("normal", "10s");
@@ -380,7 +429,13 @@ fn explicit_retry_is_idempotent_without_renewal_or_resurrection() {
     let id = first["job"]["id"].as_str().unwrap();
     fixture.call(&["stop", id]);
     assert_eq!(fixture.call(&args)["job"]["state"], "stopped");
-    assert_eq!(fixture.call(&["list"])["jobs"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        fixture.call(&["list", "--all"])["jobs"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]

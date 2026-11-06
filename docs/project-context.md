@@ -46,7 +46,9 @@ Goal: a usable local ProcLease CLI and shared skill
 |-- DONE    Focused Astra/Fable reviews and interrupted-write refinement
 |-- DONE    User-local CLI installation and Codex/Claude skill discovery
 |-- DONE    Public MIT-licensed GitHub repository, contributor credits and hosted CI
-`-- FIXED   Shared-registry guidance after a real Codex preview launch
+|-- FIXED   Shared-registry guidance after a real Codex preview launch
+|-- FIXED   Expiry test startup race identified in hosted macOS diagnostics
+`-- DONE    Version 0.1.1 hides finished history by default; --all retains access
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
@@ -70,8 +72,6 @@ Codex chat has not been independently checked.
 
 ## Open questions
 
-- One hosted macOS expiry-test timeout passed on rerun with unchanged code; the
-  cause is unconfirmed. See [verification limits](verification.md#limits).
 - Exact compatibility under each agent host's restricted execution profile needs
   direct host testing. Same-user local control is not authenticated agent identity.
 - Package releases and website deployment are not configured.
