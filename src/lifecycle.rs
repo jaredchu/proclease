@@ -202,6 +202,16 @@ pub fn keeper(store: &Store, id: &str) -> Result<()> {
         store.save(&record)?;
     }
     let _ = std::fs::remove_file(store.job(id)?.join("ctl.sock"));
+    // Final state and socket cleanup are complete. Collection may now include
+    // this job even though this keeper has not returned yet.
+    match store.prune(false, Some(id)) {
+        Ok(report) => {
+            for warning in report.warnings {
+                eprintln!("history cleanup: {warning}");
+            }
+        }
+        Err(error) => eprintln!("history cleanup deferred: {error:#}"),
+    }
     Ok(())
 }
 

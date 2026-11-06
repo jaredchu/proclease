@@ -35,6 +35,7 @@ proclease logs JOB_ID --tail 50
 proclease extend JOB_ID --by 1h
 proclease stop JOB_ID
 proclease watch
+proclease prune --dry-run
 ```
 
 All commands accept `--json`. `watch --once --json` produces one bounded snapshot.
@@ -62,7 +63,7 @@ means the program spawned, not that a web endpoint is ready.
 - Each run is a separate job. Assign `--key REQUEST_ID` on the **initial run** to
   make retries idempotent for that command, directory, environment and launch
   policy. Reuse the same key unchanged. Adding a key later does not identify an
-  earlier keyless job. A retry never renews or resurrects a job; a different
+  earlier keyless job. A retained retry never renews or resurrects a job; a different
   context is rejected. Empty interrupted-launch reservations and those containing
   only private generated atomic-write temporary files are ignored without deleting
   state; unreadable/ambiguous launch metadata still fails closed.
@@ -94,8 +95,19 @@ output discarded during shutdown. Set
 `--log-limit BYTES` at launch, up to 16 MiB. Terminal control characters are escaped
 when displaying logs. Logs and argv may contain private application data; keep the
 state directory out of repositories. Full environment values are not persisted.
-Finished metadata and capped logs remain until you deliberately remove that
-finished job's directory; automatic retention cleanup is not implemented yet.
+Confirmed finished metadata and logs are automatically removed after **24 hours**
+or beyond the **100 newest finished jobs**, whichever comes first. Collection runs
+on `run`, `list`, each `watch` refresh and job completion. Without CLI activity or
+job completion, overdue history is collected on the next use; there is no separate
+background cleanup service. Active jobs, unverified state and jobs whose supervisors
+cannot be verified absent are preserved. Filesystem errors defer deletion with a
+warning, so protected or failed-cleanup data can exceed the normal history bound.
+
+Use `proclease prune --dry-run` to preview eligible jobs, or `proclease prune` to
+collect them now. Collection deletes their metadata and logs. Retry keys only
+deduplicate while their records remain: a purged key can start a new job. Reconcile
+current jobs before retrying an old request. Interrupted deletions are retried
+without exposing partial records as launchable jobs.
 Normal `list` and `watch` show active and unverified jobs, keeping finished jobs
 out of the everyday view. Use `list --all` or `watch --all` for retained history;
 this also applies to JSON output. Agents checking completion should use

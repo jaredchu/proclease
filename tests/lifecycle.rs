@@ -93,6 +93,41 @@ impl Fixture {
             }
         })
     }
+    fn finished_template(&self) -> (Value, Value) {
+        let result = self.call(&["run", "--grace", "100ms", "--", "/usr/bin/true"]);
+        let id = result["job"]["id"].as_str().unwrap();
+        let record = self.terminal(id);
+        let pid = record["keeper_pid"].as_u64().unwrap() as i32;
+        wait(|| {
+            (unsafe { libc::kill(pid, 0) } == -1
+                && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH))
+            .then_some(())
+        });
+        let dir = self.state.join(id);
+        let record = serde_json::from_slice(&fs::read(dir.join("record.json")).unwrap()).unwrap();
+        let launch = serde_json::from_slice(&fs::read(dir.join("launch.json")).unwrap()).unwrap();
+        fs::remove_dir_all(dir).unwrap();
+        (record, launch)
+    }
+    fn seed_history(&self, id: &str, record: &Value, launch: &Value, finished: u64) {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = self.state.join(id);
+        fs::create_dir(&dir).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+        let mut record = record.clone();
+        record["id"] = serde_json::json!(id);
+        record["finished_at_ms"] = serde_json::json!(finished);
+        let mut launch = launch.clone();
+        launch["id"] = serde_json::json!(id);
+        for (name, bytes) in [
+            ("record.json", serde_json::to_vec(&record).unwrap()),
+            ("launch.json", serde_json::to_vec(&launch).unwrap()),
+            ("output.log", b"retained test output".to_vec()),
+        ] {
+            fs::write(dir.join(name), bytes).unwrap();
+            fs::set_permissions(dir.join(name), fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    }
 }
 
 impl Drop for Fixture {
@@ -284,6 +319,213 @@ fn default_views_hide_finished_history_but_keep_unverified_jobs() {
     for view in [&["list"][..], &["watch", "--once"][..]] {
         assert_eq!(fixture.call(view)["jobs"][0]["state"], "unknown");
     }
+}
+
+#[test]
+fn retention_dry_run_preserves_data_and_expired_keys_can_be_reused() {
+    let fixture = Fixture::new();
+    let args = [
+        "run",
+        "--grace",
+        "100ms",
+        "--key",
+        "retained-key",
+        "--",
+        "/usr/bin/true",
+    ];
+    let result = fixture.call(&args);
+    let id = result["job"]["id"].as_str().unwrap();
+    let done = fixture.terminal(id);
+    let keeper = done["keeper_pid"].as_u64().unwrap() as i32;
+    wait(|| (unsafe { libc::kill(keeper, 0) } == -1).then_some(()));
+    let dir = fixture.state.join(id);
+    let mut record: Value =
+        serde_json::from_slice(&fs::read(dir.join("record.json")).unwrap()).unwrap();
+    record["finished_at_ms"] = serde_json::json!(1);
+    fs::write(
+        dir.join("record.json"),
+        serde_json::to_vec(&record).unwrap(),
+    )
+    .unwrap();
+    let preview = fixture.call(&["prune", "--dry-run"]);
+    assert_eq!(preview["candidates"], serde_json::json!([id]));
+    assert_eq!(preview["removed"], serde_json::json!([]));
+    assert!(dir.join("output.log").exists());
+    let next = fixture.call(&args);
+    assert_ne!(next["job"]["id"], id);
+    assert_eq!(next["reused"], false);
+    assert!(!dir.exists(), "age cleanup must remove metadata and logs");
+}
+
+#[test]
+fn retention_count_is_serialized_and_preserves_active_unverified_and_live_owners() {
+    let fixture = Fixture::new();
+    let (record, launch) = fixture.finished_template();
+    let active = fixture.call(&[
+        "run",
+        "--ttl",
+        "30s",
+        "--grace",
+        "100ms",
+        "--",
+        "/bin/sleep",
+        "30",
+    ]);
+    let active_id = active["job"]["id"].as_str().unwrap();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    for i in 1..=104 {
+        fixture.seed_history(&format!("{i:012x}"), &record, &launch, now - i);
+    }
+    let mut unknown = record.clone();
+    unknown["state"] = serde_json::json!("unknown");
+    fixture.seed_history("fffffffffff1", &unknown, &launch, 1);
+    let mut owned = record.clone();
+    owned["keeper_pid"] = serde_json::json!(std::process::id());
+    fixture.seed_history("fffffffffff2", &owned, &launch, 1);
+    let mut live_group = record.clone();
+    live_group["guardian_pid"] = serde_json::json!(unsafe { libc::getpgrp() });
+    fixture.seed_history("fffffffffff3", &live_group, &launch, 1);
+    let mut missing_finish = record.clone();
+    missing_finish["id"] = serde_json::json!("fffffffffff4");
+    fixture.seed_history("fffffffffff4", &missing_finish, &launch, 1);
+    let path = fixture.state.join("fffffffffff4/record.json");
+    missing_finish["finished_at_ms"] = Value::Null;
+    fs::write(path, serde_json::to_vec(&missing_finish).unwrap()).unwrap();
+    let preview = fixture.call(&["prune", "--dry-run"]);
+    assert_eq!(preview["candidates"].as_array().unwrap().len(), 4);
+    assert_eq!(preview["removed"], serde_json::json!([]));
+    let handles: Vec<_> = (0..4)
+        .map(|_| {
+            let mut cmd = fixture.command(&["prune"]);
+            thread::spawn(move || {
+                let output = cmd.output().unwrap();
+                assert!(
+                    output.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&output.stdout)
+                );
+                parse(&output)["removed"].as_array().unwrap().clone()
+            })
+        })
+        .collect();
+    let removed: Vec<_> = handles
+        .into_iter()
+        .flat_map(|h| h.join().unwrap())
+        .collect();
+    assert_eq!(removed.len(), 4);
+    for i in 1..=104 {
+        assert_eq!(fixture.state.join(format!("{i:012x}")).exists(), i <= 100);
+    }
+    for id in [
+        active_id,
+        "fffffffffff1",
+        "fffffffffff2",
+        "fffffffffff3",
+        "fffffffffff4",
+    ] {
+        assert!(
+            fixture.state.join(id).exists(),
+            "protected job {id} was collected"
+        );
+    }
+    assert_eq!(fixture.job(active_id)["state"], "running");
+}
+
+#[test]
+fn retention_retries_partial_deletion_without_following_symlinks() {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new();
+    let (record, launch) = fixture.finished_template();
+    let outside = fixture.dir.path().join("outside");
+    fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("keep"), b"outside job state").unwrap();
+    fixture.seed_history("000000000001", &record, &launch, 1);
+    std::os::unix::fs::symlink(&outside, fixture.state.join("000000000001/link")).unwrap();
+    let pending = fixture
+        .state
+        .join(".prune-000000000002-0123456789abcdef0123456789abcdef");
+    fs::create_dir(&pending).unwrap();
+    fs::set_permissions(&pending, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(pending.join("partial"), b"interrupted cleanup").unwrap();
+    let unsafe_pending = fixture
+        .state
+        .join(".prune-000000000003-0123456789abcdef0123456789abcdef");
+    std::os::unix::fs::symlink(&outside, &unsafe_pending).unwrap();
+    std::os::unix::fs::symlink(&outside, fixture.state.join("000000000004")).unwrap();
+    let output = fixture.command(&["prune"]).output().unwrap();
+    assert!(!output.status.success(), "unsafe state must be reported");
+    let report = parse(&output);
+    assert_eq!(report["removed"].as_array().unwrap().len(), 2);
+    assert!(!fixture.state.join("000000000001").exists());
+    assert!(!pending.exists());
+    assert!(unsafe_pending.is_symlink());
+    assert!(fixture.state.join("000000000004").is_symlink());
+    assert_eq!(
+        fs::read(outside.join("keep")).unwrap(),
+        b"outside job state"
+    );
+}
+
+#[test]
+fn job_completion_collects_old_history_without_another_cli_call() {
+    let fixture = Fixture::new();
+    let (record, launch) = fixture.finished_template();
+    fixture.call(&["run", "--grace", "100ms", "--", "/bin/sleep", "1"]);
+    fixture.seed_history("000000000001", &record, &launch, 1);
+    wait(|| (!fixture.state.join("000000000001").exists()).then_some(()));
+}
+
+#[test]
+fn failed_history_deletion_is_quarantined_and_does_not_block_keyed_launches() {
+    use std::os::unix::fs::PermissionsExt;
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let fixture = Fixture::new();
+    let (record, launch) = fixture.finished_template();
+    fixture.seed_history("000000000001", &record, &launch, 1);
+    fs::set_permissions(
+        fixture.state.join("000000000001"),
+        fs::Permissions::from_mode(0o500),
+    )
+    .unwrap();
+    let output = fixture.command(&["prune"]).output().unwrap();
+    assert!(!output.status.success());
+    assert!(!fixture.state.join("000000000001").exists());
+    let pending = fs::read_dir(&fixture.state)
+        .unwrap()
+        .flatten()
+        .find(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".prune-000000000001-")
+        })
+        .unwrap()
+        .path();
+    // A partial delete must not be mistaken for an unreadable launch record.
+    let next = fixture.call(&[
+        "run",
+        "--key",
+        "after-collection-fault",
+        "--grace",
+        "100ms",
+        "--",
+        "/bin/sleep",
+        "30",
+    ]);
+    assert_eq!(next["job"]["state"], "running");
+    fs::set_permissions(&pending, fs::Permissions::from_mode(0o700)).unwrap();
+    let report = fixture.call(&["prune"]);
+    assert!(report["removed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|id| id == "000000000001"));
+    assert!(!pending.exists());
 }
 
 #[test]

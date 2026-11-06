@@ -57,7 +57,8 @@ unverified state. Such observation never signals or adopts a process.
 A root advisory lock serializes launch reservations. A unique 12-hex-digit ID
 names each job. Explicit retry keys match a launch-context fingerprint covering
 the argument vector, canonical directory and environment, plus owner/task fields.
-They return the original record, including terminal records, without renewal.
+While history is retained, they return the original record, including terminal
+records, without renewal. Purging history ends that key's deduplication window.
 Changing a context while reusing a key is an error. There is no automatic
 command-text deduplication or cross-task ownership transfer.
 The key must be assigned before the initial launch. Under the launch lock,
@@ -72,10 +73,22 @@ Metadata is replaced atomically using private files and filesystem synchronizati
 This requires filesystem support for atomic replacement visible to concurrent
 readers; VM shared folders are not assumed to preserve those semantics.
 The keeper takes final write ownership after the guardian exits. Status reads
-do not write lifecycle state or renew leases.
+never renew leases or rewrite active lifecycle state; list/watch may collect
+confirmed finished history under the retention policy.
 Default list/watch views select active jobs and `unknown` jobs whose cleanup is
 unverified. `--all` includes retained terminal records. This is a display filter;
 retry resolution and direct job control/log access still use complete stored state.
+
+History retention keeps confirmed finished jobs for at most 24 hours and caps
+them at the newest 100. Launches, list/watch, job completion and explicit `prune`
+perform opportunistic collection under the root launch lock. No idle background
+service is added. Active/unknown records, missing completion timestamps and
+unverified supervisor/group absence are protected. A keeper may collect its own
+record only after its final write and socket cleanup. Collection never signals
+processes. A verified candidate is atomically renamed into a reserved private
+quarantine before recursive deletion; interrupted deletion is retried from there,
+so partial records do not poison keyed launches. Symlinked job/quarantine roots
+are refused. Cleanup failures are warnings, not evidence that space was reclaimed.
 Repeated stop while stopping polls existing state instead of waiting for an idle
 shutdown socket. A transport failure racing with shutdown is reconciled against
 the latest record; extensions are never automatically replayed.
@@ -103,7 +116,8 @@ its final capture snapshot before the grace period.
 - Each job uses two supervisor processes. This favours a small number of local
   development services, not thousands of workers.
 - Capture retains the first configured number of bytes and drains the rest.
-  Full capture is not promised after the cap. Finished-job retention is manual.
+  Full capture is not promised after the cap. Retention deletes finished metadata
+  and logs; retry identity does not outlive that history.
 - Deadlines use wall time, including sleep. Clock changes affect expiry. No claim
   of precise execution while asleep is made.
 

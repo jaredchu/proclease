@@ -17,6 +17,16 @@ pub struct Store {
     pub root: PathBuf,
 }
 
+pub const HISTORY_MAX_AGE_MS: u64 = 24 * 60 * 60 * 1000;
+pub const HISTORY_MAX_FINISHED: usize = 100;
+
+#[derive(Default, Serialize)]
+pub struct PruneReport {
+    pub candidates: Vec<String>,
+    pub removed: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
 pub fn valid_id(id: &str) -> bool {
     id.len() == 12
         && id
@@ -158,6 +168,111 @@ impl Store {
         FileExt::lock_exclusive(&file)?;
         Ok(file)
     }
+    pub fn prune(&self, dry_run: bool, completed_id: Option<&str>) -> Result<PruneReport> {
+        let _lock = self.lock()?;
+        self.prune_locked(dry_run, completed_id)
+    }
+
+    /// The root launch lock serializes collection with retry lookup/reservation.
+    pub fn prune_locked(&self, dry_run: bool, completed_id: Option<&str>) -> Result<PruneReport> {
+        let mut report = PruneReport::default();
+        let mut finished = Vec::new();
+        for entry in fs::read_dir(&self.root)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            if let Some(id) = quarantined_id(&name) {
+                // Only the reserved quarantine namespace is retried. Jobs enter
+                // it atomically after verification, before recursive deletion.
+                let result = (|| -> Result<()> {
+                    let metadata = fs::symlink_metadata(entry.path())?;
+                    if !metadata.is_dir()
+                        || metadata.uid() != unsafe { libc::geteuid() }
+                        || metadata.mode() & 0o077 != 0
+                    {
+                        bail!("unsafe history quarantine directory");
+                    }
+                    report.candidates.push(id.to_owned());
+                    if !dry_run {
+                        fs::remove_dir_all(entry.path())?;
+                    }
+                    Ok(())
+                })();
+                match result {
+                    Ok(()) if !dry_run => report.removed.push(id.to_owned()),
+                    Ok(()) => (),
+                    Err(error) => report
+                        .warnings
+                        .push(format!("{id}: cleanup deferred: {error:#}")),
+                }
+                continue;
+            }
+            if !valid_id(&name) {
+                continue;
+            }
+            let result = (|| -> Result<Option<(u64, String)>> {
+                let dir = self.job(&name)?;
+                if unpublished_reservation(&dir)? {
+                    return Ok(None);
+                }
+                let record = self.record(&name)?;
+                if record.id != name || record.state.active() || record.state == State::Unknown {
+                    return Ok(None);
+                }
+                let Some(time) = record.finished_at_ms else {
+                    return Ok(None);
+                };
+                let own_completion =
+                    completed_id == Some(name.as_str()) && record.keeper_pid == std::process::id();
+                if !own_completion && !process_is_absent(record.keeper_pid) {
+                    return Ok(None);
+                }
+                if record
+                    .guardian_pid
+                    .is_some_and(|pid| pid <= 1 || !group_is_absent(pid))
+                {
+                    return Ok(None);
+                }
+                Ok(Some((time, name.clone())))
+            })();
+            match result {
+                Ok(Some(job)) => finished.push(job),
+                Ok(None) => (),
+                Err(error) => report
+                    .warnings
+                    .push(format!("{name}: history preserved: {error:#}")),
+            }
+        }
+        finished.sort();
+        let excess = finished.len().saturating_sub(HISTORY_MAX_FINISHED);
+        let now = crate::model::now_ms();
+        for (index, (time, id)) in finished.into_iter().enumerate() {
+            if index >= excess && now.saturating_sub(time) < HISTORY_MAX_AGE_MS {
+                continue;
+            }
+            report.candidates.push(id.clone());
+            if dry_run {
+                continue;
+            }
+            let result = (|| -> Result<()> {
+                let quarantine = self
+                    .root
+                    .join(format!(".prune-{id}-{}", uuid::Uuid::new_v4().simple()));
+                // Removing the job from the retry namespace first prevents a
+                // partial deletion from poisoning every future keyed launch.
+                fs::rename(self.job(&id)?, &quarantine)?;
+                fs::remove_dir_all(quarantine)?;
+                Ok(())
+            })();
+            match result {
+                Ok(()) => report.removed.push(id),
+                Err(error) => report
+                    .warnings
+                    .push(format!("{id}: cleanup deferred: {error:#}")),
+            }
+        }
+        Ok(report)
+    }
+
     pub fn record(&self, id: &str) -> Result<Record> {
         let mut record: Record = read_json(&self.job(id)?.join("record.json"))?;
         if record.state != State::Starting {
@@ -265,4 +380,20 @@ impl Store {
 
 fn group_is_absent(pid: u32) -> bool {
     matches!(crate::platform::group_has_live_members(pid), Ok(false))
+}
+
+fn process_is_absent(pid: u32) -> bool {
+    pid > 1
+        && unsafe { libc::kill(pid as i32, 0) } == -1
+        && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+}
+
+fn quarantined_id(name: &str) -> Option<&str> {
+    let (id, uuid) = name.strip_prefix(".prune-")?.split_once('-')?;
+    (valid_id(id)
+        && uuid.len() == 32
+        && uuid
+            .bytes()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()))
+    .then_some(id)
 }

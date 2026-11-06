@@ -83,6 +83,11 @@ enum Commands {
         #[arg(long, help = "Include finished jobs from retained history")]
         all: bool,
     },
+    /// Remove confirmed finished history older than 24h or beyond the newest 100.
+    Prune {
+        #[arg(long, help = "Show what would be removed without deleting anything")]
+        dry_run: bool,
+    },
     /// Print bounded, terminal-safe output.
     Logs {
         id: String,
@@ -164,7 +169,12 @@ fn print_record(record: &Record, reused: bool, json_output: bool) -> Result<()> 
 }
 
 fn visible_jobs(store: &Store, all: bool) -> Result<(Vec<Record>, Vec<String>)> {
-    let (mut jobs, warnings) = store.list()?;
+    let mut cleanup_warnings = match store.prune(false, None) {
+        Ok(report) => report.warnings,
+        Err(error) => vec![format!("history cleanup deferred: {error:#}")],
+    };
+    let (mut jobs, mut warnings) = store.list()?;
+    warnings.append(&mut cleanup_warnings);
     if !all {
         jobs.retain(|record| record.state.active() || record.state == State::Unknown);
     }
@@ -297,6 +307,10 @@ fn dispatch(cli: &Cli) -> Result<i32> {
             let cwd = std::env::current_dir()?.canonicalize()?;
             let fingerprint = fingerprint(command, &cwd);
             let _lock = store.lock()?;
+            let cleanup = store.prune_locked(false, None)?;
+            for warning in cleanup.warnings {
+                eprintln!("History cleanup: {}", clean(&warning));
+            }
             if let Some(key) = key {
                 if let Some((previous, record)) = store.find_retry(key)? {
                     if previous.fingerprint != fingerprint
@@ -341,6 +355,32 @@ fn dispatch(cli: &Cli) -> Result<i32> {
             let record = store.record(&id)?;
             print_record(&record, false, cli.json)?;
             if record.state == State::Failed {
+                return Ok(1);
+            }
+        }
+        Commands::Prune { dry_run } => {
+            let report = store.prune(*dry_run, None)?;
+            if cli.json {
+                println!(
+                    "{}",
+                    json!({"schema_version": SCHEMA_VERSION, "dry_run": dry_run,
+                    "max_age_hours": 24, "max_finished": store::HISTORY_MAX_FINISHED,
+                    "candidates": report.candidates, "removed": report.removed, "warnings": report.warnings})
+                );
+            } else {
+                if *dry_run {
+                    println!("Would remove {} finished jobs.", report.candidates.len());
+                } else {
+                    println!("Removed {} finished jobs.", report.removed.len());
+                }
+                for id in &report.candidates {
+                    println!("{id}");
+                }
+                for warning in &report.warnings {
+                    eprintln!("Warning: {}", clean(warning));
+                }
+            }
+            if !report.warnings.is_empty() {
                 return Ok(1);
             }
         }

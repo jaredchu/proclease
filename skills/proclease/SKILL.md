@@ -44,7 +44,7 @@ launching. Never move or copy a live job's state to make it appear elsewhere.
   and the host authorizes that shell command. Avoid secrets in command arguments.
 - Assign a stable, task-specific `--key` **before the initial launch**, then reuse
   it unchanged for retries of that same request. The two examples above are
-  alternatives, not commands to run together. A retry returns the original job
+  alternatives, not commands to run together. A retained retry returns the original job
   without extending or resurrecting it. A key added after a keyless launch cannot
   identify that earlier job.
 - Preserve a stable `--task` label and record the returned job ID in the task
@@ -74,7 +74,12 @@ Normal `list` and `watch` show active and unverified jobs. Use `list --all --jso
 when checking a job's terminal state or reconciling a previous launch; a finished
 job disappearing from the default view does not mean its history was deleted.
 `watch --all` includes that history in the human view. Finished metadata and logs
-remain available by ID, preserving retry identity and diagnostics.
+remain available by ID until collection. Confirmed finished history is collected
+after 24 hours or beyond the newest 100 jobs, whichever comes first, during normal
+CLI use and job completion. Active and unverified jobs are preserved. A purged key
+can create a new job: reconcile current task jobs before retrying an old request.
+`proclease prune --dry-run --json` previews cleanup; `proclease prune` applies the
+same policy immediately. Cleanup removes saved metadata and logs.
 
 Stop services started solely for verification before completing that task. For
 a requested manual preview, leave the lease active and report the job ID, tested
