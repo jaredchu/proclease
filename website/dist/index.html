@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101010">
+  <title>ProcLease — Every dev process gets a deadline.</title>
+  <meta name="description" content="Explicit lifetimes for AI-started dev servers. A Rust CLI and portable skill for Codex and Claude Code. Open source. macOS and Linux.">
+  <link rel="canonical" href="https://proclease.com/">
+  <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="ProcLease — Every dev process gets a deadline.">
+  <meta property="og:description" content="Your agents start it. ProcLease stops it. Explicit lifetimes for local development processes.">
+  <meta property="og:url" content="https://proclease.com/">
+  <meta property="og:image" content="https://proclease.com/assets/social.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-header"><nav class="wrap nav" aria-label="Main navigation">
+    <a class="wordmark" href="#" aria-label="ProcLease home"><img src="/assets/icon.svg" width="27" height="27" alt="">ProcLease<span class="slash">/</span></a>
+    <div class="nav-links"><a href="#how">How it works</a><a href="#install">Install</a><a href="https://github.com/jaredchu/proclease#readme">Docs <span aria-hidden="true">↗</span></a><a class="github" href="https://github.com/jaredchu/proclease">GitHub <span aria-hidden="true">↗</span></a></div>
+  </nav></header>
+  <main id="main">
+    <section class="wrap hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <a class="release-tag mono" href="https://github.com/jaredchu/proclease/releases/tag/v0.1.2"><span class="dot"></span>v0.1.2 <span class="muted">/ EXPERIMENTAL</span><span aria-hidden="true">↗</span></a>
+        <h1 id="hero-title">Your agents<br>start it.<br><span>ProcLease<br>stops it.</span></h1>
+        <p class="intro">Give every AI-started dev server a deadline. See what’s running, inspect its resources, and let it expire — even when you forget to ask.</p>
+        <div class="hero-actions"><a class="button primary" href="#install">Install ProcLease <span aria-hidden="true">↓</span></a><a class="text-link" href="https://github.com/jaredchu/proclease">Explore the source <span aria-hidden="true">↗</span></a></div>
+        <p class="availability mono">RUST CLI <span>/</span> macOS + Linux <span>/</span> MIT</p>
+      </div>
+      <div class="demo-block">
+        <div class="terminal" aria-label="Interactive illustration of a process lease">
+          <div class="terminal-bar mono"><span class="terminal-symbol" aria-hidden="true">&gt;_</span><span>proclease watch</span><span class="terminal-label">DEMO</span></div>
+          <div class="terminal-command mono"><span class="muted">$</span> proclease run --owner codex<br><span class="indent">--ttl 2h -- npm run dev</span></div>
+          <div class="terminal-body mono">
+            <div class="table-label"><span>LOCAL DEVELOPMENT</span><span id="demo-count">01 ACTIVE</span></div>
+            <div class="demo-job"><div><span class="muted">JOB</span><strong>a7f39c2e108b</strong></div><span id="demo-state" class="job-state">● running</span></div>
+            <div class="service-name">npm run dev</div><div class="demo-project">storefront / frontend-preview</div>
+            <div class="resource-grid"><div><span>LEASE LEFT</span><strong id="demo-time">1h 59m</strong></div><div><span>CPU</span><strong id="demo-cpu">0.8%</strong></div><div><span>RSS</span><strong id="demo-rss">64 MiB</strong></div></div>
+            <div class="demo-url">↳ http://localhost:5173</div>
+            <div class="demo-event" id="demo-event" aria-live="polite">Deadline set. No renewal on reads.</div>
+          </div>
+          <button class="demo-control mono" id="demo-advance" type="button">Advance to expiry <span aria-hidden="true">→</span></button>
+        </div>
+        <div class="terminal-caption mono"><span>ILLUSTRATIVE SESSION</span><span>Runs no commands.</span></div>
+        <div class="terminal-note"><span aria-hidden="true">↳</span><p>The conversation can end.<br>The deadline still applies.</p></div>
+      </div>
+    </section>
+
+    <div class="wrap spec-strip mono" aria-label="ProcLease defaults"><div><strong>02h</strong><span>DEFAULT LEASE</span></div><div><strong>24h</strong><span>MAX TOTAL LIFETIME</span></div><div><strong>01</strong><span>SHARED LIST BY DEFAULT</span></div></div>
+
+    <section class="wrap section how" id="how" aria-labelledby="how-title">
+      <div class="section-heading"><p class="eyebrow mono">01 / THE LIFECYCLE</p><h2 id="how-title">Background work.<br><span>Foreground control.</span></h2><p>Use the same CLI across projects and agent sessions. Every service has an owner label, a deadline and a place in your process list.</p></div>
+      <ol class="steps">
+        <li><div class="step-top"><span class="step-index mono">01</span><h3>Start with a lease</h3></div><p>Wrap the foreground command you already use. ProcLease supervises its process group in the caller’s execution context.</p><code>proclease run --ttl 2h -- npm run dev</code></li>
+        <li><div class="step-top"><span class="step-index mono">02</span><h3>See what’s alive</h3></div><p>One terminal view for deadlines, CPU and resident memory. Bounded logs and JSON keep later tool calls informed.</p><code>proclease watch</code></li>
+        <li><div class="step-top"><span class="step-index mono">03</span><h3>Extend, stop, or expire</h3></div><p>Add time explicitly when work continues. Otherwise the deadline triggers TERM, then KILL after the shutdown grace.</p><code>proclease extend JOB_ID --by 1h</code></li>
+      </ol>
+    </section>
+
+    <section class="principles" aria-labelledby="principles-title"><div class="wrap principles-inner"><div><p class="eyebrow mono">02 / SMALL BY DESIGN</p><h2 id="principles-title">Local supervision.<br><span>Explicit deadlines.</span></h2><p>A focused local tool for the dev server an agent starts and everyone forgets. No hosted service needed to run the CLI.</p></div><dl class="contract"><div><dt>Reads don’t renew</dt><dd>Checking status, logs or resources leaves the lease unchanged.</dd></div><div><dt>History stays bounded</dt><dd>Up to five completions stay visible for 30 seconds. Finished history is retained for 24 hours or the newest 100 jobs.</dd></div><div><dt>Control stays explicit</dt><dd>Jobs are supervised individually. No shared service accepts arbitrary commands from another execution context.</dd></div></dl></div></section>
+
+    <section class="wrap section install-section" id="install" aria-labelledby="install-title"><div class="section-heading"><p class="eyebrow mono">03 / GET STARTED</p><h2 id="install-title">From download<br><span>to deadline.</span></h2><p>Native binaries for macOS and Linux. No Rust toolchain or sudo needed. Each archive includes the portable agent skill.</p><a class="release-link mono" href="https://github.com/jaredchu/proclease/releases/tag/v0.1.2">v0.1.2 / FIRST PRERELEASE <span aria-hidden="true">↗</span></a></div>
+      <div class="install-panel"><div class="install-tabs" role="tablist" aria-label="Installation method"><button id="tab-quick" role="tab" aria-selected="true" aria-controls="panel-quick" tabindex="0" type="button">Quick install</button><button id="tab-manual" role="tab" aria-selected="false" aria-controls="panel-manual" tabindex="-1" type="button">Manual download</button></div>
+        <div id="panel-quick" role="tabpanel" aria-labelledby="tab-quick"><div class="install-options"><label class="mono" for="agent">INSTALL SKILLS FOR</label><select id="agent"><option value="both">Codex + Claude Code</option><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="none">CLI only</option></select></div>
+          <div class="code-block"><button class="copy mono" id="copy-install" type="button" aria-label="Copy installation command">Copy ↗</button><pre><code id="install-command">curl -fsSL https://proclease.com/install.sh | sh -s -- --skills both</code></pre></div>
+          <p class="install-note">The installer selects your platform, verifies the archive’s SHA-256 checksum and installs to <code>~/.local/bin</code>. Existing unrelated skill folders are preserved.</p><a class="small-link" href="https://github.com/jaredchu/proclease/blob/main/install.sh">Review the installer <span aria-hidden="true">↗</span></a>
+        </div>
+        <div id="panel-manual" role="tabpanel" aria-labelledby="tab-manual" hidden><div class="install-options"><label class="mono" for="platform">YOUR PLATFORM</label><select id="platform"><option value="aarch64-apple-darwin">macOS · Apple Silicon</option><option value="x86_64-apple-darwin">macOS · Intel</option><option value="aarch64-unknown-linux-gnu">Linux · ARM64</option><option value="x86_64-unknown-linux-gnu">Linux · x64</option></select></div><a class="button primary download" id="download" href="https://github.com/jaredchu/proclease/releases/download/v0.1.2/proclease-v0.1.2-aarch64-apple-darwin.tar.gz">Download .tar.gz <span aria-hidden="true">↓</span></a><p class="install-note">Verify the archive against <a href="https://github.com/jaredchu/proclease/releases/download/v0.1.2/SHA256SUMS">SHA256SUMS</a>, extract it, and place <code>proclease</code> on PATH. The archive also contains <code>skills/proclease</code>.</p></div>
+        <div class="install-footnote mono">macOS / Ubuntu 22.04 (glibc) · EXPERIMENTAL<br>macOS binaries are not Developer ID signed or notarized.</div>
+        <p class="copy-feedback" id="copy-feedback" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section class="wrap agent-section" aria-labelledby="agent-title"><div><p class="eyebrow mono">04 / THE AGENT SKILL</p><h2 id="agent-title">Teach the lifecycle.<br><span>Keep the same workflow.</span></h2><p>The shared skill guides Codex and Claude Code to launch with a lease, check readiness and clean up task-only services. Start a new agent session after installation.</p></div><div class="agent-details"><div><span class="mono">CODEX</span><code>$proclease</code></div><div><span class="mono">CLAUDE CODE</span><code>/proclease</code></div><p>Skills guide behavior; they don’t intercept every shell command or grant extra execution permissions.</p><a class="small-link" href="https://github.com/jaredchu/proclease/tree/main/skills/proclease">Read the shared skill <span aria-hidden="true">↗</span></a></div></section>
+
+    <section class="wrap section faq-section" aria-labelledby="faq-title"><div><p class="eyebrow mono">05 / KNOW THE BOUNDARY</p><h2 id="faq-title">A few details<br><span>before you run.</span></h2></div><div class="faq"><details><summary>Will it find servers I already started?<span aria-hidden="true">+</span></summary><p>ProcLease manages services launched through <code>proclease run</code>. It doesn’t adopt existing PIDs. A skill helps the agent choose ProcLease for future launches.</p></details><details><summary>Does closing watch stop my services?<span aria-hidden="true">+</span></summary><p>No. Ctrl+C closes the terminal view. A job stops on explicit stop, command exit, expiry or supervision failure. Status and log reads never extend the deadline.</p></details><details><summary>What do CPU and RSS include?<span aria-hidden="true">+</span></summary><p>The service and children still in its managed process group, excluding ProcLease supervisors. CPU 100% is one core. RSS sums resident bytes and may count shared pages more than once. Finished jobs have no live readings.</p></details><details><summary>What are the current support limits?<span aria-hidden="true">+</span></summary><p>Foreground services on macOS and glibc-based Linux. No Windows, Docker management, auto-restart or arbitrary PID adoption. A descendant that creates a new group can escape cleanup. Use native VM storage for state; deadlines use wall time.</p></details></div></section>
+    <section class="wrap closing"><p class="eyebrow mono">LET THE WORK END CLEANLY.</p><h2>Every dev process<br><span>gets a deadline.</span></h2><a class="button primary" href="#install">Get ProcLease <span aria-hidden="true">↓</span></a></section>
+  </main>
+  <footer class="wrap footer"><a class="wordmark" href="#"><img src="/assets/icon.svg" width="23" height="23" alt="">ProcLease</a><p>Created by <a href="https://github.com/jaredchu">Jared Chu</a>.<br>Built with Codex and Claude contributions.</p><div class="footer-links mono"><a href="https://github.com/jaredchu/proclease/blob/main/LICENSE">MIT LICENSE ↗</a><a href="https://github.com/jaredchu/proclease/issues">ISSUES ↗</a><a href="https://github.com/jaredchu/proclease">SOURCE ↗</a></div></footer>
+</body>
+</html>

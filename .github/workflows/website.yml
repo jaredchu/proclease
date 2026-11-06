@@ -1,0 +1,19 @@
+name: Website checks
+on:
+  push:
+    paths: ['website/**', 'install.sh', 'scripts/check-website.py', '.github/workflows/website.yml']
+  pull_request:
+    paths: ['website/**', 'install.sh', 'scripts/check-website.py', '.github/workflows/website.yml']
+permissions:
+  contents: read
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: python3 scripts/check-website.py
+      - run: node --check website/dist/app.js
+      - run: sh -n install.sh

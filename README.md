@@ -11,6 +11,29 @@ and Linux aarch64 in a non-root container. It is not published to a package
 registry. Domain: `proclease.com`; no hosted service is required.
 
 Source and issues: [jaredchu/proclease](https://github.com/jaredchu/proclease).
+Website: [proclease.com](https://proclease.com).
+
+## Install
+
+Download and review [the v0.1.2 installer](https://github.com/jaredchu/proclease/releases/download/v0.1.2/install.sh), then run:
+
+```sh
+sh install.sh --skills both
+proclease --version
+```
+
+It selects your macOS/Linux ARM64 or x64 archive, verifies its SHA-256 checksum,
+and installs to `~/.local/bin` without sudo or Rust. Add that directory to PATH
+if needed. `--skills both` links the portable skill for Codex and Claude Code;
+use `codex`, `claude` or omit the option for CLI-only installation. Existing
+unrelated skill folders and symlinks are preserved. Restart the agent session
+to discover a new skill.
+
+For manual installation, download an archive from the
+[experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.2),
+verify it against `SHA256SUMS`, extract it and place `proclease` on PATH. Each
+archive includes the skill, README and MIT license. See the
+[release notes](docs/releases/v0.1.2.md) for tested platforms and signing limits.
 
 ## Build
 

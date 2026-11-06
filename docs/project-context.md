@@ -28,7 +28,11 @@ through a Rust CLI and one portable ProcLease skill for Codex and Claude Code.
 - **Owner-confirmed target, 2026-11-06:** macOS and Linux. Runtime tests have
   passed on macOS arm64 and in a non-root Linux aarch64 container.
 - **Owner-selected website direction, 2026-11-06:** monochrome technical minimalism
-  with a dark theme. Website implementation and deployment remain deferred.
+  with a dark theme.
+- **Owner-authorized, 2026-11-06:** publish the first GitHub prerelease with native
+  macOS/Linux binaries and checksums, then build and publish `proclease.com` with
+  installation, a terminal demo, skill setup and GitHub links. This supersedes the
+  earlier deferral of GitHub releases and website deployment.
 - **Owner requirement:** improve on existing tools rather than duplicate a generic
   supervisor. Expiry, explicit extension, reliable cleanup and agent usability are
   the focus. Research found substantial overlap with
@@ -39,7 +43,7 @@ through a Rust CLI and one portable ProcLease skill for Codex and Claude Code.
   launched in the caller's execution context. Avoid a login-wide service accepting
   arbitrary execution requests from potentially restricted agents.
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
-  proxying, auto-restart, hosted dashboards, package releases and website deployment.
+  proxying, auto-restart, hosted dashboards and package-registry distribution.
 
 ## Current state and progress
 
@@ -57,7 +61,9 @@ Goal: a usable local ProcLease CLI and shared skill
 |-- DONE    Finished history bounded to 24h/newest 100; --all retains access
 |-- DONE    Readable colored tables, compact times and narrow-terminal layout
 |-- DONE    Version 0.1.2 briefly shows up to five finished jobs for 30 seconds
-`-- DONE    On-demand CPU/RSS group totals in tables and opt-in JSON
+|-- DONE    On-demand CPU/RSS group totals in tables and opt-in JSON
+|-- ACTIVE  Native four-platform prerelease, archives and verified installation
+`-- ACTIVE  Dark monochrome website, browser QA and proclease.com publication
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
@@ -87,4 +93,5 @@ Codex chat has not been independently checked.
 
 - Exact compatibility under each agent host's restricted execution profile needs
   direct host testing. Same-user local control is not authenticated agent identity.
-- Package releases and website deployment are not configured.
+- Package-registry distribution and macOS Developer ID signing/notarization are
+  not configured. See [the release procedure](releasing.md) for current delivery.
