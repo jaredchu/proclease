@@ -132,13 +132,62 @@ impl Store {
         Ok(file)
     }
     pub fn record(&self, id: &str) -> Result<Record> {
-        read_json(&self.job(id)?.join("record.json"))
+        let mut record: Record = read_json(&self.job(id)?.join("record.json"))?;
+        if record.state != State::Starting {
+            record.logs_truncated |= self.capture_truncated(id)?;
+        }
+        Ok(record)
+    }
+    pub fn capture_truncated(&self, id: &str) -> Result<bool> {
+        let path = self.job(id)?.join("capture.status");
+        let mut file = match OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error.into()),
+        };
+        let mut value = [0u8; 1];
+        file.read_exact(&mut value)?;
+        match value[0] {
+            b'0' => Ok(false),
+            b'1' => Ok(true),
+            _ => bail!("invalid capture status"),
+        }
     }
     pub fn launch(&self, id: &str) -> Result<Launch> {
         read_json(&self.job(id)?.join("launch.json"))
     }
     pub fn save(&self, record: &Record) -> Result<()> {
         atomic_json(&self.job(&record.id)?.join("record.json"), record)
+    }
+    /// Called under the launch lock. Empty reservations cannot have launched a
+    /// process; ambiguous unreadable launch metadata must still fail closed.
+    pub fn find_retry(&self, key: &str) -> Result<Option<(Launch, Record)>> {
+        let mut found = None;
+        for entry in fs::read_dir(&self.root)? {
+            let entry = entry?;
+            let id = entry.file_name().to_string_lossy().to_string();
+            if !valid_id(&id) {
+                continue;
+            }
+            let dir = self.job(&id)?;
+            if fs::read_dir(&dir)?.next().is_none() {
+                continue;
+            }
+            let launch = self
+                .launch(&id)
+                .with_context(|| format!("cannot safely resolve retry key: {id}"))?;
+            if launch.key.as_deref() == Some(key) {
+                if found.is_some() {
+                    bail!("retry key belongs to multiple jobs; inspect state before retrying");
+                }
+                found = Some((launch, self.observed_record(&id)?));
+            }
+        }
+        Ok(found)
     }
     pub fn observed_record(&self, id: &str) -> Result<Record> {
         let mut record = self.record(id)?;
@@ -169,6 +218,11 @@ impl Store {
             let entry = entry?;
             let id = entry.file_name().to_string_lossy().to_string();
             if !valid_id(&id) {
+                continue;
+            }
+            if self.job(&id).is_ok_and(|dir| {
+                fs::read_dir(dir).is_ok_and(|mut entries| entries.next().is_none())
+            }) {
                 continue;
             }
             match self.observed_record(&id) {

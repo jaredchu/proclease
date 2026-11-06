@@ -37,6 +37,16 @@ numeric ID being reused during cleanup. If the guardian crashes, the keeper
 enforces cleanup. If the keeper crashes, EOF causes the guardian to clean up.
 Simultaneous destruction of both supervisors is outside this fail-closed guarantee.
 
+Both supervisors arm process-group cleanup immediately after spawning their child.
+Returning through a metadata read/write error or another post-spawn failure cannot
+skip TERM/KILL cleanup. The keeper disarms that guard before reaping its leader,
+so error unwinding cannot subsequently signal a reused numeric group ID.
+
+Control sockets use nonblocking I/O with absolute request/batch/reply budgets.
+Slowly streamed requests and clients that stop reading cannot reset a per-read
+timeout and hold the lifecycle loop. Filesystem operations still depend on the
+underlying filesystem responding; a blocked filesystem is an untested limit.
+
 Only a running supervisor signals its own anchored group. CLI control never kills
 a PID read from persistent state. When control is unavailable, list may derive a
 terminal result for an already-stopping, now-absent group; otherwise it reports
@@ -50,12 +60,25 @@ the argument vector, canonical directory and environment, plus owner/task fields
 They return the original record, including terminal records, without renewal.
 Changing a context while reusing a key is an error. There is no automatic
 command-text deduplication or cross-task ownership transfer.
+The key must be assigned before the initial launch. Under the launch lock,
+provably empty reservations are skipped without deletion. Existing launch metadata
+identifies relevant keys even when an unrelated record is damaged; ambiguous
+unreadable launch metadata still blocks resolution to avoid duplicate launches.
 
 The guardian serializes stop/extend requests. Extension is additive and bounded
 by 24 hours from creation. A request at or after expiry cannot revive the job.
 Metadata is replaced atomically using private files and filesystem synchronization.
 The keeper takes final write ownership after the guardian exits. Status reads
 do not write lifecycle state or renew leases.
+Repeated stop while stopping polls existing state instead of waiting for an idle
+shutdown socket. A transport failure racing with shutdown is reconciled against
+the latest record; extensions are never automatically replayed.
+
+Output capture latches a private one-byte `capture.status` marker before
+discarding overflow. The already-open descriptor remains usable during a directory
+permission failure, and the keeper/CLI merge the marker into final/read status.
+This accounts for output emitted after TERM without making the guardian perform
+its final capture snapshot before the grace period.
 
 ## Security and operational limits
 

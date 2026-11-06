@@ -7,7 +7,7 @@ use std::{
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Read, Write},
     os::unix::{
-        fs::OpenOptionsExt,
+        fs::{FileExt, OpenOptionsExt},
         net::{UnixListener, UnixStream},
         process::CommandExt,
     },
@@ -26,12 +26,47 @@ fn detach(command: &mut Command) {
     // Only an async-signal-safe syscall is made between fork and exec.
     unsafe {
         command.pre_exec(|| {
+            libc::signal(libc::SIGCHLD, libc::SIG_DFL);
             if libc::setsid() == -1 {
                 Err(std::io::Error::last_os_error())
             } else {
                 Ok(())
             }
         });
+    }
+}
+
+/// A post-spawn error must not abandon a process group. The keeper retains its
+/// child leader until this guard is disarmed; the guardian is itself the leader.
+struct CleanupOnDrop {
+    pgid: u32,
+    grace: Duration,
+    armed: bool,
+}
+
+impl CleanupOnDrop {
+    fn new(pgid: u32, grace_ms: u64) -> Self {
+        Self {
+            pgid,
+            grace: Duration::from_millis(grace_ms),
+            armed: true,
+        }
+    }
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for CleanupOnDrop {
+    fn drop(&mut self) {
+        if self.armed {
+            // Neither a failed state write nor a failed TERM may skip KILL.
+            let _ = signal_group(self.pgid, libc::SIGTERM);
+            thread::sleep(self.grace);
+            if let Err(error) = signal_group(self.pgid, libc::SIGKILL) {
+                eprintln!("group cleanup could not be verified: {error:#}");
+            }
+        }
     }
 }
 
@@ -133,6 +168,7 @@ pub fn keeper(store: &Store, id: &str) -> Result<()> {
             return Err(error.into());
         }
     };
+    let mut cleanup = CleanupOnDrop::new(guardian.id(), launch.grace_ms);
     // The pipe stays open for this scope. If the keeper is killed, EOF tells
     // the guardian to shut down; it never waits indefinitely for a dead parent.
     let _liveness = guardian
@@ -157,7 +193,10 @@ pub fn keeper(store: &Store, id: &str) -> Result<()> {
     }
     // The guardian is an unreaped child, so this cannot target a reused PGID.
     signal_group(guardian.id(), libc::SIGKILL)?;
+    // Never signal this numeric group after its leader has been reaped.
+    cleanup.disarm();
     guardian.wait()?;
+    record.logs_truncated |= store.capture_truncated(id)?;
     if record.state == State::Stopping || record.state.active() {
         record.finish();
         store.save(&record)?;
@@ -177,6 +216,7 @@ fn pump(
     sink: Arc<Mutex<LogSink>>,
     truncated: Arc<AtomicBool>,
     failed: Arc<AtomicBool>,
+    capture_marker: Arc<File>,
 ) {
     thread::spawn(move || {
         let mut buffer = [0u8; 8192];
@@ -198,59 +238,101 @@ fn pump(
                 }
             };
             let writable = size.min(sink.limit.saturating_sub(sink.written) as usize);
+            if writable < size && !truncated.load(Ordering::Relaxed) {
+                // The marker is opened before service launch, so a shutdown
+                // handler can disclose discarded output even after the final
+                // lifecycle snapshot, or when the directory becomes unwritable.
+                truncated.store(true, Ordering::Relaxed);
+                if capture_marker.write_at(b"1", 0).is_err() {
+                    failed.store(true, Ordering::Relaxed);
+                }
+            }
             if sink.file.write_all(&buffer[..writable]).is_err() {
                 failed.store(true, Ordering::Relaxed);
                 return;
             }
             sink.written += writable as u64;
-            if writable < size {
-                truncated.store(true, Ordering::Relaxed);
-            }
         }
     });
 }
 
+fn read_control(stream: &mut UnixStream, deadline: Instant) -> Result<Option<Control>> {
+    let mut bytes = Vec::new();
+    let mut chunk = [0u8; 512];
+    while Instant::now() < deadline {
+        match stream.read(&mut chunk) {
+            Ok(0) => return Ok(None),
+            Ok(size) => {
+                bytes.extend_from_slice(&chunk[..size]);
+                if let Some(end) = bytes.iter().position(|&byte| byte == b'\n') {
+                    if end > 4096 {
+                        bail!("control request exceeds 4096 bytes");
+                    }
+                    return Ok(Some(serde_json::from_slice(&bytes[..end])?));
+                }
+                if bytes.len() > 4096 {
+                    bail!("control request exceeds 4096 bytes");
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(1))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(None)
+}
+
+fn write_reply(stream: &mut UnixStream, reply: &Reply, deadline: Instant) {
+    let Ok(mut bytes) = serde_json::to_vec(reply) else {
+        return;
+    };
+    bytes.push(b'\n');
+    let mut written = 0;
+    while written < bytes.len() && Instant::now() < deadline {
+        match stream.write(&bytes[written..]) {
+            Ok(0) => return,
+            Ok(size) => written += size,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(1))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return,
+        }
+    }
+}
+
 fn serve_control(listener: &UnixListener, record: &mut Record, store: &Store) -> Result<()> {
-    // Bounded work per tick: expiry cannot be starved by control clients.
+    // Both the entire batch and each connection have absolute budgets. Byte
+    // trickling or a client that stops reading cannot reset those budgets.
+    let remaining = Duration::from_millis(record.expires_at_ms.saturating_sub(now_ms()));
+    let batch_deadline = Instant::now() + TICK.min(remaining);
     for _ in 0..8 {
+        if Instant::now() >= batch_deadline || now_ms() >= record.expires_at_ms {
+            return Ok(());
+        }
         let (mut stream, _) = match listener.accept() {
             Ok(pair) => pair,
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => return Ok(()),
             Err(error) => return Err(error.into()),
         };
-        // A peer may close immediately (including a status connectivity probe).
-        // Darwin can reject socket options on such a connection. A malformed or
-        // disconnected control client must never take down the managed service.
-        if stream.set_nonblocking(false).is_err()
-            || stream
-                .set_read_timeout(Some(Duration::from_millis(50)))
-                .is_err()
-            || stream
-                .set_write_timeout(Some(Duration::from_millis(50)))
-                .is_err()
-        {
+        if stream.set_nonblocking(true).is_err() {
             continue;
         }
-        let mut line = String::new();
-        if BufReader::new((&stream).take(4097))
-            .read_line(&mut line)
-            .is_err()
-            || line.len() > 4096
-        {
-            continue;
-        }
-        if line.is_empty() {
-            continue;
-        }
-        let result: Result<()> = match serde_json::from_str::<Control>(&line) {
-            Ok(Control::Stop) if record.state == State::Running => {
+        let deadline = batch_deadline.min(Instant::now() + Duration::from_millis(10));
+        let request = match read_control(&mut stream, deadline) {
+            Ok(Some(request)) => request,
+            Ok(None) | Err(_) => continue,
+        };
+        let result: Result<()> = match request {
+            Control::Stop if record.state == State::Running => {
                 record.state = State::Stopping;
                 record.reason = Some(Reason::Requested);
                 Ok(())
             }
-            Ok(Control::Stop) => Err(anyhow::anyhow!("job is already stopping")),
-            Ok(Control::Extend { by_ms }) => extend_deadline(record, by_ms),
-            Err(error) => Err(error.into()),
+            Control::Stop => Err(anyhow::anyhow!("job is already stopping")),
+            Control::Extend { by_ms } => extend_deadline(record, by_ms),
         };
         if result.is_ok() {
             store.save(record)?;
@@ -259,8 +341,10 @@ fn serve_control(listener: &UnixListener, record: &mut Record, store: &Store) ->
             record: record.clone(),
             error: result.err().map(|error| error.to_string()),
         };
-        let _ = serde_json::to_writer(&mut stream, &reply);
-        let _ = stream.write_all(b"\n");
+        // Persistence may consume the read batch budget. Give an accepted
+        // operation a fresh, still absolute reply budget so it is not silently
+        // committed without an acknowledgement during ordinary disk latency.
+        write_reply(&mut stream, &reply, Instant::now() + TICK);
         if record.state == State::Stopping {
             return Ok(());
         }
@@ -311,6 +395,15 @@ pub fn guard(store: &Store, id: &str) -> Result<()> {
         written: 0,
         limit: launch.log_limit_bytes,
     }));
+    let mut capture_marker = OpenOptions::new()
+        .create_new(true)
+        .read(true)
+        .write(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(dir.join("capture.status"))?;
+    capture_marker.write_all(b"0")?;
+    let capture_marker = Arc::new(capture_marker);
     let truncated = Arc::new(AtomicBool::new(false));
     let log_failed = Arc::new(AtomicBool::new(false));
     let mut command = Command::new(&launch.argv[0]);
@@ -340,6 +433,7 @@ pub fn guard(store: &Store, id: &str) -> Result<()> {
             return Ok(());
         }
     };
+    let _cleanup = CleanupOnDrop::new(std::process::id(), launch.grace_ms);
     record.command_pid = Some(child.id());
     record.state = State::Running;
     store.save(&record)?;
@@ -348,12 +442,14 @@ pub fn guard(store: &Store, id: &str) -> Result<()> {
         sink.clone(),
         truncated.clone(),
         log_failed.clone(),
+        capture_marker.clone(),
     );
     pump(
         child.stderr.take().context("missing stderr")?,
         sink,
         truncated.clone(),
         log_failed.clone(),
+        capture_marker,
     );
     loop {
         if parent_gone.load(Ordering::Relaxed) {
@@ -403,39 +499,73 @@ pub fn guard(store: &Store, id: &str) -> Result<()> {
     bail!("group termination unexpectedly returned")
 }
 
-pub fn control(store: &Store, id: &str, action: Control) -> Result<Record> {
-    let record = store.observed_record(id)?;
-    if record.state == State::Unknown {
-        bail!("supervisor unavailable; refusing to signal a PID from disk");
-    }
-    if !record.state.active() {
-        return match action {
-            Control::Stop => Ok(record),
-            _ => Err(anyhow::anyhow!("job has already finished")),
-        };
-    }
+fn exchange_control(store: &Store, id: &str, action: &Control) -> Result<Reply> {
     let mut stream = UnixStream::connect(store.job(id)?.join("ctl.sock"))
         .context("supervisor unavailable; refusing to signal a PID from disk")?;
     stream.set_read_timeout(Some(Duration::from_secs(2)))?;
     stream.set_write_timeout(Some(Duration::from_secs(2)))?;
-    serde_json::to_writer(&mut stream, &action)?;
+    serde_json::to_writer(&mut stream, action)?;
     stream.write_all(b"\n")?;
     let mut line = String::new();
     BufReader::new(stream.take(1_048_577)).read_line(&mut line)?;
-    let reply: Reply = serde_json::from_str(&line)?;
+    Ok(serde_json::from_str(&line)?)
+}
+
+fn wait_for_stop(store: &Store, id: &str, mut record: Record) -> Result<Record> {
+    let grace = store.launch(id)?.grace_ms;
+    let deadline = Instant::now() + Duration::from_millis(grace + 2_000);
+    while record.state.active() && Instant::now() < deadline {
+        thread::sleep(TICK);
+        record = store.observed_record(id)?;
+    }
+    Ok(record)
+}
+
+fn existing_control_state(
+    store: &Store,
+    id: &str,
+    action: &Control,
+    record: &Record,
+) -> Result<Option<Record>> {
+    match record.state {
+        State::Unknown => bail!("supervisor unavailable; refusing to signal a PID from disk"),
+        State::Stopping => match action {
+            Control::Stop => Ok(Some(wait_for_stop(store, id, record.clone())?)),
+            Control::Extend { .. } => {
+                bail!("only an unexpired running lease can be extended; job is already stopping")
+            }
+        },
+        state if !state.active() => match action {
+            Control::Stop => Ok(Some(record.clone())),
+            Control::Extend { .. } => bail!("job has already finished"),
+        },
+        _ => Ok(None),
+    }
+}
+
+pub fn control(store: &Store, id: &str, action: Control) -> Result<Record> {
+    let record = store.observed_record(id)?;
+    if let Some(record) = existing_control_state(store, id, &action, &record)? {
+        return Ok(record);
+    }
+    let reply = match exchange_control(store, id, &action) {
+        Ok(reply) => reply,
+        Err(error) => {
+            // Shutdown can begin after the initial observation. Reconcile that
+            // state instead of exposing a timeout/EOF as a failed stop. Never
+            // replay an extension whose response may have been lost.
+            let latest = store.observed_record(id)?;
+            if let Some(record) = existing_control_state(store, id, &action, &latest)? {
+                return Ok(record);
+            }
+            return Err(error.context("control response unavailable; inspect list before retrying"));
+        }
+    };
     if let Some(error) = reply.error {
         bail!("{error}");
     }
-    if matches!(action, Control::Stop) {
-        let grace = store.launch(id)?.grace_ms;
-        let deadline = Instant::now() + Duration::from_millis(grace + 2_000);
-        while Instant::now() < deadline {
-            let record = store.observed_record(id)?;
-            if !record.state.active() {
-                return Ok(record);
-            }
-            thread::sleep(TICK);
-        }
+    match action {
+        Control::Stop => wait_for_stop(store, id, reply.record),
+        Control::Extend { .. } => Ok(reply.record),
     }
-    Ok(reply.record)
 }

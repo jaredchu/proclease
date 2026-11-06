@@ -15,8 +15,8 @@ through a Rust CLI and one portable ProcLease skill for Codex and Claude Code.
 - **Owner-reported, 2026-11-06:** `proclease.com` was purchased through Cloudflare.
   Registration ownership, DNS and hosting have not been independently inspected.
 - **Approved by owner, 2026-11-06:** adopt Context Docs for this project.
-- **Owner-confirmed target, 2026-11-06:** macOS and Linux. macOS runtime tests are
-  performed locally; Linux runtime validation remains pending its own environment.
+- **Owner-confirmed target, 2026-11-06:** macOS and Linux. Runtime tests have
+  passed on macOS arm64 and in a non-root Linux aarch64 container.
 - **Owner requirement:** improve on existing tools rather than duplicate a generic
   supervisor. Expiry, explicit extension, reliable cleanup and agent usability are
   the focus. Research found substantial overlap with
@@ -36,12 +36,13 @@ Goal: a usable local ProcLease CLI and shared skill
 |-- DONE    New repository and context maintenance entry points
 |-- DONE    Rust CLI, expiry enforcement and process lifecycle tests
 |-- DONE    Shared skill validation and real Vite/Next expiry smoke tests
-`-- NEXT    Linux runtime CI and tests in restricted agent host profiles
+|-- DONE    Six review fixes and macOS/Linux regression tests
+`-- NEXT    Focused Astra/Fable review of the fixes
 ```
 
 The initial local implementation is complete. [Verification](verification.md)
-records checks and their limits. Linux target compilation passes; Linux runtime
-CI has not run. A comparative benchmark is needed before claiming measured
+records checks and their limits. Linux runtime tests pass locally; hosted
+CI has not run. Restricted agent host profiles remain untested. A comparative benchmark is needed before claiming measured
 superiority over another supervisor.
 
 Context maintenance is adopted in `AGENTS.md`, reached by `CLAUDE.md` import.

@@ -6,8 +6,8 @@ ProcLease is a Rust CLI and a portable skill for Codex and Claude Code. Start a
 foreground service with a deadline; inspect its status and bounded logs from later
 tool calls; explicitly extend it or let it expire. Reading logs never renews it.
 
-**Status:** initial local implementation targeting macOS and Linux, with direct
-runtime validation on macOS. It is not published to a package
+**Status:** local implementation tested on macOS arm64 and Linux aarch64 in a
+non-root container. It is not published to a package
 registry. Domain: `proclease.com`; no hosted service is required.
 
 ## Build
@@ -55,9 +55,14 @@ means the program spawned, not that a web endpoint is ready.
   resumes. No process can enforce a deadline while the machine is powered off.
 - Killing either supervision process triggers fail-closed group cleanup. There is
   no automatic restart or recovery that resumes a service after supervision fails.
-- Each run is a separate job. `--key REQUEST_ID` makes retries idempotent for the
-  same command, directory, environment, owner and task. A retry never extends the
-  deadline or resurrects a finished job; a different context is rejected.
+- Each run is a separate job. Assign `--key REQUEST_ID` on the **initial run** to
+  make retries idempotent for that command, directory, environment and launch
+  policy. Reuse the same key unchanged. Adding a key later does not identify an
+  earlier keyless job. A retry never renews or resurrects a job; a different
+  context is rejected. Empty interrupted-launch reservations are ignored without
+  deleting state; unreadable/ambiguous launch metadata still fails closed.
+- Stop during shutdown returns lifecycle state; extension of a stopping job is
+  rejected. If a response is lost, inspect `list` before retrying an operation.
 
 The deadline is based on system wall time; moving the clock backwards can delay
 expiry. Forward jumps can expire jobs sooner. This is an explicit initial limit.
@@ -72,7 +77,8 @@ that error rather than selecting a different directory silently.
 
 Combined stdout/stderr capture defaults to **1 MiB per job**. Once full, newer
 output is drained and discarded so neither disk usage nor a blocked output pipe
-can grow indefinitely. Status and log output expose `logs_truncated`. Set
+can grow indefinitely. Status and log output expose `logs_truncated`, including
+output discarded during shutdown. Set
 `--log-limit BYTES` at launch, up to 16 MiB. Terminal control characters are escaped
 when displaying logs. Logs and argv may contain private application data; keep the
 state directory out of repositories. Full environment values are not persisted.
@@ -98,9 +104,9 @@ local execution to a chat that does not already have it.
 
 ## Boundaries
 
-The targets are macOS and Linux foreground Node/Vite/Next-style servers. macOS
-is tested locally; the included CI matrix is intended to validate Linux before
-release. No hosted CI result is claimed until that workflow actually runs.
+The targets are macOS and Linux foreground Node/Vite/Next-style servers. Tests
+have run on macOS arm64 and in a non-root Linux aarch64 container; x86_64 Linux
+has been type-checked. The included CI matrix has not run on a hosted repository.
 There is no privileged or login-wide execution daemon. Jobs are supervised only
 after being launched through ProcLease. A descendant that deliberately creates a
 new session/process group can escape group cleanup. Docker, PID adoption,

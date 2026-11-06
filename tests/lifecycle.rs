@@ -404,7 +404,7 @@ fn private_state_and_environment_inheritance() {
         fs::metadata(&fixture.state).unwrap().permissions().mode() & 0o777,
         0o700
     );
-    for name in ["launch.json", "record.json", "output.log"] {
+    for name in ["launch.json", "record.json", "output.log", "capture.status"] {
         let path = fixture.state.join(id).join(name);
         assert_eq!(
             fs::metadata(&path).unwrap().permissions().mode() & 0o777,
@@ -438,6 +438,17 @@ fn stale_state_never_grants_authority_to_kill_an_unrelated_pid() {
     let result = fixture.call(&["run", "--grace", "100ms", "--", "/usr/bin/true"]);
     let id = result["job"]["id"].as_str().unwrap();
     fixture.terminal(id);
+    // Wait for the keeper's persisted terminal record before intentionally
+    // corrupting it; a derived observation can precede the keeper's last write.
+    wait(|| {
+        let bytes = fs::read(fixture.state.join(id).join("record.json")).ok()?;
+        let record: Value = serde_json::from_slice(&bytes).ok()?;
+        if record["state"] == "exited" {
+            Some(())
+        } else {
+            None
+        }
+    });
     let mut unrelated = OwnedChild(Command::new("/bin/sleep").arg("30").spawn().unwrap());
     let path = fixture.state.join(id).join("record.json");
     let mut record: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
@@ -454,4 +465,197 @@ fn stale_state_never_grants_authority_to_kill_an_unrelated_pid() {
         .status
         .success());
     assert!(unrelated.0.try_wait().unwrap().is_none());
+}
+
+#[test]
+fn slow_partial_control_request_cannot_starve_expiry() {
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+    let fixture = Fixture::new();
+    let (id, path) = fixture.start("normal", "700ms");
+    let info = ready(&path);
+    let socket = fixture.state.join(&id).join("ctl.sock");
+    let writer = thread::spawn(move || {
+        let mut stream = UnixStream::connect(socket).unwrap();
+        stream
+            .set_write_timeout(Some(Duration::from_millis(100)))
+            .unwrap();
+        let end = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < end {
+            if stream.write_all(b" ").is_err() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+    });
+    let start = Instant::now();
+    assert_eq!(fixture.terminal(&id)["state"], "expired");
+    let elapsed = start.elapsed();
+    writer.join().unwrap();
+    assert!(
+        elapsed < Duration::from_millis(1500),
+        "slow client delayed expiry by {elapsed:?}"
+    );
+    assert_port_closed(&info);
+}
+
+#[test]
+fn metadata_write_failure_does_not_abandon_service_group() {
+    use std::os::unix::fs::PermissionsExt;
+    struct RestorePermissions(PathBuf);
+    impl Drop for RestorePermissions {
+        fn drop(&mut self) {
+            let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o700));
+        }
+    }
+    // Root bypasses this permission fault. CI runs the suite as an ordinary user.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let fixture = Fixture::new();
+    let ready_path = fixture.dir.path().join("fault.json");
+    let service = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/service.py");
+    let result = fixture.call(&[
+        "run",
+        "--ttl",
+        "1s",
+        "--grace",
+        "100ms",
+        "--log-limit",
+        "1",
+        "--",
+        "/usr/bin/python3",
+        service.to_str().unwrap(),
+        "delayed-flood",
+        ready_path.to_str().unwrap(),
+    ]);
+    let id = result["job"]["id"].as_str().unwrap();
+    let info = ready(&ready_path);
+    let dir = fixture.state.join(id);
+    let _restore = RestorePermissions(dir.clone());
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o500)).unwrap();
+    assert_port_closed(&info);
+    // The guardian's cleanup runs despite its failed save, and the keeper's
+    // cleanup guard does not depend on writing into the same broken directory.
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+    let (second_id, second_path) = fixture.start("stubborn", "5s");
+    let second_info = ready(&second_path);
+    let job = fixture.job(&second_id);
+    let record_path = fixture.state.join(&second_id).join("record.json");
+    fs::set_permissions(&record_path, fs::Permissions::from_mode(0o000)).unwrap();
+    assert_eq!(
+        unsafe { libc::kill(job["guardian_pid"].as_u64().unwrap() as i32, libc::SIGKILL) },
+        0
+    );
+    assert_port_closed(&second_info);
+    fs::set_permissions(record_path, fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+#[test]
+fn shutdown_output_truncation_is_reported_in_terminal_state() {
+    let fixture = Fixture::new();
+    let ready_path = fixture.dir.path().join("shutdown.json");
+    let service = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/service.py");
+    let result = fixture.call(&[
+        "run",
+        "--ttl",
+        "20s",
+        "--grace",
+        "200ms",
+        "--log-limit",
+        "1",
+        "--",
+        "/usr/bin/python3",
+        service.to_str().unwrap(),
+        "shutdown-output",
+        ready_path.to_str().unwrap(),
+    ]);
+    let id = result["job"]["id"].as_str().unwrap();
+    ready(&ready_path);
+    assert_eq!(fixture.job(id)["logs_truncated"], false);
+    assert_eq!(fixture.call(&["stop", id])["job"]["logs_truncated"], true);
+    assert_eq!(fixture.call(&["logs", id])["logs_truncated"], true);
+    assert_eq!(
+        fs::metadata(fixture.state.join(id).join("output.log"))
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn grace_window_controls_return_lifecycle_results() {
+    let fixture = Fixture::new();
+    let result = fixture.call(&[
+        "run",
+        "--ttl",
+        "20s",
+        "--grace",
+        "700ms",
+        "--",
+        "/bin/sleep",
+        "20",
+    ]);
+    let id = result["job"]["id"].as_str().unwrap().to_owned();
+    let mut first_stop = fixture.command(&["stop", &id]);
+    let first = thread::spawn(move || first_stop.output().unwrap());
+    wait(|| {
+        if fixture.job(&id)["state"] == "stopping" {
+            Some(())
+        } else {
+            None
+        }
+    });
+    let extend = fixture
+        .command(&["extend", &id, "--by", "1s"])
+        .output()
+        .unwrap();
+    assert!(!extend.status.success());
+    assert!(parse(&extend)["error"]
+        .as_str()
+        .unwrap()
+        .contains("already stopping"));
+    assert_eq!(fixture.call(&["stop", &id])["job"]["state"], "stopped");
+    let first = first.join().unwrap();
+    assert!(first.status.success());
+    assert_eq!(parse(&first)["job"]["state"], "stopped");
+}
+
+#[test]
+fn empty_launch_reservation_does_not_block_keyed_runs() {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new();
+    fixture.call(&["list"]);
+    let empty = fixture.state.join("0123456789ab");
+    fs::create_dir(&empty).unwrap();
+    fs::set_permissions(&empty, fs::Permissions::from_mode(0o700)).unwrap();
+    let args = [
+        "run",
+        "--ttl",
+        "20s",
+        "--grace",
+        "100ms",
+        "--key",
+        "orphan-safe",
+        "--",
+        "/bin/sleep",
+        "20",
+    ];
+    let first = fixture.call(&args);
+    let second = fixture.call(&args);
+    assert_eq!(first["job"]["id"], second["job"]["id"]);
+    assert_eq!(second["reused"], true);
+    assert_eq!(fixture.call(&["list"])["warnings"], serde_json::json!([]));
+    assert!(
+        empty.exists(),
+        "read-only orphan classification must not delete state"
+    );
+    // Nonempty unknown state is ambiguous and must still fail closed.
+    fs::write(empty.join("unfinished"), b"unknown").unwrap();
+    let output = fixture.command(&args).output().unwrap();
+    assert!(!output.status.success());
+    assert!(parse(&output)["error"]
+        .as_str()
+        .unwrap()
+        .contains("cannot safely resolve"));
 }

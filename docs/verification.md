@@ -1,15 +1,20 @@
 # Verification
 
-Verified locally on 2026-11-06, macOS arm64, using Rust 1.99.1.
+Verified locally on 2026-11-06, macOS arm64 and Linux aarch64, using Rust 1.99.1.
 
 ## Completed checks
 
 - Formatting and Clippy with warnings denied.
-- One duration unit test and eleven process integration tests. The suite includes
+- One duration unit test and sixteen process integration tests. The suite includes
   expiry without a continuing CLI call, TERM-resistant descendants, leader exit,
   explicit extension, observation without renewal, keeper/guardian crash cleanup,
   bounded output, idempotent/concurrent retries, unavailable control refusing to
   signal an unrelated PID, private files and inherited directory/environment.
+  Added regressions cover metadata permission failures after spawn, partial
+  control requests during expiry, empty launch reservations, commands during
+  shutdown grace, and output truncation during shutdown.
+- All seventeen tests passed on macOS and in a Linux aarch64 container as a
+  non-root user (UID 501), including the permission-failure regression.
 - Skill frontmatter and structure validated with the skill-creator validator.
 - Real `npm run dev` smoke tests for Vite 8.3.6 and Next.js 16.4.5, using Node
   24.18.0. Both served HTTP 200 before expiry, reached `expired`, and released their
@@ -28,10 +33,19 @@ Integration fixtures require `/usr/bin/python3`. The macOS and Ubuntu CI matrix
 is defined in [the workflow](../.github/workflows/ci.yml); it has not run on a
 hosted repository yet.
 
+## Review corrections
+
+Independent Astra and Fable reviews identified six issues. Cleanup guards now
+cover post-spawn metadata failures; nonblocking control requests have absolute
+time budgets; provably empty launch reservations do not block keyed runs;
+shutdown controls reconcile lifecycle state; an already-open capture marker
+preserves shutdown truncation; and the skill assigns retry keys on the initial
+launch. The focused review of these corrections is pending.
+
 ## Limits
 
 No direct system sleep/wake, clock-change, simultaneous destruction of both
-supervisors, Linux runtime or restricted Codex/Claude execution-profile test has
+supervisors or restricted Codex/Claude execution-profile test has
 been completed. A service can deliberately escape its process group. These
 remain explicit support/verification boundaries, not passing checks.
 

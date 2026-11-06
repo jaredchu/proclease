@@ -18,8 +18,8 @@ silently fall back to an unmanaged background server or bypass host permissions.
 - Launch the intended foreground executable and arguments after `--`. For example:
 
   ```sh
-  proclease run --owner codex --task task-label --ttl 2h -- npm run dev
-  proclease run --owner claude --task task-label --ttl 2h -- npm run dev
+  proclease run --owner codex --task task-label --key task-label-preview-1 --ttl 2h -- npm run dev
+  proclease run --owner claude --task task-label --key task-label-preview-1 --ttl 2h -- npm run dev
   ```
 
 - Choose a duration appropriate to the request. ProcLease defaults to two hours
@@ -27,10 +27,16 @@ silently fall back to an unmanaged background server or bypass host permissions.
 - Preserve the intended working directory and environment. ProcLease does not
   evaluate shell operators. Use an explicit shell only when the task requires it
   and the host authorizes that shell command. Avoid secrets in command arguments.
-- Use a unique `--key` only for retries of one launch request in the same context.
-  A retry returns the existing job without extending it or resurrecting a finished
-  job. Use a new key for a deliberately new run. An environment/context mismatch is
-  an error; it is not permission to reuse a different service.
+- Assign a stable, task-specific `--key` **before the initial launch**, then reuse
+  it unchanged for retries of that same request. The two examples above are
+  alternatives, not commands to run together. A retry returns the original job
+  without extending or resurrecting it. A key added after a keyless launch cannot
+  identify that earlier job.
+- Preserve a stable `--task` label and record the returned job ID in the task
+  handoff. If launch returns an ambiguous error, inspect `list --json` and reconcile
+  that task's jobs before relaunching. A context/key mismatch is not permission to
+  switch keys, duplicate the service, delete state or take over another task's job.
+  Use a new key only for a deliberately new run after reconciling the previous one.
 - Read the returned job ID, state and expiry. `running` means the executable
   started; verify application readiness separately using bounded logs and the
   intended local URL. `--url` is caller-supplied metadata, not a readiness check.

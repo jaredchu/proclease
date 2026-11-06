@@ -281,30 +281,23 @@ fn dispatch(cli: &Cli) -> Result<i32> {
             let fingerprint = fingerprint(command, &cwd);
             let _lock = store.lock()?;
             if let Some(key) = key {
-                let (records, warnings) = store.list()?;
-                if !warnings.is_empty() {
-                    bail!("cannot safely resolve retry key: {}", warnings.join("; "));
-                }
-                for record in records {
-                    let previous = store.launch(&record.id)?;
-                    if previous.key.as_ref() == Some(key) {
-                        if previous.fingerprint != fingerprint
-                            || &previous.owner != owner
-                            || &previous.task != task
-                            || &previous.name != name
-                            || &previous.url != url
-                            || previous
-                                .expires_at_ms
-                                .saturating_sub(previous.created_at_ms)
-                                != ttl
-                            || previous.grace_ms != grace
-                            || previous.log_limit_bytes != *log_limit
-                        {
-                            bail!("retry key already belongs to a different launch context");
-                        }
-                        print_record(&record, true, cli.json)?;
-                        return Ok(if record.state == State::Failed { 1 } else { 0 });
+                if let Some((previous, record)) = store.find_retry(key)? {
+                    if previous.fingerprint != fingerprint
+                        || &previous.owner != owner
+                        || &previous.task != task
+                        || &previous.name != name
+                        || &previous.url != url
+                        || previous
+                            .expires_at_ms
+                            .saturating_sub(previous.created_at_ms)
+                            != ttl
+                        || previous.grace_ms != grace
+                        || previous.log_limit_bytes != *log_limit
+                    {
+                        bail!("retry key already belongs to a different launch context");
                     }
+                    print_record(&record, true, cli.json)?;
+                    return Ok(if record.state == State::Failed { 1 } else { 0 });
                 }
             }
             let id = store.reserve()?;
