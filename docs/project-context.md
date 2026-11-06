@@ -70,6 +70,8 @@ Codex chat has not been independently checked.
 
 ## Open questions
 
+- One hosted macOS expiry-test timeout passed on rerun with unchanged code; the
+  cause is unconfirmed. See [verification limits](verification.md#limits).
 - Exact compatibility under each agent host's restricted execution profile needs
   direct host testing. Same-user local control is not authenticated agent identity.
 - Package releases and website deployment are not configured.

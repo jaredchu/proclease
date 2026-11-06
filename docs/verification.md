@@ -86,6 +86,11 @@ supervisors or restricted Codex/Claude execution-profile test has
 been completed. A service can deliberately escape its process group. These
 remain explicit support/verification boundaries, not passing checks.
 
+At `6db3f70`, the hosted macOS expiry integration test timed out once in a generic
+lifecycle wait. [The failed job rerun](https://github.com/jaredchu/proclease/actions/runs/42204991750)
+passed with unchanged code; Ubuntu passed both times. The timeout's cause remains
+unconfirmed. A rerun passing does not resolve the intermittent failure.
+
 There is no pinned-version comparative benchmark against AgentProcs or other
 alternatives. The tests establish this implementation's inspected behaviour;
 they do not establish comparative superiority. User-local installation and skill
