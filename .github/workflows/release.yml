@@ -36,7 +36,8 @@ jobs:
         with:
           python-version: '3.12'
       - name: Check native architecture
-        run: rustc -vV | grep 'host: ${{ matrix.target }}'
+        run: |
+          rustc -vV | grep 'host: ${{ matrix.target }}'
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
