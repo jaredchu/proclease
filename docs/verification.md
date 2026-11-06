@@ -1,6 +1,7 @@
 # Verification
 
-Verified locally on 2026-11-06, macOS arm64 and Linux aarch64, using Rust 1.99.1.
+Verified on 2026-11-06, locally on macOS arm64 and Linux aarch64 using Rust 1.99.1,
+and in hosted macOS/Ubuntu CI.
 
 ## Completed checks
 
@@ -33,13 +34,17 @@ Verified locally on 2026-11-06, macOS arm64 and Linux aarch64, using Rust 1.99.1
   `~/.claude/skills/proclease`. A fresh Codex app-server `skills/list` returned it
   enabled at user scope, and Claude Code's local `/context` listed it as a user
   skill. These discovery checks started no model turns.
+- [Hosted Rust checks](https://github.com/jaredchu/proclease/actions/runs/42202334004)
+  passed on `macos-latest` and `ubuntu-latest` at commit `8932479`. Both jobs
+  completed formatting, Clippy with warnings denied, all seventeen tests and an
+  optimized release build.
 
 ## Reproduction
 
 Use the commands in [development instructions](../README.md#development).
 Integration fixtures require `/usr/bin/python3`. The macOS and Ubuntu CI matrix
-is defined in [the workflow](../.github/workflows/ci.yml); it has not run on a
-hosted repository yet.
+is defined in [the workflow](../.github/workflows/ci.yml) and runs on pushes and
+pull requests.
 
 ## Review corrections
 

@@ -112,8 +112,8 @@ local execution to a chat that does not already have it.
 ## Boundaries
 
 The targets are macOS and Linux foreground Node/Vite/Next-style servers. Tests
-have run on macOS arm64 and in a non-root Linux aarch64 container; x86_64 Linux
-has been type-checked. The included CI matrix has not run on a hosted repository.
+have run locally on macOS arm64 and in a non-root Linux aarch64 container.
+Hosted macOS and Ubuntu checks run in [GitHub Actions](https://github.com/jaredchu/proclease/actions/workflows/ci.yml).
 There is no privileged or login-wide execution daemon. Jobs are supervised only
 after being launched through ProcLease. A descendant that deliberately creates a
 new session/process group can escape group cleanup. Docker, PID adoption,
@@ -141,7 +141,14 @@ Start contributor work with [project context](docs/project-context.md).
 See [verification](docs/verification.md) for completed checks and current limits.
 Bug reports and pull requests are welcome. Include your OS, ProcLease version,
 reproduction commands and observed lifecycle state when reporting a process issue.
+See [contributing and commit attribution](CONTRIBUTING.md).
 
-## License
+## Credits and license
 
-[MIT](LICENSE).
+Created and maintained by [Jared Chu](https://github.com/jaredchu), with
+[OpenAI Codex](https://github.com/codex) and Claude contributing to the project.
+Codex led the initial implementation and documentation. Claude, through Claude
+Code, contributed independent review and validation. See the
+[contribution and attribution policy](CONTRIBUTING.md#commit-attribution).
+
+Released under the [MIT license](LICENSE).

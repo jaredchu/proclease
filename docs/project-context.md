@@ -15,6 +15,12 @@ through a Rust CLI and one portable ProcLease skill for Codex and Claude Code.
 - **Owner-reported, 2026-11-06:** `proclease.com` was purchased through Cloudflare.
   Registration ownership, DNS and hosting have not been independently inspected.
 - **Approved by owner, 2026-11-06:** adopt Context Docs for this project.
+- **Approved by owner, 2026-11-06:** publish as an open-source project under
+  `jaredchu` on GitHub. The MIT-licensed source is public at
+  [jaredchu/proclease](https://github.com/jaredchu/proclease).
+- **Owner requirement, 2026-11-06:** credit Codex and Claude following the Context
+  Docs project convention. See [credits](../README.md#credits-and-license) and the
+  [commit attribution policy](../CONTRIBUTING.md#commit-attribution).
 - **Owner-confirmed target, 2026-11-06:** macOS and Linux. Runtime tests have
   passed on macOS arm64 and in a non-root Linux aarch64 container.
 - **Owner requirement:** improve on existing tools rather than duplicate a generic
@@ -27,7 +33,7 @@ through a Rust CLI and one portable ProcLease skill for Codex and Claude Code.
   launched in the caller's execution context. Avoid a login-wide service accepting
   arbitrary execution requests from potentially restricted agents.
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
-  proxying, auto-restart, hosted dashboards and publication.
+  proxying, auto-restart, hosted dashboards, package releases and website deployment.
 
 ## Current state and progress
 
@@ -38,13 +44,14 @@ Goal: a usable local ProcLease CLI and shared skill
 |-- DONE    Shared skill validation and real Vite/Next expiry smoke tests
 |-- DONE    Six review fixes and macOS/Linux regression tests
 |-- DONE    Focused Astra/Fable reviews and interrupted-write refinement
-`-- DONE    User-local CLI installation and Codex/Claude skill discovery
+|-- DONE    User-local CLI installation and Codex/Claude skill discovery
+`-- DONE    Public MIT-licensed GitHub repository, contributor credits and hosted CI
 ```
 
-The initial local implementation is complete. [Verification](verification.md)
-records checks and their limits. Linux runtime tests pass locally; hosted
-CI has not run. Restricted agent host profiles remain untested. A comparative
-benchmark is needed before claiming measured superiority over another supervisor.
+The initial implementation is public. Hosted macOS and Ubuntu checks pass;
+[verification](verification.md) records evidence and limits. Restricted agent host
+profiles remain untested. A comparative benchmark is needed before claiming
+measured superiority over another supervisor.
 
 Context maintenance is adopted in `AGENTS.md`, reached by `CLAUDE.md` import.
 Claude Code's local `/context` command confirmed both files under project memory
@@ -57,9 +64,10 @@ Codex chat has not been independently checked.
 - [Architecture and lifecycle boundaries](architecture.md)
 - [Verification and limits](verification.md)
 - [Shared ProcLease skill](../skills/proclease/SKILL.md)
+- [Contributing and attribution](../CONTRIBUTING.md)
 
 ## Open questions
 
 - Exact compatibility under each agent host's restricted execution profile needs
   direct host testing. Same-user local control is not authenticated agent identity.
-- Public repository, package release and website deployment are not configured.
+- Package releases and website deployment are not configured.

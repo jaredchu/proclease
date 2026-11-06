@@ -11,6 +11,10 @@ Read `README.md`, `docs/project-context.md`, and the affected source before chan
 - Put task scratch, build outputs, runtime fixtures and diagnostics in `~/Stash/proclease/<task>/`. Keep private artifacts outside Git.
 - Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` for code changes. Process tests must clean up their own children.
 - Keep the shared skill portable; host-specific installation details belong in the README.
+- Follow the [commit attribution policy](CONTRIBUTING.md#commit-attribution):
+  preserve the human author and existing co-authors, credit actual Codex/Claude
+  implementation, validation or review with the specified trailers exactly once,
+  and do not rewrite published history solely for attribution.
 - Domain, DNS, publishing, package releases and global skill installation require their own task scope. A local commit does not publish the project.
 
 ## Context maintenance
