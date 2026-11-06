@@ -1,0 +1,79 @@
+name: Release binaries
+
+on:
+  push:
+    tags: ['v*']
+    branches: ['main', 'codex/**']
+    paths: ['.github/workflows/release.yml', 'scripts/**', 'install.sh']
+  pull_request:
+    paths: ['.github/workflows/release.yml', 'scripts/**', 'install.sh']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check native architecture
+        run: rustc -vV | grep 'host: ${{ matrix.target }}'
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+        env:
+          PROCLEASE_TEST_ROOT: ${{ runner.temp }}/proclease
+          RUST_BACKTRACE: 1
+      - run: cargo build --locked --release
+      - name: Package and smoke-test the archive
+        env:
+          PROCLEASE_TEST_ROOT: ${{ runner.temp }}/proclease
+        run: |
+          python scripts/package-release.py --target '${{ matrix.target }}' --binary target/release/proclease --output artifacts
+          python scripts/check-release.py artifacts/*.tar.gz
+          python scripts/check-installer.py artifacts/*.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proclease-${{ matrix.target }}
+          path: artifacts/*
+          if-no-files-found: error
+  draft:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Assemble checksums and draft the prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          test "$TAG" = "v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          cat artifacts/*.sha256 > artifacts/SHA256SUMS
+          (cd artifacts && sha256sum --check SHA256SUMS)
+          gh release create "$TAG" artifacts/* install.sh --verify-tag --draft --prerelease --title "ProcLease $TAG — first preview" --notes-file "docs/releases/$TAG.md"
