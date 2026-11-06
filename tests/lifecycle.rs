@@ -273,7 +273,7 @@ fn expiry_does_not_wait_for_application_readiness() {
 }
 
 #[test]
-fn default_views_hide_finished_history_but_keep_unverified_jobs() {
+fn default_views_show_recent_completion_then_history_but_keep_unverified_jobs() {
     let fixture = Fixture::new();
     let args = [
         "run",
@@ -293,7 +293,7 @@ fn default_views_hide_finished_history_but_keep_unverified_jobs() {
     assert_eq!(fixture.call(&["stop", id])["job"]["state"], "stopped");
 
     for view in [&["list"][..], &["watch", "--once"][..]] {
-        assert_eq!(fixture.call(view)["jobs"], serde_json::json!([]));
+        assert_eq!(fixture.call(view)["jobs"][0]["state"], "stopped");
     }
     for view in [&["list", "--all"][..], &["watch", "--once", "--all"][..]] {
         let jobs = fixture.call(view);
@@ -312,6 +312,18 @@ fn default_views_hide_finished_history_but_keep_unverified_jobs() {
         let record: Value = serde_json::from_slice(&fs::read(&record_path).ok()?).ok()?;
         (record["state"] == "stopped").then_some(record)
     });
+    record["finished_at_ms"] = serde_json::json!(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+            - 31_000
+    );
+    fs::write(&record_path, serde_json::to_vec(&record).unwrap()).unwrap();
+    for view in [&["list"][..], &["watch", "--once"][..]] {
+        assert_eq!(fixture.call(view)["jobs"], serde_json::json!([]));
+    }
+    assert_eq!(fixture.call(&["list", "--all"])["jobs"][0]["id"], id);
     // Unavailable supervision is not evidence of completion. Keep this state
     // visible even though routine finished history is hidden.
     record["state"] = serde_json::json!("running");
@@ -319,6 +331,72 @@ fn default_views_hide_finished_history_but_keep_unverified_jobs() {
     for view in [&["list"][..], &["watch", "--once"][..]] {
         assert_eq!(fixture.call(view)["jobs"][0]["state"], "unknown");
     }
+}
+
+#[test]
+fn recent_finished_views_are_capped_without_hiding_active_or_unverified_jobs() {
+    let fixture = Fixture::new();
+    let (record, launch) = fixture.finished_template();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    for i in 1..=8 {
+        fixture.seed_history(&format!("{i:012x}"), &record, &launch, now - i);
+    }
+    let mut unknown = record.clone();
+    unknown["state"] = serde_json::json!("unknown");
+    fixture.seed_history("fffffffffff1", &unknown, &launch, 1);
+    for view in [&["list"][..], &["watch", "--once"][..]] {
+        let shown = fixture.call(view);
+        let jobs = shown["jobs"].as_array().unwrap();
+        assert_eq!(jobs.len(), 6);
+        assert!(jobs.iter().any(|j| j["state"] == "unknown"));
+        for i in 1..=5 {
+            assert!(jobs.iter().any(|j| j["id"] == format!("{i:012x}")));
+        }
+    }
+    let measured = fixture.call(&["list", "--all", "--resources"]);
+    assert!(measured["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|job| job["resources"].is_null()));
+    assert_eq!(
+        fixture.call(&["list", "--all"])["jobs"]
+            .as_array()
+            .unwrap()
+            .len(),
+        9
+    );
+}
+
+#[test]
+fn resource_metrics_include_busy_children_and_do_not_renew_or_survive_completion() {
+    let fixture = Fixture::new();
+    let (id, path) = fixture.start("resource-child", "30s");
+    ready(&path);
+    let expiry = fixture.job(&id)["expires_at_ms"].clone();
+    assert!(fixture.call(&["list"])["jobs"][0]
+        .get("resources")
+        .is_none());
+    let usage = wait(|| {
+        let view = fixture.call(&["list", "--resources", "--all"]);
+        let usage = &view["jobs"][0]["resources"];
+        eprintln!("resource sample: {usage}");
+        (usage["processes"] == 2
+            && usage["memory_rss_bytes"]
+                .as_u64()
+                .is_some_and(|m| m >= 32 * 1024 * 1024)
+            && usage["cpu_percent"].as_f64().is_some_and(|cpu| cpu > 0.1))
+        .then_some(usage.clone())
+    });
+    assert!(usage["sample_interval_ms"].as_u64().unwrap() >= 100);
+    assert_eq!(fixture.job(&id)["expires_at_ms"], expiry);
+    let view = fixture.call(&["watch", "--once", "--resources", "--all"]);
+    assert_eq!(view["jobs"][0]["resources"]["processes"], 2);
+    fixture.call(&["stop", &id]);
+    assert!(fixture.call(&["list", "--all", "--resources"])["jobs"][0]["resources"].is_null());
 }
 
 #[test]

@@ -27,6 +27,8 @@ through a Rust CLI and one portable ProcLease skill for Codex and Claude Code.
   deduplication. See [retention behavior](../README.md#state-and-output).
 - **Owner-confirmed target, 2026-11-06:** macOS and Linux. Runtime tests have
   passed on macOS arm64 and in a non-root Linux aarch64 container.
+- **Owner-selected website direction, 2026-11-06:** monochrome technical minimalism
+  with a dark theme. Website implementation and deployment remain deferred.
 - **Owner requirement:** improve on existing tools rather than duplicate a generic
   supervisor. Expiry, explicit extension, reliable cleanup and agent usability are
   the focus. Research found substantial overlap with
@@ -52,8 +54,10 @@ Goal: a usable local ProcLease CLI and shared skill
 |-- DONE    Public MIT-licensed GitHub repository, contributor credits and hosted CI
 |-- FIXED   Shared-registry guidance after a real Codex preview launch
 |-- FIXED   Expiry test startup race identified in hosted macOS diagnostics
-|-- DONE    Version 0.1.1 hides and bounds finished history; --all retains access
-`-- DONE    Readable colored tables, compact times and narrow-terminal layout
+|-- DONE    Finished history bounded to 24h/newest 100; --all retains access
+|-- DONE    Readable colored tables, compact times and narrow-terminal layout
+|-- DONE    Version 0.1.2 briefly shows up to five finished jobs for 30 seconds
+`-- DONE    On-demand CPU/RSS group totals in tables and opt-in JSON
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
@@ -61,6 +65,10 @@ The initial implementation is public. Hosted macOS and Ubuntu checks pass;
 Codex preview session and the corrected registry-selection guidance. Restricted
 agent host profiles remain untested. A comparative benchmark is needed before claiming
 measured superiority over another supervisor.
+
+The recent-job window and resource presentation are implementation choices in
+response to the owner's usability requests. Resource reads never extend leases.
+See [resource units and limits](../README.md#resource-usage).
 
 Context maintenance is adopted in `AGENTS.md`, reached by `CLAUDE.md` import.
 Claude Code's local `/context` command confirmed both files under project memory

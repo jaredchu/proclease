@@ -9,7 +9,7 @@ import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument("mode", choices=["normal", "stubborn", "leader-exits", "flood",
-                                     "shutdown-output", "gated-flood"])
+                                     "shutdown-output", "gated-flood", "resource-child"])
 parser.add_argument("ready")
 args = parser.parse_args()
 signal.alarm(15)
@@ -19,11 +19,17 @@ listener.bind(("127.0.0.1", 0))
 listener.listen()
 port = listener.getsockname()[1]
 
-if args.mode in ("stubborn", "leader-exits"):
+if args.mode in ("stubborn", "leader-exits", "resource-child"):
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     child = os.fork()
     if child == 0:
         signal.alarm(15)
+        if args.mode == "resource-child":
+            payload = bytearray(b"x" * (32 * 1024 * 1024))
+            counter = 0
+            while True:
+                counter = (counter + 1) % len(payload)
+                payload[counter] ^= 1
         while True:
             time.sleep(0.1)
 else:

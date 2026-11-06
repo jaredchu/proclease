@@ -75,8 +75,10 @@ readers; VM shared folders are not assumed to preserve those semantics.
 The keeper takes final write ownership after the guardian exits. Status reads
 never renew leases or rewrite active lifecycle state; list/watch may collect
 confirmed finished history under the retention policy.
-Default list/watch views select active jobs and `unknown` jobs whose cleanup is
-unverified. `--all` includes retained terminal records. This is a display filter;
+Default list/watch views select active jobs, `unknown` jobs whose cleanup is
+unverified, and records without completion timestamps. Up to five newest confirmed
+finished jobs remain visible for 30 seconds. `--all` includes retained terminal
+records. This is a display filter;
 retry resolution and direct job control/log access still use complete stored state.
 
 History retention keeps confirmed finished jobs for at most 24 hours and caps
@@ -98,6 +100,19 @@ discarding overflow. The already-open descriptor remains usable during a directo
 permission failure, and the keeper/CLI merge the marker into final/read status.
 This accounts for output emitted after TERM without making the guardian perform
 its final capture snapshot before the grace period.
+
+## Resource sampling
+
+List/watch use `sysinfo` process snapshots and read-only process-group checks.
+The guardian must still have the recorded keeper as parent and lead its own
+group before service usage is attributed. Group totals exclude the guardian and
+keeper; PID/start-time changes invalidate the CPU baseline. On macOS, newly
+inserted snapshot entries receive a baseline refresh before timing CPU deltas.
+First-frame CPU, inaccessible counters and unverified groups remain unavailable.
+The values are approximate samples, not accounting for exited processes or
+descendants that escape the group. RSS can count shared pages repeatedly.
+No sampled usage is persisted and no monitoring daemon is introduced. See the
+[usage contract](../README.md#resource-usage) for units and JSON opt-in.
 
 ## Security and operational limits
 

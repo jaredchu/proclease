@@ -30,6 +30,7 @@ cd your-project
 proclease run --owner claude --task preview --ttl 2h -- npm run dev
 proclease list
 proclease list --json
+proclease list --json --resources
 proclease list --all
 proclease logs JOB_ID --tail 50
 proclease extend JOB_ID --by 1h
@@ -38,14 +39,16 @@ proclease watch
 proclease prune --dry-run
 ```
 
-The table shows compact countdowns, state colors, project/task details and preview
+The table shows CPU/RSS usage, compact countdowns, state colors, project/task details and preview
 URLs. It switches to a stacked layout in narrow terminals. Colors are automatic
 for terminals; `NO_COLOR`, `TERM=dumb` or `--color never` disables them, and
 `--color always` forces them. Redirected output and JSON stay uncolored by default.
 
 ![ProcLease terminal table showing example jobs](docs/assets/terminal-preview.png)
 
-Example jobs shown with `proclease watch --all`; the default view hides finished history.
+A real disposable worker and synthetic history rows shown with
+`proclease watch --all`; the default view briefly shows recently finished jobs
+before hiding them.
 
 All commands accept `--json`. `watch --once --json` produces one bounded snapshot.
 The JSON envelope has `schema_version: 1`; command errors return a nonzero exit
@@ -57,6 +60,25 @@ The service inherits the launching caller's directory, environment and execution
 restrictions. Standard input is closed; interactive programs are not supported.
 `--owner`, `--task`, `--name` and `--url` are declared metadata. A `running` state
 means the program spawned, not that a web endpoint is ready.
+
+## Resource usage
+
+Human `list` and `watch` show CPU percentage and resident memory (RSS) for the
+service and children still in its managed process group. ProcLease's two
+supervisors are excluded. CPU **100% means one core**; totals can exceed 100%.
+RSS adds each process's resident bytes, so shared pages may be counted more than
+once. Children that leave the group are outside these measurements.
+
+One-shot views take two samples roughly 200ms apart. Live watch warms up on its
+first frame; `…` means CPU is still sampling and `—` means unavailable. Finished
+or unverified jobs do not retain live metrics. Counters are read on demand,
+without saving a usage history, changing deadlines or starting a monitoring daemon.
+
+Ordinary JSON stays unchanged and avoids the sampling delay. Request metrics with
+`proclease list --json --resources` or
+`proclease watch --once --json --resources`. Each job then includes `resources`
+with `cpu_percent`, `memory_rss_bytes`, `processes` and `sample_interval_ms`;
+unavailable values are `null`. An unavailable group has `resources: null`.
 
 ## Lease rules
 
@@ -117,8 +139,10 @@ collect them now. Collection deletes their metadata and logs. Retry keys only
 deduplicate while their records remain: a purged key can start a new job. Reconcile
 current jobs before retrying an old request. Interrupted deletions are retried
 without exposing partial records as launchable jobs.
-Normal `list` and `watch` show active and unverified jobs, keeping finished jobs
-out of the everyday view. Use `list --all` or `watch --all` for retained history;
+Normal `list` and `watch` show active and unverified jobs, plus up to **five newest
+finished jobs for 30 seconds** after completion. Then they leave the everyday
+view. Records without verified completion timestamps remain visible. Use
+`list --all` or `watch --all` for retained history;
 this also applies to JSON output. Agents checking completion should use
 `list --all --json`. Hiding a job does not delete its logs or retry identity.
 Use a filesystem that preserves atomic file replacement for the state directory.

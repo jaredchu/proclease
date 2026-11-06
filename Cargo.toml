@@ -1,6 +1,6 @@
 [package]
 name = "proclease"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 rust-version = "1.85"
 description = "Put an explicit lifetime on development processes started by coding agents"
@@ -21,6 +21,7 @@ sha2 = "0.10"
 signal-hook = "0.3"
 uuid = { version = "1", features = ["v4"] }
 unicode-width = { version = "=0.2.2", default-features = false }
+sysinfo = { version = "=0.33.1", default-features = false, features = ["system"] }
 
 [dev-dependencies]
 tempfile = "3"

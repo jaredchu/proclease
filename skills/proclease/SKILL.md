@@ -70,7 +70,8 @@ Status and log reads never extend a lease. Extend only when continued operation
 is needed within the user's request. Extensions add time to the current deadline;
 expired or finished jobs cannot be revived. Do not use a renewal loop.
 
-Normal `list` and `watch` show active and unverified jobs. Use `list --all --json`
+Normal `list` and `watch` show active and unverified jobs, plus up to five finished
+jobs for 30 seconds. Use `list --all --json`
 when checking a job's terminal state or reconciling a previous launch; a finished
 job disappearing from the default view does not mean its history was deleted.
 `watch --all` includes that history in the human view. Finished metadata and logs
@@ -93,6 +94,15 @@ Capture is capped; report `logs_truncated` when relevant to a diagnosis.
 
 `proclease watch` is a human terminal view. Use `list --json` for agent polling,
 or `watch --once` for a single view. Closing the view does not stop jobs.
+
+For resource diagnosis on ProcLease 0.1.2 or later, use
+`proclease list --all --json --resources` or `watch --once --json --resources`.
+Ordinary JSON omits metrics. Human tables include them automatically. CPU 100%
+means one core; RSS sums the service and children in its process group, excluding
+ProcLease supervisors, and may count shared pages repeatedly. One-shot metrics
+sample for roughly 200ms; live watch needs a baseline first. Unavailable readings
+are `null` in JSON (`…` or `—` in tables), not proof of zero usage. Sampling never
+extends a lease, and finished jobs have no live resource readings.
 
 ## Support boundary
 

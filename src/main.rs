@@ -5,6 +5,7 @@ mod display;
 mod lifecycle;
 mod model;
 mod platform;
+mod resources;
 mod store;
 
 use anyhow::{bail, Context, Result};
@@ -87,10 +88,12 @@ enum Commands {
         )]
         command: Vec<String>,
     },
-    /// List active and unverified jobs; observing a lease never renews it.
+    /// List active, unverified and briefly recent jobs; never renew a lease.
     List {
         #[arg(long, help = "Include finished jobs from retained history")]
         all: bool,
+        #[arg(long, help = "Include sampled CPU/RSS metrics in JSON output")]
+        resources: bool,
     },
     /// Remove confirmed finished history older than 24h or beyond the newest 100.
     Prune {
@@ -115,6 +118,8 @@ enum Commands {
     Watch {
         #[arg(long, help = "Include finished jobs from retained history")]
         all: bool,
+        #[arg(long, help = "Include sampled CPU/RSS metrics in JSON output")]
+        resources: bool,
         #[arg(long, default_value = "1s")]
         interval: String,
         #[arg(long)]
@@ -159,6 +164,18 @@ fn view(record: &Record) -> serde_json::Value {
     value
 }
 
+fn job_view(
+    record: &Record,
+    usage: &resources::UsageMap,
+    include_resources: bool,
+) -> serde_json::Value {
+    let mut value = view(record);
+    if include_resources {
+        value["resources"] = json!(usage.get(&record.id));
+    }
+    value
+}
+
 fn print_record(
     record: &Record,
     reused: bool,
@@ -171,7 +188,12 @@ fn print_record(
             json!({"schema_version": SCHEMA_VERSION, "job": view(record), "reused": reused})
         );
     } else {
-        display::print_table(std::slice::from_ref(record), true, color)?;
+        display::print_table(
+            std::slice::from_ref(record),
+            true,
+            color,
+            &resources::UsageMap::new(),
+        )?;
         if reused {
             println!("Existing lease returned; its deadline was not extended.");
         }
@@ -186,10 +208,41 @@ fn visible_jobs(store: &Store, all: bool) -> Result<(Vec<Record>, Vec<String>)> 
     };
     let (mut jobs, mut warnings) = store.list()?;
     warnings.append(&mut cleanup_warnings);
-    if !all {
-        jobs.retain(|record| record.state.active() || record.state == State::Unknown);
-    }
+    select_visible(&mut jobs, all, now_ms());
     Ok((jobs, warnings))
+}
+
+fn select_visible(jobs: &mut Vec<Record>, all: bool, now: u64) {
+    jobs.sort_by_key(|r| {
+        let rank = if r.state.active() {
+            0
+        } else if r.state == State::Unknown || r.finished_at_ms.is_none() {
+            1
+        } else {
+            2
+        };
+        (rank, r.created_at_ms)
+    });
+    if all {
+        return;
+    }
+    let mut recent: Vec<_> = jobs
+        .iter()
+        .filter(|r| !r.state.active() && r.state != State::Unknown)
+        .filter_map(|r| {
+            r.finished_at_ms
+                .filter(|&time| time <= now && now - time < 30_000)
+                .map(|time| (time, r.id.clone()))
+        })
+        .collect();
+    recent.sort_by(|a, b| b.cmp(a));
+    recent.truncate(5);
+    jobs.retain(|r| {
+        r.state.active()
+            || r.state == State::Unknown
+            || r.finished_at_ms.is_none()
+            || recent.iter().any(|(_, id)| id == &r.id)
+    });
 }
 
 fn fingerprint(argv: &[String], cwd: &std::path::Path) -> String {
@@ -344,15 +397,20 @@ fn dispatch(cli: &Cli) -> Result<i32> {
                 return Ok(1);
             }
         }
-        Commands::List { all } => {
+        Commands::List { all, resources } => {
             let (jobs, warnings) = visible_jobs(&store, *all)?;
+            let metrics = if !cli.json || *resources {
+                resources::Sampler::snapshot(&jobs)
+            } else {
+                resources::UsageMap::new()
+            };
             if cli.json {
                 println!(
                     "{}",
-                    json!({"schema_version": SCHEMA_VERSION, "jobs": jobs.iter().map(view).collect::<Vec<_>>(), "warnings": warnings})
+                    json!({"schema_version": SCHEMA_VERSION, "jobs": jobs.iter().map(|r| job_view(r, &metrics, *resources)).collect::<Vec<_>>(), "warnings": warnings})
                 );
             } else {
-                display::print_table(&jobs, *all, cli.color)?;
+                display::print_table(&jobs, *all, cli.color, &metrics)?;
                 for warning in warnings {
                     eprintln!("Warning: {}", clean(&warning));
                 }
@@ -405,6 +463,7 @@ fn dispatch(cli: &Cli) -> Result<i32> {
         }
         Commands::Watch {
             all,
+            resources,
             interval,
             once,
         } => {
@@ -417,18 +476,28 @@ fn dispatch(cli: &Cli) -> Result<i32> {
             }
             let interrupted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             signal_hook::flag::register(libc::SIGINT, interrupted.clone())?;
+            let mut sampler = resources::Sampler::new();
             loop {
                 let (jobs, warnings) = visible_jobs(&store, *all)?;
+                let metrics = if !cli.json || *resources {
+                    if *once {
+                        resources::Sampler::snapshot(&jobs)
+                    } else {
+                        sampler.sample(&jobs)
+                    }
+                } else {
+                    resources::UsageMap::new()
+                };
                 if cli.json {
                     println!(
                         "{}",
-                        json!({"schema_version": SCHEMA_VERSION, "jobs": jobs.iter().map(view).collect::<Vec<_>>(), "warnings": warnings})
+                        json!({"schema_version": SCHEMA_VERSION, "jobs": jobs.iter().map(|r| job_view(r, &metrics, *resources)).collect::<Vec<_>>(), "warnings": warnings})
                     );
                 } else {
                     if !once && std::io::stdout().is_terminal() {
                         print!("\x1b[2J\x1b[H");
                     }
-                    display::print_table(&jobs, *all, cli.color)?;
+                    display::print_table(&jobs, *all, cli.color, &metrics)?;
                     for warning in warnings {
                         eprintln!("Warning: {}", clean(&warning));
                     }
