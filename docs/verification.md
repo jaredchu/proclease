@@ -62,6 +62,12 @@ and in hosted macOS/Ubuntu CI.
 - Version 0.1.1 at `5a3bcd0` passed [hosted macOS and Ubuntu checks](https://github.com/jaredchu/proclease/actions/runs/42211702346),
   including all twenty-six tests, formatting, Clippy and release builds. The same
   release was installed locally with the updated shared skill and verified terminal views.
+- Version 0.1.2 at `3b71397` passed [hosted macOS and Ubuntu checks](https://github.com/jaredchu/proclease/actions/runs/42215574600):
+  all twenty-eight tests, formatting, Clippy and release builds. The installed
+  macOS binary matches the tested release, and both installed skill links resolve
+  to the validated shared source. An installed live-watch smoke test warmed up
+  from unavailable CPU to a nonzero reading without changing expiry; its
+  disposable service was stopped and then reported no live metrics.
 - A real local Codex session discovered the skill and launched an Astro preview
   through ProcLease. It selected a task-specific state directory, which made the
   job invisible to the user's default `watch`. After stopping that job and

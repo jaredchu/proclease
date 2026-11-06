@@ -39,8 +39,8 @@ proclease watch
 proclease prune --dry-run
 ```
 
-The table shows CPU/RSS usage, compact countdowns, state colors, project/task details and preview
-URLs. It switches to a stacked layout in narrow terminals. Colors are automatic
+The table shows CPU/RSS usage, compact countdowns, state colors, project/task
+details and preview URLs. It switches to a stacked layout in narrow terminals. Colors are automatic
 for terminals; `NO_COLOR`, `TERM=dumb` or `--color never` disables them, and
 `--color always` forces them. Redirected output and JSON stay uncolored by default.
 
