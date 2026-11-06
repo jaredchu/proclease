@@ -6,16 +6,19 @@ ProcLease is a Rust CLI and a portable skill for Codex and Claude Code. Start a
 foreground service with a deadline; inspect its status and bounded logs from later
 tool calls; explicitly extend it or let it expire. Reading logs never renews it.
 
-**Status:** local implementation tested on macOS arm64 and Linux aarch64 in a
-non-root container. It is not published to a package
+**Status:** experimental, MIT-licensed open source. Tested locally on macOS arm64
+and Linux aarch64 in a non-root container. It is not published to a package
 registry. Domain: `proclease.com`; no hosted service is required.
+
+Source and issues: [jaredchu/proclease](https://github.com/jaredchu/proclease).
 
 ## Build
 
-Install a current stable Rust toolchain, then:
+Install Git and a current stable Rust toolchain, then:
 
 ```sh
-cargo build --release --locked
+git clone https://github.com/jaredchu/proclease.git
+cd proclease
 cargo install --path . --locked
 proclease --version
 ```
@@ -136,6 +139,8 @@ own jobs. Never point a test at your normal ProcLease state directory.
 
 Start contributor work with [project context](docs/project-context.md).
 See [verification](docs/verification.md) for completed checks and current limits.
+Bug reports and pull requests are welcome. Include your OS, ProcLease version,
+reproduction commands and observed lifecycle state when reporting a process issue.
 
 ## License
 
