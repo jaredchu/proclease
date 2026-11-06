@@ -37,5 +37,8 @@ wrangler deploy --config website/wrangler.toml
 ```
 
 Check the live page, installer bytes and links to published release assets.
+Use curl or an identifying application User-Agent for automated HTTP checks;
+Cloudflare's Browser Integrity Check rejects the default Python `urllib` signature.
+See [Cloudflare's explanation](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1010/).
 Release links and the installer are pinned to v0.1.2. Update those together for
 a future release. See [the release procedure](../docs/releasing.md).

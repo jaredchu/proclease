@@ -13,7 +13,8 @@ through a Rust CLI and one portable ProcLease skill for Codex and Claude Code.
 - **Approved by owner, 2026-11-06:** name ProcLease, a new standalone Rust CLI
   project and shared skill.
 - **Owner-reported, 2026-11-06:** `proclease.com` was purchased through Cloudflare.
-  Registration ownership, DNS and hosting have not been independently inspected.
+  The active Cloudflare zone, custom-domain binding and public HTTPS site were
+  verified during publication. Registrar ownership was not independently inspected.
 - **Approved by owner, 2026-11-06:** adopt Context Docs for this project.
 - **Approved by owner, 2026-11-06:** publish as an open-source project under
   `jaredchu` on GitHub. The MIT-licensed source is public at
@@ -42,13 +43,17 @@ through a Rust CLI and one portable ProcLease skill for Codex and Claude Code.
 - **Implementation choice:** use proven Rust/Unix primitives and per-job supervisors
   launched in the caller's execution context. Avoid a login-wide service accepting
   arbitrary execution requests from potentially restricted agents.
+- **Publication:** the experimental [v0.1.2 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.2)
+  provides four native binaries, checksums and a verified installer. The public
+  [website](https://proclease.com) uses static assets in the owner's Cloudflare
+  account; [website source and deployment](../website/README.md) are maintained here.
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
   proxying, auto-restart, hosted dashboards and package-registry distribution.
 
 ## Current state and progress
 
 ```text
-Goal: a usable local ProcLease CLI and shared skill
+Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    New repository and context maintenance entry points
 |-- DONE    Rust CLI, expiry enforcement and process lifecycle tests
 |-- DONE    Shared skill validation and real Vite/Next expiry smoke tests
@@ -62,8 +67,8 @@ Goal: a usable local ProcLease CLI and shared skill
 |-- DONE    Readable colored tables, compact times and narrow-terminal layout
 |-- DONE    Version 0.1.2 briefly shows up to five finished jobs for 30 seconds
 |-- DONE    On-demand CPU/RSS group totals in tables and opt-in JSON
-|-- ACTIVE  Native four-platform prerelease, archives and verified installation
-`-- ACTIVE  Dark monochrome website, browser QA and proclease.com publication
+|-- DONE    Native four-platform prerelease, archives and verified installation
+`-- DONE    Dark monochrome website, browser QA and proclease.com publication
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;

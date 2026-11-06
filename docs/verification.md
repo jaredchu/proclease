@@ -105,6 +105,33 @@ Integration fixtures require `/usr/bin/python3`. The macOS and Ubuntu CI matrix
 is defined in [the workflow](../.github/workflows/ci.yml) and runs on pushes and
 pull requests.
 
+## First binary prerelease and website
+
+The public [v0.1.2 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.2)
+is tagged at `417a244`. Its [release workflow](https://github.com/jaredchu/proclease/actions/runs/42226114817)
+passed all twenty-eight tests, formatting, Clippy, optimized builds, archive expiry
+and installer checks on macOS ARM64/Intel and Ubuntu 22.04 ARM64/x64. macOS builds
+target 15.0; the release Apple Silicon binary is tested on the current hosted OS,
+not separately on an older OS. See [release compatibility](releases/v0.1.2.md#compatibility-and-limits).
+
+All four downloaded archives matched `SHA256SUMS`. A fresh installation through
+the public website's installer fetched the anonymous GitHub release assets,
+returned version 0.1.2 and expired an isolated service. Corrupt-download checks
+leave an already installed binary intact. The prerelease contains four archives,
+their four checksum files, combined checksums and the installer.
+
+The public [proclease.com](https://proclease.com) website serves committed static
+assets through the `proclease-site` Cloudflare Worker with a custom domain and
+HTTPS. Browser checks covered 320/390/768/1440-pixel widths, expiry/replay,
+clipboard, keyboard tabs, download selection and FAQ, with no JavaScript errors
+or horizontal overflow. Browser and curl access returned HTTP 200; the installer
+bytes matched the committed script. The domain is linked in the GitHub repository.
+
+Native macOS 15 validation exposed a test-fixture permission issue: a read-only
+job root could fail before the expected quarantine rename. The fault now uses a
+locked nested directory, preserving the root's ability to move and testing partial
+deletion as intended. Production retention code was unchanged.
+
 ## Review corrections
 
 Independent Astra and Fable reviews identified six issues. Cleanup guards now
