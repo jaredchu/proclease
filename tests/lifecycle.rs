@@ -610,11 +610,12 @@ fn failed_history_deletion_is_quarantined_and_does_not_block_keyed_launches() {
     let fixture = Fixture::new();
     let (record, launch) = fixture.finished_template();
     fixture.seed_history("000000000001", &record, &launch, 1);
-    fs::set_permissions(
-        fixture.state.join("000000000001"),
-        fs::Permissions::from_mode(0o500),
-    )
-    .unwrap();
+    // Keep the job root renameable. Some macOS versions refuse to rename a
+    // non-writable directory; this test needs failure after quarantine instead.
+    let locked = fixture.state.join("000000000001/locked");
+    fs::create_dir(&locked).unwrap();
+    fs::write(locked.join("keep"), b"force a partial deletion").unwrap();
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o500)).unwrap();
     let output = fixture.command(&["prune"]).output().unwrap();
     assert!(!output.status.success());
     assert!(
@@ -647,6 +648,7 @@ fn failed_history_deletion_is_quarantined_and_does_not_block_keyed_launches() {
     ]);
     assert_eq!(next["job"]["state"], "running");
     fs::set_permissions(&pending, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::set_permissions(pending.join("locked"), fs::Permissions::from_mode(0o700)).unwrap();
     let report = fixture.call(&["prune"]);
     assert!(report["removed"]
         .as_array()
