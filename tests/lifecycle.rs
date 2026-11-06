@@ -617,7 +617,12 @@ fn failed_history_deletion_is_quarantined_and_does_not_block_keyed_launches() {
     .unwrap();
     let output = fixture.command(&["prune"]).output().unwrap();
     assert!(!output.status.success());
-    assert!(!fixture.state.join("000000000001").exists());
+    assert!(
+        !fixture.state.join("000000000001").exists(),
+        "expected quarantine after deletion fault: {} {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
     let pending = fs::read_dir(&fixture.state)
         .unwrap()
         .flatten()
