@@ -77,6 +77,33 @@ pub fn atomic_json(path: &Path, value: &impl Serialize) -> Result<()> {
     result
 }
 
+fn unpublished_reservation(dir: &Path) -> Result<bool> {
+    // Launch metadata is committed before any process starts. Only an empty
+    // reservation or our own uncommitted atomic-write files proves no launch.
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            return Ok(false);
+        };
+        let Some(uuid) = name.strip_prefix('.').and_then(|s| s.strip_suffix(".tmp")) else {
+            return Ok(false);
+        };
+        let metadata = fs::symlink_metadata(entry.path())?;
+        if uuid.len() != 32
+            || !uuid
+                .bytes()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+            || !metadata.is_file()
+            || metadata.uid() != unsafe { libc::geteuid() }
+            || metadata.mode() & 0o077 != 0
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 impl Store {
     pub fn open(path: PathBuf) -> Result<Self> {
         if !path.is_absolute() {
@@ -163,8 +190,8 @@ impl Store {
     pub fn save(&self, record: &Record) -> Result<()> {
         atomic_json(&self.job(&record.id)?.join("record.json"), record)
     }
-    /// Called under the launch lock. Empty reservations cannot have launched a
-    /// process; ambiguous unreadable launch metadata must still fail closed.
+    /// Called under the launch lock. Unpublished reservations cannot have
+    /// launched a process; ambiguous unreadable metadata still fails closed.
     pub fn find_retry(&self, key: &str) -> Result<Option<(Launch, Record)>> {
         let mut found = None;
         for entry in fs::read_dir(&self.root)? {
@@ -174,7 +201,7 @@ impl Store {
                 continue;
             }
             let dir = self.job(&id)?;
-            if fs::read_dir(&dir)?.next().is_none() {
+            if unpublished_reservation(&dir)? {
                 continue;
             }
             let launch = self
@@ -220,9 +247,10 @@ impl Store {
             if !valid_id(&id) {
                 continue;
             }
-            if self.job(&id).is_ok_and(|dir| {
-                fs::read_dir(dir).is_ok_and(|mut entries| entries.next().is_none())
-            }) {
+            if self
+                .job(&id)
+                .is_ok_and(|dir| unpublished_reservation(&dir).unwrap_or(false))
+            {
                 continue;
             }
             match self.observed_record(&id) {

@@ -14,7 +14,8 @@ Verified locally on 2026-11-06, macOS arm64 and Linux aarch64, using Rust 1.99.1
   control requests during expiry, empty launch reservations, commands during
   shutdown grace, and output truncation during shutdown.
 - All seventeen tests passed on macOS and in a Linux aarch64 container as a
-  non-root user (UID 501), including the permission-failure regression.
+  non-root user (UID 501), including the permission-failure regression. Final Linux
+  validation used native tmpfs state rather than a VM shared directory.
 - Skill frontmatter and structure validated with the skill-creator validator.
 - Real `npm run dev` smoke tests for Vite 8.3.6 and Next.js 16.4.5, using Node
   24.18.0. Both served HTTP 200 before expiry, reached `expired`, and released their
@@ -40,7 +41,24 @@ cover post-spawn metadata failures; nonblocking control requests have absolute
 time budgets; provably empty launch reservations do not block keyed runs;
 shutdown controls reconcile lifecycle state; an already-open capture marker
 preserves shutdown truncation; and the skill assigns retry keys on the initial
-launch. The focused review of these corrections is pending.
+launch. Focused Astra and Fable reviews found no remaining P1/P2 issues in these
+fixes.
+Fable identified a P3 residual: a reservation containing only an interrupted
+atomic-write temporary file still blocked keyed runs. The coordinator corrected
+that case with conservative file-name/type/permission checks and regressions
+that retain rejection of symlinks, directories and ambiguous state. That final
+refinement was validated locally, without another independent review round.
+
+## Filesystem compatibility
+
+A Linux rerun using a macOS-to-Linux OrbStack bind mount failed intermittently
+while reading atomically replaced metadata. An independent Python replacement
+probe reproduced 874 missing-file reads across 1000 replacements on that shared
+mount, and zero on native Linux storage. Thirty quick-exit ProcLease launches
+also passed on native storage. The final Linux suite used native tmpfs state.
+Use native storage for state in Linux VMs/containers; the observed shared-mount
+semantics are unsupported. No workaround that guesses missing lifecycle state
+was added.
 
 ## Limits
 

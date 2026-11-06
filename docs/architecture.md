@@ -61,13 +61,16 @@ They return the original record, including terminal records, without renewal.
 Changing a context while reusing a key is an error. There is no automatic
 command-text deduplication or cross-task ownership transfer.
 The key must be assigned before the initial launch. Under the launch lock,
-provably empty reservations are skipped without deletion. Existing launch metadata
+provably empty reservations, or those containing only private generated atomic-write
+temporary files, are skipped without deletion. Existing launch metadata
 identifies relevant keys even when an unrelated record is damaged; ambiguous
 unreadable launch metadata still blocks resolution to avoid duplicate launches.
 
 The guardian serializes stop/extend requests. Extension is additive and bounded
 by 24 hours from creation. A request at or after expiry cannot revive the job.
 Metadata is replaced atomically using private files and filesystem synchronization.
+This requires filesystem support for atomic replacement visible to concurrent
+readers; VM shared folders are not assumed to preserve those semantics.
 The keeper takes final write ownership after the guardian exits. Status reads
 do not write lifecycle state or renew leases.
 Repeated stop while stopping polls existing state instead of waiting for an idle

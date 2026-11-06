@@ -650,6 +650,22 @@ fn empty_launch_reservation_does_not_block_keyed_runs() {
         empty.exists(),
         "read-only orphan classification must not delete state"
     );
+    // A kill during the first atomic write leaves only a private UUID temp file.
+    let pending = empty.join(".0123456789abcdef0123456789abcdef.tmp");
+    fs::write(&pending, b"partial launch metadata").unwrap();
+    fs::set_permissions(&pending, fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(fixture.call(&args)["job"]["id"], first["job"]["id"]);
+    assert_eq!(fixture.call(&["list"])["warnings"], serde_json::json!([]));
+    assert!(pending.exists(), "classification must preserve temp files");
+    // A directory with a temp-looking name is not an atomic-write artifact.
+    fs::remove_file(&pending).unwrap();
+    fs::create_dir(&pending).unwrap();
+    assert!(!fixture.command(&args).output().unwrap().status.success());
+    fs::remove_dir(&pending).unwrap();
+    // Nor is a symlink, even if it has exactly the generated temporary name.
+    std::os::unix::fs::symlink("missing", &pending).unwrap();
+    assert!(!fixture.command(&args).output().unwrap().status.success());
+    fs::remove_file(&pending).unwrap();
     // Nonempty unknown state is ambiguous and must still fail closed.
     fs::write(empty.join("unfinished"), b"unknown").unwrap();
     let output = fixture.command(&args).output().unwrap();

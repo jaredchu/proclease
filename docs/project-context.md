@@ -37,13 +37,13 @@ Goal: a usable local ProcLease CLI and shared skill
 |-- DONE    Rust CLI, expiry enforcement and process lifecycle tests
 |-- DONE    Shared skill validation and real Vite/Next expiry smoke tests
 |-- DONE    Six review fixes and macOS/Linux regression tests
-`-- NEXT    Focused Astra/Fable review of the fixes
+`-- DONE    Focused Astra/Fable reviews and interrupted-write refinement
 ```
 
 The initial local implementation is complete. [Verification](verification.md)
 records checks and their limits. Linux runtime tests pass locally; hosted
-CI has not run. Restricted agent host profiles remain untested. A comparative benchmark is needed before claiming measured
-superiority over another supervisor.
+CI has not run. Restricted agent host profiles remain untested. A comparative
+benchmark is needed before claiming measured superiority over another supervisor.
 
 Context maintenance is adopted in `AGENTS.md`, reached by `CLAUDE.md` import.
 Claude Code's local `/context` command confirmed both files under project memory

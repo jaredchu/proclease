@@ -59,8 +59,9 @@ means the program spawned, not that a web endpoint is ready.
   make retries idempotent for that command, directory, environment and launch
   policy. Reuse the same key unchanged. Adding a key later does not identify an
   earlier keyless job. A retry never renews or resurrects a job; a different
-  context is rejected. Empty interrupted-launch reservations are ignored without
-  deleting state; unreadable/ambiguous launch metadata still fails closed.
+  context is rejected. Empty interrupted-launch reservations and those containing
+  only private generated atomic-write temporary files are ignored without deleting
+  state; unreadable/ambiguous launch metadata still fails closed.
 - Stop during shutdown returns lifecycle state; extension of a stopping job is
   rejected. If a response is lost, inspect `list` before retrying an operation.
 
@@ -84,6 +85,9 @@ when displaying logs. Logs and argv may contain private application data; keep t
 state directory out of repositories. Full environment values are not persisted.
 Finished metadata and capped logs remain until you deliberately remove that
 finished job's directory; automatic retention cleanup is not implemented yet.
+Use a filesystem that preserves atomic file replacement for the state directory.
+VM shared folders can violate that requirement; use native Linux storage when
+running inside a Linux VM or container.
 
 ## Install the skill
 
