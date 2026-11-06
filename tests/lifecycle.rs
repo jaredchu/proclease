@@ -79,6 +79,7 @@ impl Fixture {
             .unwrap()
             .clone()
     }
+    #[track_caller]
     fn terminal(&self, id: &str) -> Value {
         wait(|| {
             let job = self.job(id);
@@ -94,6 +95,21 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         if !self.state.exists() {
             return;
+        }
+        if thread::panicking() {
+            if let Ok(entries) = fs::read_dir(&self.state) {
+                for entry in entries.flatten() {
+                    for name in ["record.json", "supervisor.log", "output.log"] {
+                        if let Ok(content) = fs::read(entry.path().join(name)) {
+                            eprintln!(
+                                "fixture {} / {name}: {}",
+                                entry.file_name().to_string_lossy(),
+                                String::from_utf8_lossy(&content[..content.len().min(8192)])
+                            );
+                        }
+                    }
+                }
+            }
         }
         let output = self.command(&["list"]).output().unwrap();
         if let Ok(value) = serde_json::from_slice::<Value>(&output.stdout) {
@@ -113,6 +129,7 @@ fn parse(output: &Output) -> Value {
         .unwrap_or_else(|_| panic!("invalid JSON: {}", String::from_utf8_lossy(&output.stdout)))
 }
 
+#[track_caller]
 fn wait<T>(mut predicate: impl FnMut() -> Option<T>) -> T {
     let deadline = Instant::now() + Duration::from_secs(8);
     loop {
@@ -127,6 +144,7 @@ fn wait<T>(mut predicate: impl FnMut() -> Option<T>) -> T {
     }
 }
 
+#[track_caller]
 fn ready(path: &std::path::Path) -> Value {
     wait(|| {
         fs::read(path)
@@ -135,6 +153,7 @@ fn ready(path: &std::path::Path) -> Value {
     })
 }
 
+#[track_caller]
 fn assert_port_closed(info: &Value) {
     let address: SocketAddr = format!("127.0.0.1:{}", info["port"].as_u64().unwrap())
         .parse()
@@ -151,9 +170,16 @@ fn assert_port_closed(info: &Value) {
 #[test]
 fn expiry_kills_term_resistant_children_after_launcher_returns() {
     let fixture = Fixture::new();
+    let started = Instant::now();
     let (id, path) = fixture.start("stubborn", "1200ms");
+    eprintln!(
+        "expiry fixture: launch returned after {:?}",
+        started.elapsed()
+    );
     let info = ready(&path);
+    eprintln!("expiry fixture: ready after {:?}", started.elapsed());
     let job = fixture.terminal(&id);
+    eprintln!("expiry fixture: terminal after {:?}", started.elapsed());
     assert_eq!(job["state"], "expired");
     assert_eq!(job["reason"], "deadline");
     assert_port_closed(&info);

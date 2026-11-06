@@ -24,4 +24,5 @@ jobs:
       - run: cargo test --locked
         env:
           PROCLEASE_TEST_ROOT: ${{ runner.temp }}/proclease
+          RUST_BACKTRACE: 1
       - run: cargo build --locked --release
