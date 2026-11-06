@@ -26,6 +26,13 @@ Verified locally on 2026-11-06, macOS arm64 and Linux aarch64, using Rust 1.99.1
 - Claude Code's local `/context` command listed the project `CLAUDE.md` and its
   imported `AGENTS.md`, confirming the intended context-maintenance discovery
   route for the observed invocation. No model request was needed for this check.
+- The CLI was installed into the user's existing `~/.local/bin` PATH directory.
+  The installed binary matched the tested release; an isolated job expired and
+  its keyed retry reused the terminal job. The normal private state was readable.
+- The shared skill was linked into `~/.agents/skills/proclease` and
+  `~/.claude/skills/proclease`. A fresh Codex app-server `skills/list` returned it
+  enabled at user scope, and Claude Code's local `/context` listed it as a user
+  skill. These discovery checks started no model turns.
 
 ## Reproduction
 
@@ -69,6 +76,6 @@ remain explicit support/verification boundaries, not passing checks.
 
 There is no pinned-version comparative benchmark against AgentProcs or other
 alternatives. The tests establish this implementation's inspected behaviour;
-they do not establish comparative superiority. The skill is validated as an
-instruction artifact; global installation and end-to-end agent discovery of that
-installed skill have not been performed.
+they do not establish comparative superiority. User-local installation and skill
+discovery are verified; a full model-driven workflow using the installed skill
+under each host's restricted execution profile remains untested.

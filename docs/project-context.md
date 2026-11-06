@@ -37,7 +37,8 @@ Goal: a usable local ProcLease CLI and shared skill
 |-- DONE    Rust CLI, expiry enforcement and process lifecycle tests
 |-- DONE    Shared skill validation and real Vite/Next expiry smoke tests
 |-- DONE    Six review fixes and macOS/Linux regression tests
-`-- DONE    Focused Astra/Fable reviews and interrupted-write refinement
+|-- DONE    Focused Astra/Fable reviews and interrupted-write refinement
+`-- DONE    User-local CLI installation and Codex/Claude skill discovery
 ```
 
 The initial local implementation is complete. [Verification](verification.md)
