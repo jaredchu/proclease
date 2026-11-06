@@ -1,10 +1,9 @@
 name: Release binaries
 
 on:
+  workflow_dispatch:
   push:
     tags: ['v*']
-    branches: ['main', 'codex/**']
-    paths: ['.github/workflows/release.yml', 'scripts/package-release.py', 'scripts/check-release.py', 'scripts/check-installer.py', 'install.sh', 'src/**', 'tests/**', 'Cargo.toml', 'Cargo.lock']
   pull_request:
     paths: ['.github/workflows/release.yml', 'scripts/package-release.py', 'scripts/check-release.py', 'scripts/check-installer.py', 'install.sh', 'src/**', 'tests/**', 'Cargo.toml', 'Cargo.lock']
 

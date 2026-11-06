@@ -5,6 +5,9 @@ macOS ARM64/Intel and Linux ARM64/x64 archives. Each target runs formatting,
 Clippy, the full lifecycle suite, an optimized build, an extracted-archive expiry
 smoke test and installer checksum-failure checks. No cross-compiled binary is
 represented as runtime-tested.
+Tag pushes build and draft a release. Relevant pull requests and manual workflow
+runs validate the archives without publishing; ordinary main pushes use the
+normal Rust and website checks.
 
 For a new release:
 
