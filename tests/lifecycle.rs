@@ -7,7 +7,7 @@ use std::{
     path::PathBuf,
     process::{Command, Output},
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tempfile::TempDir;
 
@@ -81,7 +81,11 @@ impl Fixture {
     }
     #[track_caller]
     fn terminal(&self, id: &str) -> Value {
-        wait(|| {
+        self.terminal_within(id, Duration::from_secs(8))
+    }
+    #[track_caller]
+    fn terminal_within(&self, id: &str, timeout: Duration) -> Value {
+        wait_for(timeout, || {
             let job = self.job(id);
             match job["state"].as_str().unwrap() {
                 "stopped" | "expired" | "exited" | "failed" | "interrupted" => Some(job),
@@ -130,8 +134,13 @@ fn parse(output: &Output) -> Value {
 }
 
 #[track_caller]
-fn wait<T>(mut predicate: impl FnMut() -> Option<T>) -> T {
-    let deadline = Instant::now() + Duration::from_secs(8);
+fn wait<T>(predicate: impl FnMut() -> Option<T>) -> T {
+    wait_for(Duration::from_secs(8), predicate)
+}
+
+#[track_caller]
+fn wait_for<T>(timeout: Duration, mut predicate: impl FnMut() -> Option<T>) -> T {
+    let deadline = Instant::now() + timeout;
     loop {
         if let Some(value) = predicate() {
             return value;
@@ -171,18 +180,61 @@ fn assert_port_closed(info: &Value) {
 fn expiry_kills_term_resistant_children_after_launcher_returns() {
     let fixture = Fixture::new();
     let started = Instant::now();
-    let (id, path) = fixture.start("stubborn", "1200ms");
+    // The readiness helper allows eight seconds for cold interpreter startup.
+    // Keep that inside the lease; expiry must not race the readiness assertion.
+    let (id, path) = fixture.start("stubborn", "10s");
     eprintln!(
         "expiry fixture: launch returned after {:?}",
         started.elapsed()
     );
     let info = ready(&path);
     eprintln!("expiry fixture: ready after {:?}", started.elapsed());
-    let job = fixture.terminal(&id);
+    let expiry = fixture.job(&id)["expires_at_ms"].as_u64().unwrap();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    // Bound cleanup relative to the actual expiry, not the time startup took.
+    let remaining = Duration::from_millis(expiry.saturating_sub(now));
+    let job = fixture.terminal_within(&id, remaining + Duration::from_secs(2));
     eprintln!("expiry fixture: terminal after {:?}", started.elapsed());
     assert_eq!(job["state"], "expired");
     assert_eq!(job["reason"], "deadline");
     assert_port_closed(&info);
+}
+
+#[test]
+fn expiry_does_not_wait_for_application_readiness() {
+    let fixture = Fixture::new();
+    let marker = fixture.dir.path().join("should-not-be-ready");
+    let result = fixture.call(&[
+        "run",
+        "--ttl",
+        "500ms",
+        "--grace",
+        "100ms",
+        "--",
+        "/bin/sh",
+        "-c",
+        "sleep 30; printf ready > \"$1\"",
+        "startup-fixture",
+        marker.to_str().unwrap(),
+    ]);
+    let id = result["job"]["id"].as_str().unwrap();
+    let pid = result["job"]["command_pid"].as_u64().unwrap() as i32;
+    let job = fixture.terminal(id);
+    assert_eq!(job["state"], "expired");
+    assert_eq!(job["reason"], "deadline");
+    wait(|| {
+        if unsafe { libc::kill(pid, 0) } == -1
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+        {
+            Some(())
+        } else {
+            None
+        }
+    });
+    assert!(!marker.exists(), "expiry must prevent later readiness");
 }
 
 #[test]
@@ -498,8 +550,19 @@ fn slow_partial_control_request_cannot_starve_expiry() {
     use std::io::Write;
     use std::os::unix::net::UnixStream;
     let fixture = Fixture::new();
-    let (id, path) = fixture.start("normal", "700ms");
-    let info = ready(&path);
+    // Only the guardian's control socket is needed; interpreter startup must
+    // not consume this deliberately short lease before the client connects.
+    let result = fixture.call(&[
+        "run",
+        "--ttl",
+        "700ms",
+        "--grace",
+        "100ms",
+        "--",
+        "/bin/sleep",
+        "30",
+    ]);
+    let id = result["job"]["id"].as_str().unwrap().to_owned();
     let socket = fixture.state.join(&id).join("ctl.sock");
     let writer = thread::spawn(move || {
         let mut stream = UnixStream::connect(socket).unwrap();
@@ -522,7 +585,6 @@ fn slow_partial_control_request_cannot_starve_expiry() {
         elapsed < Duration::from_millis(1500),
         "slow client delayed expiry by {elapsed:?}"
     );
-    assert_port_closed(&info);
 }
 
 #[test]
@@ -544,7 +606,7 @@ fn metadata_write_failure_does_not_abandon_service_group() {
     let result = fixture.call(&[
         "run",
         "--ttl",
-        "1s",
+        "30s",
         "--grace",
         "100ms",
         "--log-limit",
@@ -552,7 +614,7 @@ fn metadata_write_failure_does_not_abandon_service_group() {
         "--",
         "/usr/bin/python3",
         service.to_str().unwrap(),
-        "delayed-flood",
+        "gated-flood",
         ready_path.to_str().unwrap(),
     ]);
     let id = result["job"]["id"].as_str().unwrap();
@@ -560,6 +622,9 @@ fn metadata_write_failure_does_not_abandon_service_group() {
     let dir = fixture.state.join(id);
     let _restore = RestorePermissions(dir.clone());
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o500)).unwrap();
+    // Release output only after installing the fault, rather than guessing
+    // how quickly the interpreter and this test will be scheduled.
+    fs::write(ready_path.with_extension("release"), b"go").unwrap();
     assert_port_closed(&info);
     // The guardian's cleanup runs despite its failed save, and the keeper's
     // cleanup guard does not depend on writing into the same broken directory.
