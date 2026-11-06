@@ -1,0 +1,28 @@
+[package]
+name = "proclease"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Put an explicit lifetime on development processes started by coding agents"
+homepage = "https://proclease.com"
+license = "MIT"
+publish = false
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+fs2 = "0.4"
+humantime = "2"
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+signal-hook = "0.3"
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+strip = true
