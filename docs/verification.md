@@ -51,6 +51,9 @@ and in hosted macOS/Ubuntu CI.
   passed on `macos-latest` and `ubuntu-latest` at commit `8932479`. Both jobs
   completed formatting, Clippy with warnings denied, all seventeen tests and an
   optimized release build.
+- Version 0.1.1 at `5a3bcd0` passed [hosted macOS and Ubuntu checks](https://github.com/jaredchu/proclease/actions/runs/42211702346),
+  including all twenty-six tests, formatting, Clippy and release builds. The same
+  CLI is installed locally with the updated shared skill and verified terminal views.
 - A real local Codex session discovered the skill and launched an Astro preview
   through ProcLease. It selected a task-specific state directory, which made the
   job invisible to the user's default `watch`. After stopping that job and
