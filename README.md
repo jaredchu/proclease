@@ -79,6 +79,13 @@ that variable is unset. Override it with an absolute `PROCLEASE_HOME` or
 and logs use 0600. Long paths can exceed the Unix socket limit; ProcLease reports
 that error rather than selecting a different directory silently.
 
+Each state directory is a separate registry. Normal agent launches should use
+the same configured state as your terminal, so ordinary `proclease watch` can see
+them. Reserve a custom state directory for deliberately isolated jobs or tests,
+and use it consistently for every command. If the default view is empty after a
+custom launch, use `proclease --state-dir /same/path watch`. Do not move a live
+job's state directory; its supervisors still use the original path.
+
 Combined stdout/stderr capture defaults to **1 MiB per job**. Once full, newer
 output is drained and discarded so neither disk usage nor a blocked output pipe
 can grow indefinitely. Status and log output expose `logs_truncated`, including

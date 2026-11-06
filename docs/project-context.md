@@ -45,12 +45,14 @@ Goal: a usable local ProcLease CLI and shared skill
 |-- DONE    Six review fixes and macOS/Linux regression tests
 |-- DONE    Focused Astra/Fable reviews and interrupted-write refinement
 |-- DONE    User-local CLI installation and Codex/Claude skill discovery
-`-- DONE    Public MIT-licensed GitHub repository, contributor credits and hosted CI
+|-- DONE    Public MIT-licensed GitHub repository, contributor credits and hosted CI
+`-- FIXED   Shared-registry guidance after a real Codex preview launch
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
-[verification](verification.md) records evidence and limits. Restricted agent host
-profiles remain untested. A comparative benchmark is needed before claiming
+[verification](verification.md) records evidence and limits, including a real
+Codex preview session and the corrected registry-selection guidance. Restricted
+agent host profiles remain untested. A comparative benchmark is needed before claiming
 measured superiority over another supervisor.
 
 Context maintenance is adopted in `AGENTS.md`, reached by `CLAUDE.md` import.

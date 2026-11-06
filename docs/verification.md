@@ -38,6 +38,13 @@ and in hosted macOS/Ubuntu CI.
   passed on `macos-latest` and `ubuntu-latest` at commit `8932479`. Both jobs
   completed formatting, Clippy with warnings denied, all seventeen tests and an
   optimized release build.
+- A real local Codex session discovered the skill and launched an Astro preview
+  through ProcLease. It selected a task-specific state directory, which made the
+  job invisible to the user's default `watch`. After stopping that job and
+  restarting it in the default registry with its remaining lease, the preview
+  returned HTTP 200 and appeared in ordinary `list` and `watch --once`. The shared
+  skill now preserves the user's normal state selection and explains intentional
+  isolation; a live state directory must never be moved to repair visibility.
 
 ## Reproduction
 
@@ -82,5 +89,8 @@ remain explicit support/verification boundaries, not passing checks.
 There is no pinned-version comparative benchmark against AgentProcs or other
 alternatives. The tests establish this implementation's inspected behaviour;
 they do not establish comparative superiority. User-local installation and skill
-discovery are verified; a full model-driven workflow using the installed skill
-under each host's restricted execution profile remains untested.
+discovery are verified, and one ordinary local Codex preview session has been
+observed. That session exposed the corrected registry-selection issue. The revised
+guidance has not been independently tested in a fresh model-driven session;
+Claude's launch workflow and each host's restricted execution profile remain
+untested.

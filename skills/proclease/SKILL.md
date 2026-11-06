@@ -10,6 +10,21 @@ Check `proclease --version` and `proclease --help` before first use. If the bina
 or private state directory is inaccessible, report that limitation; do not
 silently fall back to an unmanaged background server or bypass host permissions.
 
+## Keep the user's process list shared
+
+For normal development, use the user's existing ProcLease state selection for
+every command. Do not add `--state-dir`, set `PROCLEASE_HOME`, or change
+`XDG_STATE_HOME` just to place a job under a project/task scratch folder. Each
+state directory is a separate registry: a job launched there is invisible to
+the user's ordinary `proclease list` and `proclease watch`.
+
+ProcLease's persistent registry is application state. Keep separate task helper
+scripts and diagnostics in the project's prescribed scratch location. Respect
+an explicitly requested isolated registry or a test fixture; use the same state
+selection for run/list/logs/extend/stop/watch and include the exact watch command
+in the handoff. If project rules require isolation, explain its visibility before
+launching. Never move or copy a live job's state to make it appear elsewhere.
+
 ## Start a service
 
 - Inspect `proclease list --json` first. Identify jobs by ID, project directory,
