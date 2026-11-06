@@ -35,6 +35,8 @@ and in hosted macOS/Ubuntu CI.
   exclusion of both supervisors, unchanged expiry, JSON opt-in, watch snapshots,
   and unavailable metrics after completion. macOS requires a baseline refresh
   after inserting a new process snapshot before measuring the CPU interval.
+  Linux snapshot thread entries are excluded to avoid counting supervisor threads
+  or repeating process RSS; the process-count assertion caught this in hosted CI.
   Display regressions verify the 30-second recent window and five-job cap.
 - Skill frontmatter and structure validated with the skill-creator validator.
 - Real `npm run dev` smoke tests for Vite 8.3.6 and Next.js 16.4.5, using Node

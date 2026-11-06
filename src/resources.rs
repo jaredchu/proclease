@@ -88,6 +88,9 @@ impl Sampler {
                 let number = pid.as_u32();
                 if number == guardian
                     || number > i32::MAX as u32
+                    // Linux snapshots also contain individual threads. Their
+                    // counters are already included in the owning process.
+                    || process.thread_kind().is_some()
                     || process.status() == sysinfo::ProcessStatus::Zombie
                     || unsafe { libc::getpgid(number as i32) } != guardian as i32
                 {

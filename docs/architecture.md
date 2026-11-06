@@ -106,7 +106,8 @@ its final capture snapshot before the grace period.
 List/watch use `sysinfo` process snapshots and read-only process-group checks.
 The guardian must still have the recorded keeper as parent and lead its own
 group before service usage is attributed. Group totals exclude the guardian and
-keeper; PID/start-time changes invalidate the CPU baseline. On macOS, newly
+keeper and skip Linux thread entries, whose usage is already in process totals;
+PID/start-time changes invalidate the CPU baseline. On macOS, newly
 inserted snapshot entries receive a baseline refresh before timing CPU deltas.
 First-frame CPU, inaccessible counters and unverified groups remain unavailable.
 The values are approximate samples, not accounting for exited processes or
