@@ -52,7 +52,8 @@ Goal: a usable local ProcLease CLI and shared skill
 |-- DONE    Public MIT-licensed GitHub repository, contributor credits and hosted CI
 |-- FIXED   Shared-registry guidance after a real Codex preview launch
 |-- FIXED   Expiry test startup race identified in hosted macOS diagnostics
-`-- DONE    Version 0.1.1 hides and bounds finished history; --all retains access
+|-- DONE    Version 0.1.1 hides and bounds finished history; --all retains access
+`-- DONE    Readable colored tables, compact times and narrow-terminal layout
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;

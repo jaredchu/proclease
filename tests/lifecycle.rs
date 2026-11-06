@@ -322,6 +322,51 @@ fn default_views_hide_finished_history_but_keep_unverified_jobs() {
 }
 
 #[test]
+fn human_tables_respect_width_and_color_without_affecting_json() {
+    use unicode_width::UnicodeWidthStr;
+    let fixture = Fixture::new();
+    let launched = fixture.call(&[
+        "run",
+        "--ttl",
+        "30s",
+        "--grace",
+        "100ms",
+        "--task",
+        "frontend-preview",
+        "--",
+        "/bin/sleep",
+        "30",
+    ]);
+    let id = launched["job"]["id"].as_str().unwrap();
+    for width in [40, 80, 120] {
+        let output = Command::new(env!("CARGO_BIN_EXE_proclease"))
+            .arg("--state-dir")
+            .arg(&fixture.state)
+            .args(["list", "--color", "never"])
+            .env("COLUMNS", width.to_string())
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(text.contains(id) && text.contains("running"));
+        assert!(!text.contains('\x1b'));
+        assert!(text.lines().all(|line| line.width() <= width));
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_proclease"))
+        .arg("--state-dir")
+        .arg(&fixture.state)
+        .args(["watch", "--once", "--color", "always"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(String::from_utf8(output.stdout).unwrap().contains('\x1b'));
+    assert_eq!(
+        fixture.call(&["list", "--color", "always"])["jobs"][0]["id"],
+        id
+    );
+}
+
+#[test]
 fn retention_dry_run_preserves_data_and_expired_keys_can_be_reused() {
     let fixture = Fixture::new();
     let args = [

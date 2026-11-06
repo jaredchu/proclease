@@ -38,6 +38,15 @@ proclease watch
 proclease prune --dry-run
 ```
 
+The table shows compact countdowns, state colors, project/task details and preview
+URLs. It switches to a stacked layout in narrow terminals. Colors are automatic
+for terminals; `NO_COLOR`, `TERM=dumb` or `--color never` disables them, and
+`--color always` forces them. Redirected output and JSON stay uncolored by default.
+
+![ProcLease terminal table showing example jobs](docs/assets/terminal-preview.png)
+
+Example jobs shown with `proclease watch --all`; the default view hides finished history.
+
 All commands accept `--json`. `watch --once --json` produces one bounded snapshot.
 The JSON envelope has `schema_version: 1`; command errors return a nonzero exit
 code and an `error` field when `--json` was supplied. Argument-parser errors use

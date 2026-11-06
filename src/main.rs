@@ -1,6 +1,7 @@
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 compile_error!("ProcLease targets macOS and Linux.");
 
+mod display;
 mod lifecycle;
 mod model;
 mod platform;
@@ -13,7 +14,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
     fs::OpenOptions,
-    io::{IsTerminal, Read, Write},
+    io::{IsTerminal, Read},
     os::unix::{ffi::OsStrExt, fs::OpenOptionsExt},
     path::PathBuf,
     time::Duration,
@@ -27,6 +28,14 @@ use store::{atomic_json, Store};
     about = "Put an explicit lifetime on development processes"
 )]
 struct Cli {
+    #[arg(
+        long,
+        global = true,
+        value_enum,
+        default_value = "auto",
+        help = "Color for human-readable output"
+    )]
+    color: display::ColorChoice,
     #[arg(long, global = true, help = "Emit versioned JSON")]
     json: bool,
     #[arg(
@@ -150,19 +159,21 @@ fn view(record: &Record) -> serde_json::Value {
     value
 }
 
-fn print_record(record: &Record, reused: bool, json_output: bool) -> Result<()> {
+fn print_record(
+    record: &Record,
+    reused: bool,
+    json_output: bool,
+    color: display::ColorChoice,
+) -> Result<()> {
     if json_output {
         println!(
             "{}",
             json!({"schema_version": SCHEMA_VERSION, "job": view(record), "reused": reused})
         );
     } else {
-        print_table(std::slice::from_ref(record), true)?;
+        display::print_table(std::slice::from_ref(record), true, color)?;
         if reused {
             println!("Existing lease returned; its deadline was not extended.");
-        }
-        if let Some(error) = &record.error {
-            eprintln!("{}", clean(error));
         }
     }
     Ok(())
@@ -179,57 +190,6 @@ fn visible_jobs(store: &Store, all: bool) -> Result<(Vec<Record>, Vec<String>)> 
         jobs.retain(|record| record.state.active() || record.state == State::Unknown);
     }
     Ok((jobs, warnings))
-}
-
-fn print_table(records: &[Record], all: bool) -> Result<()> {
-    let mut out = std::io::stdout().lock();
-    writeln!(
-        out,
-        "{:<12} {:<11} {:<12} {:<10} {:<24} COMMAND",
-        "ID", "STATE", "OWNER", "LEFT", "EXPIRES (UTC)"
-    )?;
-    for record in records {
-        let state = serde_json::to_value(record.state)?
-            .as_str()
-            .unwrap()
-            .to_owned();
-        let left = if record.state.active() {
-            humantime::format_duration(Duration::from_millis(
-                record.expires_at_ms.saturating_sub(now_ms()),
-            ))
-            .to_string()
-        } else {
-            "-".to_owned()
-        };
-        writeln!(
-            out,
-            "{:<12} {:<11} {:<12} {:<10} {:<24} {}",
-            record.id,
-            state,
-            cell(&record.owner),
-            left,
-            record.expires_at(),
-            cell(&record.argv.join(" "))
-        )?;
-        if let Some(url) = &record.url {
-            writeln!(out, "  Expected URL: {}", cell(url))?;
-        }
-        if record.logs_truncated {
-            writeln!(
-                out,
-                "  Log capture capped at {} bytes; newer output is discarded.",
-                record.log_limit_bytes
-            )?;
-        }
-    }
-    if records.is_empty() {
-        if all {
-            writeln!(out, "No managed jobs.")?;
-        } else {
-            writeln!(out, "No active jobs. Use --all to view finished history.")?;
-        }
-    }
-    Ok(())
 }
 
 fn fingerprint(argv: &[String], cwd: &std::path::Path) -> String {
@@ -327,7 +287,7 @@ fn dispatch(cli: &Cli) -> Result<i32> {
                     {
                         bail!("retry key already belongs to a different launch context");
                     }
-                    print_record(&record, true, cli.json)?;
+                    print_record(&record, true, cli.json, cli.color)?;
                     return Ok(if record.state == State::Failed { 1 } else { 0 });
                 }
             }
@@ -353,7 +313,7 @@ fn dispatch(cli: &Cli) -> Result<i32> {
             store.save(&Record::new(&launch))?;
             lifecycle::start_keeper(&store, &id)?;
             let record = store.record(&id)?;
-            print_record(&record, false, cli.json)?;
+            print_record(&record, false, cli.json, cli.color)?;
             if record.state == State::Failed {
                 return Ok(1);
             }
@@ -392,7 +352,7 @@ fn dispatch(cli: &Cli) -> Result<i32> {
                     json!({"schema_version": SCHEMA_VERSION, "jobs": jobs.iter().map(view).collect::<Vec<_>>(), "warnings": warnings})
                 );
             } else {
-                print_table(&jobs, *all)?;
+                display::print_table(&jobs, *all, cli.color)?;
                 for warning in warnings {
                     eprintln!("Warning: {}", clean(&warning));
                 }
@@ -437,11 +397,11 @@ fn dispatch(cli: &Cli) -> Result<i32> {
                     by_ms: duration_ms(by)?,
                 },
             )?;
-            print_record(&record, false, cli.json)?;
+            print_record(&record, false, cli.json, cli.color)?;
         }
         Commands::Stop { id } => {
             let record = lifecycle::control(&store, id, Control::Stop)?;
-            print_record(&record, false, cli.json)?;
+            print_record(&record, false, cli.json, cli.color)?;
         }
         Commands::Watch {
             all,
@@ -468,7 +428,7 @@ fn dispatch(cli: &Cli) -> Result<i32> {
                     if !once && std::io::stdout().is_terminal() {
                         print!("\x1b[2J\x1b[H");
                     }
-                    print_table(&jobs, *all)?;
+                    display::print_table(&jobs, *all, cli.color)?;
                     for warning in warnings {
                         eprintln!("Warning: {}", clean(&warning));
                     }

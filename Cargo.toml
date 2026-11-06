@@ -20,6 +20,7 @@ serde_json = "1"
 sha2 = "0.10"
 signal-hook = "0.3"
 uuid = { version = "1", features = ["v4"] }
+unicode-width = { version = "=0.2.2", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"

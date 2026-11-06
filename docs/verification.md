@@ -6,7 +6,8 @@ and in hosted macOS/Ubuntu CI.
 ## Completed checks
 
 - Formatting and Clippy with warnings denied.
-- One duration unit test and twenty-three process integration tests. The suite includes
+- Two unit checks (duration parsing and Unicode display bounds) and twenty-four
+  process integration tests. The suite includes
   expiry without a continuing CLI call, TERM-resistant descendants, leader exit,
   explicit extension, observation without renewal, keeper/guardian crash cleanup,
   bounded output, idempotent/concurrent retries, unavailable control refusing to
@@ -16,7 +17,7 @@ and in hosted macOS/Ubuntu CI.
   shutdown grace, and output truncation during shutdown.
   Additional cases verify expiry before application readiness and hidden finished
   history with preserved logs/retry identity and visible unverified state.
-- All twenty-four current tests passed locally on macOS. The earlier seventeen-test
+- All twenty-six current tests passed locally on macOS. The earlier seventeen-test
   suite passed in a Linux aarch64 container as a non-root user (UID 501), including
   the permission-failure regression. That Linux validation used native tmpfs state
   rather than a VM shared directory.
@@ -24,6 +25,11 @@ and in hosted macOS/Ubuntu CI.
   dry-run preservation, protected active/unknown/live-owner state, missing completion
   timestamps, symlink boundaries, interrupted and failed deletion, post-completion
   collection without another CLI call, and retry-key reuse after history expires.
+- Display checks cover 20/40/80/120-column rendering, wide Unicode text, escaped
+  application controls, readable job IDs, explicit color modes and unchanged JSON
+  parsing. Real pseudo-terminal captures at 100 and 40 columns were visually
+  inspected; `NO_COLOR` and `TERM=dumb` suppressed automatic colors in that same
+  terminal setup. The README image uses synthetic example jobs.
 - Skill frontmatter and structure validated with the skill-creator validator.
 - Real `npm run dev` smoke tests for Vite 8.3.6 and Next.js 16.4.5, using Node
   24.18.0. Both served HTTP 200 before expiry, reached `expired`, and released their
