@@ -78,4 +78,4 @@ jobs:
           test "$TAG" = "v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
           cat artifacts/*.sha256 > artifacts/SHA256SUMS
           (cd artifacts && sha256sum --check SHA256SUMS)
-          gh release create "$TAG" artifacts/* install.sh --verify-tag --draft --prerelease --title "ProcLease $TAG — first preview" --notes-file "docs/releases/$TAG.md"
+          gh release create "$TAG" artifacts/* install.sh --verify-tag --draft --prerelease --title "ProcLease $TAG experimental preview" --notes-file "docs/releases/$TAG.md"

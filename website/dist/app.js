@@ -1,4 +1,4 @@
-const release = "https://github.com/jaredchu/proclease/releases/download/v0.1.2/";
+const release = "https://github.com/jaredchu/proclease/releases/download/v0.1.3/";
 const agent = document.querySelector("#agent");
 const command = document.querySelector("#install-command");
 const feedback = document.querySelector("#copy-feedback");
@@ -37,7 +37,7 @@ for (const tab of tabs) {
   });
 }
 document.querySelector("#platform").addEventListener("change", event => {
-  document.querySelector("#download").href = release + "proclease-v0.1.2-" + event.target.value + ".tar.gz";
+  document.querySelector("#download").href = release + "proclease-v0.1.3-" + event.target.value + ".tar.gz";
 });
 let expired = false;
 const advance = document.querySelector("#demo-advance");

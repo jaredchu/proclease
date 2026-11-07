@@ -1,6 +1,6 @@
 # ProcLease project context
 
-Last reviewed: 2026-11-06.
+Last reviewed: 2026-11-07.
 
 ## Purpose and scope
 
@@ -70,8 +70,10 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    Dark monochrome website, browser QA and proclease.com publication
 |-- FIXED   Four startup/retry review defects; regression checks pass,
 |           source corrections not released
-`-- FIXED   Test teardown residue; fixtures now wait for their supervisors
-            (test-only, local regression passed, unreleased)
+|-- FIXED   Test teardown residue; fixtures now wait for their supervisors
+|           (test-only, local regression passed, unreleased)
+`-- PREPARED v0.1.3 candidate on its own branch; local native checks pass,
+            hosted four-target build, tag and publication pending
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
@@ -84,6 +86,9 @@ record their regressions and current verification limits. A test-teardown race
 that left partial fixture directories is
 [corrected in the test fixtures](verification.md#fixture-teardown-residue-2026-11-07);
 production lifecycle code was unchanged.
+The [v0.1.3 candidate](verification.md#v013-release-candidate-2026-11-07) pins
+release links to assets that do not exist yet, so it stays off main until the
+release is published.
 
 The recent-job window and resource presentation are implementation choices for
 terminal usability. Resource reads never extend leases.

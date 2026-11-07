@@ -853,7 +853,7 @@ fn teardown_waits_for_keeper_finalization_before_removing_state() {
 #[test]
 fn explicit_extension_and_observation_have_distinct_semantics() {
     let fixture = Fixture::new();
-    let (id, path) = fixture.start("normal", "10s");
+    let (id, path) = fixture.start("normal", "60s");
     let info = ready(&path);
     let before = fixture.job(&id)["expires_at_ms"].as_u64().unwrap();
     fixture.call(&["logs", &id]);

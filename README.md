@@ -15,7 +15,7 @@ Website: [proclease.com](https://proclease.com).
 
 ## Install
 
-Download and review [the v0.1.2 installer](https://github.com/jaredchu/proclease/releases/download/v0.1.2/install.sh), then run:
+Download and review [the v0.1.3 installer](https://github.com/jaredchu/proclease/releases/download/v0.1.3/install.sh), then run:
 
 ```sh
 sh install.sh --skills both
@@ -30,10 +30,10 @@ unrelated skill folders and symlinks are preserved. Restart the agent session
 to discover a new skill.
 
 For manual installation, download an archive from the
-[experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.2),
+[experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.3),
 verify it against `SHA256SUMS`, extract it and place `proclease` on PATH. Each
 archive includes the skill, README and MIT license. See the
-[release notes](docs/releases/v0.1.2.md) for tested platforms and signing limits.
+[release notes](docs/releases/v0.1.3.md) for tested platforms and signing limits.
 
 ## Build
 

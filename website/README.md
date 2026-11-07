@@ -40,5 +40,11 @@ Check the live page, installer bytes and links to published release assets.
 Use curl or an identifying application User-Agent for automated HTTP checks;
 Cloudflare's Browser Integrity Check rejects the default Python `urllib` signature.
 See [Cloudflare's explanation](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1010/).
-Release links and the installer are pinned to v0.1.2. Update those together for
-a future release. See [the release procedure](../docs/releasing.md).
+Release links and the installer are pinned to v0.1.3, whose release assets do
+not exist until that prerelease is published. Deploy this site only after the
+matching release is public. Update those pins together for a future release.
+See [the release procedure](../docs/releasing.md).
+
+Planned before the next website publication, not yet implemented: a new
+logo/favicon, balanced text sizes, removal of em dashes, and a search and
+answer-engine optimization review.

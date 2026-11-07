@@ -223,6 +223,49 @@ observes that window; its teardown assertions apply on both platforms. Hosted
 results for individual revisions are available in the
 [Rust checks workflow](https://github.com/jaredchu/proclease/actions/workflows/ci.yml).
 
+## v0.1.3 release candidate, 2026-11-07
+
+The [v0.1.3 notes](releases/v0.1.3.md) cover the startup/retry corrections and
+the fixture teardown correction above. The candidate updates the version,
+installer pin and mirror, README and website links, and the draft title. These
+results are preliminary local checks of an uncommitted macOS arm64 working tree,
+not a release.
+
+- Formatting, Clippy with warnings denied and the optimized release build passed.
+- The first full test run failed one test:
+  `explicit_extension_and_observation_have_distinct_semantics`. Its 10-second
+  lease expired before its `extend` call, during the first parallel run after
+  a fresh build. An immediate unchanged full rerun passed. The test checks that
+  reads do not renew a lease and that extension adds exactly the requested
+  time; it does not test short expiry. Its lease is now 60 seconds, and all of
+  its assertions are unchanged: the deadline is the same after reads, it moves
+  by exactly one second on extension, `stop` is idempotent and a stopped job
+  rejects extension. The explicit stop still ends the job promptly. This change
+  is test-only; production code is unchanged. After it, the focused test passed
+  five consecutive runs, and a full run passed three unit and thirty-one
+  integration tests. The test root was empty afterwards, and no fixture process
+  remained.
+- The packaged `aarch64-apple-darwin` archive passed the archive check and the
+  installer check with isolated install directories.
+- The archive check previously used a one-second lease, which could expire
+  before the command spawned. It now uses a six-second lease and requires the
+  command's start marker before it accepts expiry. Cleanup waits for live
+  supervisors that name its state root, without signalling recorded PIDs. On a
+  failure or a remaining supervisor, it keeps the directory for diagnosis.
+- A local probe confirmed that this matcher finds a running job's two supervisors,
+  and none after the stop.
+- On a deep test root, the archive check failed. The canonical state path was too
+  long for a Unix socket. The check now uses shorter directory names, and its
+  failures include the CLI error output.
+- `cargo package --allow-dirty` listed and built 45 files. These derive from public
+  repository files, including the website, scripts, workflows and agent
+  instruction files, plus Cargo-generated metadata and manifest copies; no
+  private notes were included. Packaging rules were not
+  changed. `cargo doc --no-deps` built local CLI documentation. `cargo rustdoc
+  --lib` reports no library target, so docs.rs would show only an overview.
+
+The hosted four-target release workflow has not been run for this candidate.
+
 ## Filesystem compatibility
 
 A Linux rerun using a macOS-to-Linux OrbStack bind mount failed intermittently
