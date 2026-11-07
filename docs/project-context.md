@@ -79,7 +79,7 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    v0.1.4 ships the Cargo 1.89 fix through GitHub, crates.io and the website
 |-- FIXED   A later teardown-test observation race, without changing released runtime
 |-- DONE    Tabler SVG interface icons and restored arrows verified across three browsers
-`-- SOURCE  Reviewed bulk `stop --all` with filters/dry run; unreleased, 47 local tests pass
+`-- SOURCE  Reviewed bulk `stop --all`; 47 tests pass on macOS/Linux, unreleased
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
@@ -114,7 +114,8 @@ A subsequent [teardown-test observation race](verification.md#teardown-regressio
 is corrected in main's test source; published v0.1.4 bytes remain unchanged.
 User-authorized bulk `stop --all` with exact owner/task filters, dry run and an
 aggregate JSON envelope is implemented and reviewed in source only. It is not in
-v0.1.4. The initial review findings are resolved.
+v0.1.4. The initial review findings are resolved; hosted stable macOS/Ubuntu checks
+and both Rust 1.89 package installations pass.
 The [verification](verification.md#bulk-stop-unreleased-source-2026-11-07)
 records its tests and limits.
 

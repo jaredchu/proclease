@@ -582,11 +582,16 @@ Formatting, Clippy with warnings denied and the full test suite passed locally o
 macOS arm64. The optimized release build completes, but its existing
 `rust-objcopy` warning remains on this host's toolchain (it cannot load
 `libLLVM.dylib`), so local stripping of the release binary is not verified.
-Linux and hosted CI were not run for this change; in particular the Linux
-full-backlog connect retry is not exercised. A many-target saturation run of
-the documented dispatch bound was not performed. An initial independent review
-requested changes (record identity, absolute exchange bounds and metadata-derived
-waits). The focused follow-up review found no remaining material issues. Independent
+The implementation commit `13f82b9` passed hosted
+[Rust checks](https://github.com/jaredchu/proclease/actions/runs/42375417626):
+stable macOS/Ubuntu formatting, Clippy, all 7 unit/40 integration tests and
+optimized builds, plus default Rust 1.89 packaged-source installations on both
+platforms. The Linux full-backlog connect retry and a many-target saturation run
+of the documented dispatch bound were not separately exercised.
+
+An initial independent review requested changes (record identity, absolute
+exchange bounds and metadata-derived waits). The focused follow-up review found
+no remaining material issues. Independent
 CLI probes confirmed rejection of mismatched record IDs without stopping either
 job, failure of a continuously trickling endpoint in about four seconds, and
 successful completion with an oversized grace value without a panic. Their
