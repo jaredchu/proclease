@@ -43,11 +43,13 @@ verification limits.
   launched in the caller's execution context. Avoid a login-wide service accepting
   arbitrary execution requests from potentially restricted agents.
 - **Publication:** the experimental [v0.1.3 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.3)
-  provides four native binaries, checksums and a verified installer. The public
+  provides four native binaries, checksums and a verified installer. The CLI
+  source is also published on [crates.io](https://crates.io/crates/proclease/0.1.3),
+  with a [docs.rs overview](https://docs.rs/crate/proclease/0.1.3). The public
   [website](https://proclease.com) serves static assets through a Cloudflare Worker;
   [website source and deployment](../website/README.md) are maintained here.
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
-  proxying, auto-restart, hosted dashboards and package-registry distribution.
+  proxying, auto-restart and hosted dashboards.
 
 ## Current state and progress
 
@@ -71,8 +73,9 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    Four startup/retry corrections released in v0.1.3
 |-- DONE    Test teardown now waits for fixture supervisors; released in v0.1.3
 |-- DONE    v0.1.3 experimental prerelease; four native builds and assets verified
-`-- DONE    Website identity, type and search refresh published on proclease.com;
-            one narrow enlarged-text selector limitation remains
+|-- DONE    Website identity, type and search refresh published on proclease.com
+|-- DONE    Installer choice labels wrap at 200% text; only requested arrows removed
+`-- DONE    crates.io 0.1.3 and docs.rs overview published; source installation verified
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
@@ -91,7 +94,10 @@ anonymous HTTPS checks of the deployed website and installer.
 The website sources now include a lease-ring identity, a readable fluid type
 scale, em-dash-free copy and source-backed search metadata.
 [Website verification](verification.md#website-refresh-2026-11-07) records
-responsive checks and a remaining enlarged-text selector limitation.
+the original responsive checks; the later
+[controls correction](verification.md#registry-and-website-controls-2026-11-07)
+resolves the enlarged-text selector limitation and removes only the requested
+upward-right and downward arrows.
 [Design and SEO/GEO decisions](../website/README.md#identity-and-type) describe
 the implementation and supporting sources. The refresh is live on proclease.com.
 
@@ -115,5 +121,8 @@ Instruction-discovery evidence and limits are recorded in
 
 - Exact compatibility under each agent host's restricted execution profile needs
   direct host testing. Same-user local control is not authenticated agent identity.
-- Package-registry distribution and macOS Developer ID signing/notarization are
-  not configured. See [the release procedure](releasing.md) for current delivery.
+- macOS Developer ID signing/notarization is not configured. See the
+  [release procedure](releasing.md) for binary and registry delivery.
+- On the macOS verification host, Rust/Cargo 1.89 needed release stripping
+  disabled for registry installation; current stable passed with defaults.
+  See [registry verification](verification.md#registry-and-website-controls-2026-11-07).

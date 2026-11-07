@@ -39,13 +39,25 @@ for tested platforms and signing limits.
 
 ## Build
 
-Building from source needs Rust 1.89 or newer; the prebuilt installer above does
-not need Rust. To build the CLI from the crates.io registry:
+Building from source needs Rust 1.89 or newer; current stable Rust/Cargo is
+recommended. The prebuilt installer above does not need Rust. To build the CLI
+from the crates.io registry:
 
 ```sh
 cargo install proclease --version 0.1.3 --locked
 proclease --version
 ```
+
+On macOS with Rust/Cargo 1.89, a stripped release build can fail to load a
+procedural-macro dependency. On the verification host this command succeeded:
+
+```sh
+CARGO_PROFILE_RELEASE_STRIP=none cargo install proclease --version 0.1.3 --locked
+```
+
+The default command above passed with current stable Rust/Cargo. See
+[registry verification](https://github.com/jaredchu/proclease/blob/main/docs/verification.md#registry-and-website-controls-2026-11-07)
+for the tested scope.
 
 To build from a Git checkout instead:
 

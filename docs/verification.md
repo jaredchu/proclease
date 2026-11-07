@@ -303,11 +303,11 @@ or hiding overflow. Both root-font and computed-font doubling probes then fit at
 These are simulated text-size checks in Chromium, not a complete browser or
 assistive-technology audit.
 
-One minor limitation remains: at 320px with 200% text, the closed native skills
-selector shortens `Codex + Claude Code`; opening the picker displays the full
-option. No ranking, indexing, rich-result, field performance or AI-citation
+That review left a minor limitation: at 320px with 200% text, the closed
+native skills selector shortened `Codex + Claude Code`. The later
+[controls correction](#registry-and-website-controls-2026-11-07) resolved it. No ranking, indexing, rich-result, field performance or AI-citation
 outcome was measured during that implementation task. The subsequent release
-and website deployment are recorded below; the selector limitation remains.
+and website deployment are recorded below, followed by the controls correction.
 
 ## v0.1.3 publication, 2026-11-07
 
@@ -334,8 +334,51 @@ commit over anonymous HTTPS. Live Chromium smoke checks at 1440 and 390px passed
 demo expiry, download selection and horizontal bounds without page errors. The
 live installer fetched the public release and installed the matching native
 v0.1.3 binary into isolated directories. No global installation was changed.
-The [enlarged-text selector limitation](#website-refresh-2026-11-07) remains.
-Registry publication, including crates.io/docs.rs, is still deferred.
+At that publication stage, the enlarged-text selector limitation remained and
+registry publication was deferred. The subsequent authorized work is below.
+
+## Registry and website controls, 2026-11-07
+
+[proclease 0.1.3](https://crates.io/crates/proclease/0.1.3) is published from
+`84cb199cb177fcf8b2d635df59ec25a1d4a0e680`, tagged `crates-v0.1.3`.
+The original `v0.1.3` binary tag and assets are unchanged. Runtime source, tests,
+portable skill and Cargo.lock match that tag; the crate manifest and README
+include publication metadata, portable links and the corrected Rust minimum.
+The 16-file package excludes website assets, workflows, helper scripts and agent
+instructions. Its clean build and publish dry run passed before upload. The
+registry and anonymous downloaded crate match the reviewed SHA-256:
+`0a03930a0f355fa405f6b8eeda7762bc4f833c23a1839a8062761b27fb0a08a4`.
+The [docs.rs overview](https://docs.rs/crate/proclease/0.1.3) shows the README and
+source, with the expected binary-only designation; no library API was added.
+
+The manifest now declares Rust 1.89, matching locked `uuid 1.29.0`. The packaged
+crate built on native macOS ARM64 with Rust 1.89, and its test targets compiled;
+three unit tests ran there. Full suites on current stable passed three unit plus
+thirty-one integration tests, including the extracted source package. Metadata
+checks confirmed dependency Rust requirements for all four release targets.
+Registry installation with current stable passed with default release settings.
+On the macOS verification host, Rust/Cargo 1.89's default stripped release build
+failed to load `clap_derive` (E0463). Changing only release stripping to `none`
+allowed registry installation. This is a compatibility caveat, not evidence that
+default 1.89 release installation passed. Both isolated installed CLIs report
+`proclease 0.1.3`; the user's global installation was not changed.
+
+The website replaces the skill and platform selects with native labelled radio
+groups so all choices wrap at enlarged text sizes. Local browser checks passed
+320/390/768/1440px layouts, 200% text at 320/390px, keyboard radio/tab navigation,
+commands and four platform downloads, clipboard success/fallback, demo/replay,
+FAQ and core content without JavaScript. Independent checks confirmed complete
+choice labels at 320px under root-font and computed-font doubling. Only the
+requested upward-right and downward arrow glyphs were removed; the logo and
+other symbols remain. Hosted
+[Rust checks](https://github.com/jaredchu/proclease/actions/runs/42348058160) and
+[website checks](https://github.com/jaredchu/proclease/actions/runs/42348058165)
+passed for the publication commit.
+
+The correction is deployed on [proclease.com](https://proclease.com/). All eleven
+served files matched the reviewed commit over anonymous HTTPS. Live checks at
+1440px and at 320px with 200% text passed labels, keyboard choice, command and
+download updates, demo symbols and horizontal bounds without page errors.
 
 ## Filesystem compatibility
 

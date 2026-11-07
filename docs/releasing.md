@@ -79,3 +79,9 @@ Publish only a version whose runtime source matches its GitHub release tag:
 runs `cargo rustdoc --lib`.
 ProcLease has only a binary target, so docs.rs shows a crate overview,
 README and source rather than an API. No docs.rs metadata is configured.
+
+Current registry release: [proclease 0.1.3](https://crates.io/crates/proclease/0.1.3),
+with a [docs.rs crate overview](https://docs.rs/crate/proclease/0.1.3).
+Use current stable Rust/Cargo for the recommended source installation. The
+[registry verification](verification.md#registry-and-website-controls-2026-11-07)
+records the macOS Rust/Cargo 1.89 release-stripping caveat and tested override.
