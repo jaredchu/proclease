@@ -76,7 +76,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    Website identity, type and search refresh published on proclease.com
 |-- DONE    Installer choice labels wrap at 200% text; only requested arrows removed
 |-- DONE    crates.io 0.1.3 and docs.rs overview published; source installation verified
-`-- DONE    v0.1.4 ships the Cargo 1.89 fix through GitHub, crates.io and the website
+|-- DONE    v0.1.4 ships the Cargo 1.89 fix through GitHub, crates.io and the website
+`-- FIXED   A later teardown-test observation race, without changing released runtime
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
@@ -105,6 +106,8 @@ The [v0.1.4 publication](verification.md#v014-publication-2026-11-07) delivers t
 Cargo 1.89 build-time stripping fix without changing runtime behavior. Native
 archives, registry checksum/default installation, docs.rs and the matching live
 website were verified. Older 0.1.3 registry users retain its documented caveat.
+A subsequent [teardown-test observation race](verification.md#teardown-regression-observation-2026-11-07)
+is corrected in main's test source; published v0.1.4 bytes remain unchanged.
 
 The recent-job window and resource presentation are implementation choices for
 terminal usability. Resource reads never extend leases.

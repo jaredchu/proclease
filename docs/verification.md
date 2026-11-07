@@ -471,6 +471,32 @@ binary into isolated directories. Live Chromium checks passed all four v0.1.4
 platform-download choices, release links, removed glyphs and 320px bounds with
 200% root text, without page errors. No global installation was changed.
 
+## Teardown regression observation, 2026-11-07
+
+After v0.1.4 publication, a later docs-only
+[Ubuntu CI run](https://github.com/jaredchu/proclease/actions/runs/42352317076)
+failed the teardown regression's pending-keeper assertion. Its diagnostic record
+already showed finalization. The test had sampled `stopping`, then assumed the
+keeper remained alive during a later process scan; the intentional two-second
+grace could finish between those observations. Runtime behavior was unchanged.
+
+The regression now first checks that both of its live supervisors are identified
+before the deliberate guardian crash. If a later scan misses the keeper, it
+re-reads the record and rejects a miss while the record still says `stopping`.
+Legitimate intervening finalization is accepted. The final assertions that no own
+supervisor remains and the fixture root is removed are unchanged; no sleeps,
+grace periods, runtime hooks or production code were changed.
+
+Formatting, Clippy and all three unit plus thirty-one integration tests passed
+locally. The focused regression passed six runs. A deliberately delayed scan
+accepted completed finalization; a deliberately hidden, still-pending keeper
+failed on three exercised runs. The pending-write branch remains conditional:
+a sufficiently slow runner can reach the test after finalization, while the
+pre-crash identity check still runs. These focused probes ran on macOS; normal
+[main CI](https://github.com/jaredchu/proclease/actions/workflows/ci.yml?query=branch%3Amain)
+provides the hosted macOS/Ubuntu check. This test-only correction follows the
+immutable v0.1.4 source archive; no released bytes, tags or runtime behavior changed.
+
 ## Filesystem compatibility
 
 A Linux rerun using a macOS-to-Linux OrbStack bind mount failed intermittently

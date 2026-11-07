@@ -816,19 +816,31 @@ fn teardown_waits_for_keeper_finalization_before_removing_state() {
     let id = launched["job"]["id"].as_str().unwrap().to_owned();
     let keeper = launched["job"]["keeper_pid"].as_u64().unwrap() as u32;
     let guardian = launched["job"]["guardian_pid"].as_u64().unwrap() as i32;
+    // Race-free identification proof: with a 30s lease, both supervisors of
+    // this fixture's own state root are running and must be found by argv.
+    let live = fixture.supervisors();
+    assert!(
+        live.contains(&keeper) && live.contains(&(guardian as u32)),
+        "keeper {keeper} and guardian {guardian} must be identified (live {live:?})"
+    );
     // After a guardian crash the keeper terminates the group, then waits out
     // the grace before its final record write, socket removal and collection.
     assert_eq!(unsafe { libc::kill(guardian, libc::SIGKILL) }, 0);
     assert_eq!(fixture.terminal(&id)["state"], "interrupted");
-    let record: Value =
+    let on_disk = || -> Value {
         serde_json::from_slice(&fs::read(fixture.state.join(&id).join("record.json")).unwrap())
-            .unwrap();
-    if record["state"] == "stopping" {
+            .unwrap()
+    };
+    if on_disk()["state"] == "stopping" {
         // The finished state was derived from an absent group (on macOS a
         // retained zombie leader is not a live member); the keeper has not
-        // finalized and still writes into this state.
+        // finalized and still writes into this state. It may legitimately
+        // finish its grace between that snapshot and the scan, so revalidate
+        // afterwards: a record still `stopping` after a scan that missed the
+        // keeper proves it was pre-final, hence alive, and was not identified.
+        let identified = fixture.supervisors().contains(&keeper);
         assert!(
-            fixture.supervisors().contains(&keeper),
+            identified || on_disk()["state"] != "stopping",
             "keeper {keeper} must be identified while it owns pending writes"
         );
     }
