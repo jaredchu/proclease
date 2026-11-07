@@ -16,7 +16,7 @@ Website: [proclease.com](https://proclease.com).
 
 ## Install
 
-Download and review [the v0.1.3 installer](https://github.com/jaredchu/proclease/releases/download/v0.1.3/install.sh), then run:
+Download and review [the v0.1.4 installer](https://github.com/jaredchu/proclease/releases/download/v0.1.4/install.sh), then run:
 
 ```sh
 sh install.sh --skills both
@@ -31,10 +31,10 @@ unrelated skill folders and symlinks are preserved. Restart the agent session
 to discover a new skill.
 
 For manual installation, download an archive from the
-[experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.3),
+[experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.4),
 verify it against `SHA256SUMS`, extract it and place `proclease` on PATH. Each
 archive includes the skill, README and MIT license. See the
-[release notes](https://github.com/jaredchu/proclease/blob/v0.1.3/docs/releases/v0.1.3.md)
+[release notes](https://github.com/jaredchu/proclease/blob/v0.1.4/docs/releases/v0.1.4.md)
 for tested platforms and signing limits.
 
 ## Build
@@ -44,21 +44,15 @@ recommended. The prebuilt installer above does not need Rust. To build the CLI
 from the crates.io registry:
 
 ```sh
-cargo install proclease --version 0.1.3 --locked
+cargo install proclease --version 0.1.4 --locked
 proclease --version
 ```
 
-On macOS with Rust/Cargo 1.89, the published 0.1.3 crate's stripped release
-build can fail to load a procedural-macro dependency. On the verification host
-this command succeeded:
-
-```sh
-CARGO_PROFILE_RELEASE_STRIP=none cargo install proclease --version 0.1.3 --locked
-```
-
-The default command above passed with current stable Rust/Cargo. See
-[registry verification](https://github.com/jaredchu/proclease/blob/main/docs/verification.md#registry-and-website-controls-2026-11-07)
-for the tested scope.
+Version 0.1.4 fixes the macOS Rust/Cargo 1.89 procedural-macro loading failure
+without requiring a profile override. Only build-time helpers are left unstripped;
+the installed CLI retains stripping and thin LTO. See
+[verification](https://github.com/jaredchu/proclease/blob/main/docs/verification.md#cargo-189-build-time-stripping-fix-2026-11-07)
+for the tested scope and the older 0.1.3 caveat.
 
 To build from a Git checkout instead:
 
@@ -68,10 +62,6 @@ cd proclease
 cargo install --path . --locked
 proclease --version
 ```
-
-Current source leaves only build-time helpers such as procedural macros
-unstripped; this default command passed with Rust 1.89 on the macOS verification
-host. The installed `proclease` binary remains stripped.
 
 Cargo installs only the `proclease` CLI. Set up the skill separately: see
 [Install the skill](#install-the-skill), using a source checkout or an extracted
@@ -98,7 +88,7 @@ details and preview URLs. It switches to a stacked layout in narrow terminals. C
 for terminals; `NO_COLOR`, `TERM=dumb` or `--color never` disables them, and
 `--color always` forces them. Redirected output and JSON stay uncolored by default.
 
-![ProcLease terminal table showing example jobs](https://raw.githubusercontent.com/jaredchu/proclease/v0.1.3/docs/assets/terminal-preview.png)
+![ProcLease terminal table showing example jobs](https://raw.githubusercontent.com/jaredchu/proclease/v0.1.4/docs/assets/terminal-preview.png)
 
 A real disposable worker and synthetic history rows shown with
 `proclease watch --all`; the default view briefly shows recently finished jobs
@@ -208,7 +198,7 @@ running inside a Linux VM or container.
 
 ## Install the skill
 
-The same [skill folder](https://github.com/jaredchu/proclease/blob/v0.1.3/skills/proclease/SKILL.md) works as an instruction-only
+The same [skill folder](https://github.com/jaredchu/proclease/blob/v0.1.4/skills/proclease/SKILL.md) works as an instruction-only
 skill in both hosts. With `proclease` on the executor's PATH, link the folder into
 each host you use:
 
@@ -269,4 +259,4 @@ Codex led the initial implementation and documentation. Claude, through Claude
 Code, contributed independent review and validation. See the
 [contribution and attribution policy](https://github.com/jaredchu/proclease/blob/main/CONTRIBUTING.md#commit-attribution).
 
-Released under the [MIT license](https://github.com/jaredchu/proclease/blob/v0.1.3/LICENSE).
+Released under the [MIT license](https://github.com/jaredchu/proclease/blob/v0.1.4/LICENSE).

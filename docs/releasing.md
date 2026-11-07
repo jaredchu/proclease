@@ -32,7 +32,10 @@ For a new release:
 Release archives include `proclease`, the portable skill, README and MIT license.
 The packaging checks use Python 3.12 or newer, supplied in CI; users do not need
 Python or Rust for binary installation. macOS Developer ID signing/notarization
-and Homebrew distribution are not configured.
+and Homebrew distribution are not configured. Before promoting a stable macOS
+release, add Developer ID signing and notarization and test a browser-downloaded,
+quarantined artifact on a fresh Mac. These remain deferred for experimental
+prereleases; basic ad hoc signatures are distinct from publisher identity.
 
 ## crates.io
 
@@ -88,8 +91,9 @@ runs `cargo rustdoc --lib`.
 ProcLease has only a binary target, so docs.rs shows a crate overview,
 README and source rather than an API. No docs.rs metadata is configured.
 
-Current registry release: [proclease 0.1.3](https://crates.io/crates/proclease/0.1.3),
-with a [docs.rs crate overview](https://docs.rs/crate/proclease/0.1.3).
+The v0.1.4 candidate includes the build-time stripping fix. After publication,
+verify [proclease 0.1.4](https://crates.io/crates/proclease/0.1.4) and its
+[docs.rs crate overview](https://docs.rs/crate/proclease/0.1.4).
 Use current stable Rust/Cargo for the recommended source installation. The
 [registry verification](verification.md#registry-and-website-controls-2026-11-07)
 records the macOS Rust/Cargo 1.89 release-stripping caveat and tested override.

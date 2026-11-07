@@ -122,7 +122,8 @@ Instruction-discovery evidence and limits are recorded in
 
 - Exact compatibility under each agent host's restricted execution profile needs
   direct host testing. Same-user local control is not authenticated agent identity.
-- macOS Developer ID signing/notarization is not configured. See the
+- macOS Developer ID signing/notarization is deferred for experimental releases
+  and required before promotion to stable. See the
   [release procedure](releasing.md) for binary and registry delivery.
 - The published 0.1.3 crate can require a stripping workaround on macOS with
   Rust/Cargo 1.89. Current source fixes build-time stripping while preserving
