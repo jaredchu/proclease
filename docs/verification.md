@@ -277,6 +277,38 @@ also passed. No tag, release, registry upload or website deployment was created.
 A clean source package from `8398c56` passed build verification and identified
 that commit in Cargo's VCS metadata, without a dirty flag.
 
+## Website refresh, 2026-11-07
+
+The unpublished website sources use a new SVG lease-ring mark and matching
+16/32/48px ICO, PNG and Apple touch icons, plus a 1200x630 social image. A fluid
+rem-based scale reduces the hero heading to 36–56px and raises labels to at least
+12px at default browser text size. Copy and demo states contain no em dashes.
+The [website decisions](../website/README.md#search-and-answer-engine-decisions)
+link the exact NavSEO and primary platform sources used for the static content,
+navigation, metadata and factual JSON-LD.
+
+Local Chromium checks covered 320/390/768/1440px layouts, visible navigation,
+lease demo expiry/replay, installer selectors and four platform links, clipboard
+failure fallback, keyboard tabs/focus, FAQ, reduced motion and core content with
+JavaScript disabled. There were no page errors or failed local assets. Static
+checks validated references, canonical/sitemap consistency, JSON syntax, icon and
+social dimensions, em dash absence and the unchanged installer mirror; JavaScript
+and shell syntax checks passed. Formatting, Clippy with warnings denied and all
+three unit plus thirty-one integration tests also passed; Rust code was unchanged.
+
+Review found horizontal overflow at 320px with text doubled. Narrow CSS changes
+allow the hero grid, buttons and demo rows to wrap without reducing enlarged text
+or hiding overflow. Both root-font and computed-font doubling probes then fit at
+320 and 390px, and an independent 320px check confirmed no document overflow.
+These are simulated text-size checks in Chromium, not a complete browser or
+assistive-technology audit.
+
+One minor limitation remains: at 320px with 200% text, the closed native skills
+selector shortens `Codex + Claude Code`; opening the picker displays the full
+option. No ranking, indexing, rich-result, field performance or AI-citation
+outcome was measured. No website deployment was performed, and the v0.1.3 pins
+still require the matching release to be published before deployment.
+
 ## Filesystem compatibility
 
 A Linux rerun using a macOS-to-Linux OrbStack bind mount failed intermittently

@@ -45,6 +45,34 @@ not exist until that prerelease is published. Deploy this site only after the
 matching release is public. Update those pins together for a future release.
 See [the release procedure](../docs/releasing.md).
 
-Planned before the next website publication, not yet implemented: a new
-logo/favicon, balanced text sizes, removal of em dashes, and a search and
-answer-engine optimization review.
+## Identity and type
+
+The mark in `dist/assets/icon.svg` is a lease ring: an open arc for the
+remaining lease, a tick for the deadline and a solid block for the supervised
+process. Header, footer, SVG favicon, `favicon.ico` (16/32/48),
+`assets/icon-32.png`, `assets/apple-touch-icon.png` (180) and the 1200x630
+`assets/social.png` all use the same geometry. The PNG and ICO files are rendered
+from that SVG; edit the SVG first and re-render. Type uses a rem-based fluid
+scale (12px minimum labels, 16px body), so browser text size settings apply.
+Website copy and demo states avoid em dashes; unavailable values read `n/a`.
+
+## Search and answer-engine decisions
+
+The refresh applies ordinary, verifiable practices rather than special AI tricks:
+
+| Decision | Source |
+| --- | --- |
+| One canonical URL shared by `<link rel="canonical">`, `og:url` and the sitemap | [NavSEO: canonical tags](https://navseo.com/learn/technical-seo/canonical-tags-and-duplicate-content/) |
+| Definition, FAQ, links and metadata in the initial HTML; JavaScript only drives the demo and installer controls | [NavSEO: JavaScript SEO](https://navseo.com/learn/technical-seo/javascript-seo-and-rendering/) |
+| Descriptive navigation, including FAQ and Docs, visible on mobile and desktop; keyboard focus kept | [NavSEO: navigation SEO](https://navseo.com/learn/on-page-seo/navigation-seo/) |
+| An early plain definition, concise FAQ answers with stated limits, and source/docs/support/license links | [NavSEO: AI citation SEO](https://navseo.com/learn/ai-citation-seo/what-ai-citation-seo-means/) |
+| Small JSON-LD `WebSite` plus `SoftwareApplication` matching visible facts; no ratings, offers, organization or version | [NavSEO: structured data](https://navseo.com/learn/ai-citation-seo/structured-data-and-ai-visibility/), [schema.org SoftwareApplication](https://schema.org/SoftwareApplication) |
+| Specific title and description naming the product and task | Product facts in the root README |
+
+Primary platform reference: [Google Search AI features](https://developers.google.com/search/docs/appearance/ai-features)
+states that standard SEO practices apply and that no special schema or AI text
+file is required. The site therefore has no `llms.txt`, and robots, crawler
+policy and hosting are unchanged. These measures do not guarantee rankings, rich
+results or AI citations. `scripts/check-website.py` validates local structure only
+(JSON parsing, canonical consistency, icons and dimensions, references, em dash
+absence); it does not run search-engine validators.

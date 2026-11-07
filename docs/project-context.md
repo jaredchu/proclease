@@ -72,8 +72,10 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |           source corrections not released
 |-- FIXED   Test teardown residue; fixtures now wait for their supervisors
 |           (test-only, local regression passed, unreleased)
-`-- PREPARED v0.1.3 candidate on its own branch; four native targets pass,
-            tag and publication pending
+|-- PREPARED v0.1.3 candidate on its own branch; four native targets pass,
+|           tag and publication pending
+`-- PREPARED Website identity, type and search refresh; not deployed,
+            with one narrow enlarged-text selector limitation
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
@@ -89,6 +91,12 @@ production lifecycle code was unchanged.
 The [v0.1.3 candidate](verification.md#v013-release-candidate-2026-11-07) pins
 release links to assets that do not exist yet, so it stays off main until the
 release is published.
+The website sources now include a lease-ring identity, a readable fluid type
+scale, em-dash-free copy and source-backed search metadata.
+[Website verification](verification.md#website-refresh-2026-11-07) records
+responsive checks and a remaining enlarged-text selector limitation.
+[Design and SEO/GEO decisions](../website/README.md#identity-and-type) describe
+the implementation and supporting sources. This refresh is not deployed.
 
 The recent-job window and resource presentation are implementation choices for
 terminal usability. Resource reads never extend leases.

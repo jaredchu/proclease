@@ -60,9 +60,9 @@ advance.addEventListener("click", () => {
   setTimeout(() => {
     document.querySelector("#demo-state").textContent = "○ expired";
     document.querySelector("#demo-count").textContent = "01 RECENT";
-    document.querySelector("#demo-time").textContent = "—";
-    document.querySelector("#demo-cpu").textContent = "—";
-    document.querySelector("#demo-rss").textContent = "—";
+    document.querySelector("#demo-time").textContent = "n/a";
+    document.querySelector("#demo-cpu").textContent = "n/a";
+    document.querySelector("#demo-rss").textContent = "n/a";
     document.querySelector("#demo-event").textContent = "Service group stopped. History remains available with --all.";
     advance.innerHTML = 'Replay this lease <span aria-hidden="true">↺</span>';
     advance.disabled = false;
