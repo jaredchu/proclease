@@ -83,6 +83,10 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 `-- SOURCE  Reviewed bulk-stop retention fix; 51 tests pass on macOS/Linux, unreleased
 ```
 
+The v0.1.5 experimental release candidate packages bulk stop and its retention
+correction with matching installer, shared skill and website pins. Publication,
+registry installation, live website verification and the local upgrade are pending.
+
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
 [verification](verification.md) records evidence and limits, including a real
 Codex preview session and the corrected registry-selection guidance. Restricted

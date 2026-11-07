@@ -16,7 +16,7 @@ Website: [proclease.com](https://proclease.com).
 
 ## Install
 
-Download and review [the v0.1.4 installer](https://github.com/jaredchu/proclease/releases/download/v0.1.4/install.sh), then run:
+Download and review [the v0.1.5 installer](https://github.com/jaredchu/proclease/releases/download/v0.1.5/install.sh), then run:
 
 ```sh
 sh install.sh --skills both
@@ -31,10 +31,10 @@ unrelated skill folders and symlinks are preserved. Restart the agent session
 to discover a new skill.
 
 For manual installation, download an archive from the
-[experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.4),
+[experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.5),
 verify it against `SHA256SUMS`, extract it and place `proclease` on PATH. Each
 archive includes the skill, README and MIT license. See the
-[release notes](https://github.com/jaredchu/proclease/blob/v0.1.4/docs/releases/v0.1.4.md)
+[release notes](https://github.com/jaredchu/proclease/blob/v0.1.5/docs/releases/v0.1.5.md)
 for tested platforms and signing limits.
 
 ## Build
@@ -44,7 +44,7 @@ recommended. The prebuilt installer above does not need Rust. To build the CLI
 from the crates.io registry:
 
 ```sh
-cargo install proclease --version 0.1.4 --locked
+cargo install proclease --version 0.1.5 --locked
 proclease --version
 ```
 
@@ -79,7 +79,7 @@ proclease list --all
 proclease logs JOB_ID --tail 50
 proclease extend JOB_ID --by 1h
 proclease stop JOB_ID
-proclease stop --all --task preview --dry-run   # unreleased source only
+proclease stop --all --task preview --dry-run
 proclease watch
 proclease prune --dry-run
 ```
@@ -89,7 +89,7 @@ details and preview URLs. It switches to a stacked layout in narrow terminals. C
 for terminals; `NO_COLOR`, `TERM=dumb` or `--color never` disables them, and
 `--color always` forces them. Redirected output and JSON stay uncolored by default.
 
-![ProcLease terminal table showing example jobs](https://raw.githubusercontent.com/jaredchu/proclease/v0.1.4/docs/assets/terminal-preview.png)
+![ProcLease terminal table showing example jobs](https://raw.githubusercontent.com/jaredchu/proclease/v0.1.5/docs/assets/terminal-preview.png)
 
 A real disposable worker and synthetic history rows shown with
 `proclease watch --all`; the default view briefly shows recently finished jobs
@@ -149,11 +149,12 @@ unavailable values are `null`. An unavailable group has `resources: null`.
 - Stop during shutdown returns lifecycle state; extension of a stopping job is
   rejected. If a response is lost, inspect `list` before retrying an operation.
 
-### Bulk stop (unreleased source)
+<a id="bulk-stop-unreleased-source"></a>
 
-`stop --all` is available in the current source and is **not** in the published
-v0.1.4 binaries or installer. `stop` requires exactly one target: a job ID, or
-`--all`. Filters and `--dry-run` are accepted only with `--all`.
+### Bulk stop
+
+`stop --all` is available in v0.1.5 and later. `stop` requires exactly one target:
+a job ID, or `--all`. Filters and `--dry-run` are accepted only with `--all`.
 
 ```sh
 proclease stop --all --task preview --dry-run --json
@@ -272,7 +273,7 @@ running inside a Linux VM or container.
 
 ## Install the skill
 
-The same [skill folder](https://github.com/jaredchu/proclease/blob/v0.1.4/skills/proclease/SKILL.md) works as an instruction-only
+The same [skill folder](https://github.com/jaredchu/proclease/blob/v0.1.5/skills/proclease/SKILL.md) works as an instruction-only
 skill in both hosts. With `proclease` on the executor's PATH, link the folder into
 each host you use:
 
@@ -333,4 +334,4 @@ Codex led the initial implementation and documentation. Claude, through Claude
 Code, contributed independent review and validation. See the
 [contribution and attribution policy](https://github.com/jaredchu/proclease/blob/main/CONTRIBUTING.md#commit-attribution).
 
-Released under the [MIT license](https://github.com/jaredchu/proclease/blob/v0.1.4/LICENSE).
+Released under the [MIT license](https://github.com/jaredchu/proclease/blob/v0.1.5/LICENSE).

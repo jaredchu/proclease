@@ -87,9 +87,8 @@ a requested manual preview, leave the lease active and report the job ID, tested
 URL and expiry. Parse the returned state; a successful command can still report
 `stopping`, which requires a later bounded status check.
 
-Bulk stop is unreleased source functionality; the published v0.1.4 binaries
-and installer do not provide it. Check `proclease stop --help` before relying on
-`stop --all`. Use it only when the user has authorized that scope:
+Bulk stop requires ProcLease 0.1.5 or later. Check `proclease stop --help` before
+relying on `stop --all`. Use it only when the user has authorized that scope:
 
 - Prefer stopping specific IDs, or a scoped task cleanup such as
   `proclease stop --all --owner OWNER --task TASK --dry-run --json` followed by
@@ -99,6 +98,9 @@ and installer do not provide it. Check `proclease stop --help` before relying on
   not authorize stopping every job carrying that label, and a task label does not
   authorize stopping another task's jobs. Run unfiltered `stop --all` only when the
   user explicitly asked to stop every job in that registry.
+- CLI upgrades leave existing jobs under their original supervisors. Retention
+  protection requires updated clients and keepers; older keepers ignore it. Do
+  not stop or restart existing jobs merely to complete an upgrade.
 - Parse each `results[]` entry: only `status: finished` (or `would_stop` in a
   dry run) is confirmed. Report `unverified` and `failed` entries, their `error`,
   and every `warnings` entry. A nonzero exit or `complete: false` means cleanup is

@@ -135,7 +135,7 @@ Repeated stop while stopping polls existing state instead of waiting for an idle
 shutdown socket. A transport failure racing with shutdown is reconciled against
 the latest record; extensions are never automatically replayed.
 
-Bulk stop (`stop --all`, unreleased source) is a client-side fan-out over the same
+Bulk stop (`stop --all`, available from v0.1.5) is a client-side fan-out over the same
 per-job sockets, not a new service. It takes the root launch lock only while
 scanning records, which orders the snapshot after in-flight launches and with
 collection; the lock is released before any control, so keepers can still finish.
