@@ -19,6 +19,8 @@ pub struct Store {
 
 pub const HISTORY_MAX_AGE_MS: u64 = 24 * 60 * 60 * 1000;
 pub const HISTORY_MAX_FINISHED: usize = 100;
+/// Absolute bound for one supervisor availability probe.
+pub const OBSERVE_CONNECT: std::time::Duration = std::time::Duration::from_millis(500);
 
 #[derive(Default, Serialize)]
 pub struct PruneReport {
@@ -278,6 +280,11 @@ impl Store {
 
     pub fn record(&self, id: &str) -> Result<Record> {
         let mut record: Record = read_json(&self.job(id)?.join("record.json"))?;
+        // A record is addressed only by its directory. A record naming another
+        // job must never redirect selection, observation or control to it.
+        if record.id != id {
+            bail!("record names a different job ID; refusing to use it");
+        }
         if record.state != State::Starting {
             record.logs_truncated |= self.capture_truncated(id)?;
         }
@@ -337,8 +344,13 @@ impl Store {
     pub fn observed_record(&self, id: &str) -> Result<Record> {
         let mut record = self.record(id)?;
         // Observation only: never signal an OS PID copied from disk.
+        // The probe connect is bounded; scans hold the root lock while probing.
         if record.state.active()
-            && std::os::unix::net::UnixStream::connect(self.job(id)?.join("ctl.sock")).is_err()
+            && crate::platform::connect_unix(
+                &self.job(id)?.join("ctl.sock"),
+                std::time::Instant::now() + OBSERVE_CONNECT,
+            )
+            .is_err()
         {
             if record.state == State::Stopping {
                 if record.guardian_pid.is_some_and(group_is_absent) {

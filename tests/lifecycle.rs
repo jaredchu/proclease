@@ -1702,3 +1702,559 @@ fn unspawned_keeper_is_a_failed_collectable_launch_but_uncertain_startup_is_kept
         );
     }
 }
+
+impl Fixture {
+    /// Start the fixture service with declared labels and a chosen grace.
+    fn start_labeled(&self, owner: &str, task: &str, mode: &str, grace: &str) -> (String, Value) {
+        let marker = self
+            .dir
+            .path()
+            .join(format!("r-{}.json", uuid::Uuid::new_v4().simple()));
+        let service = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/service.py");
+        let result = self.call(&[
+            "run",
+            "--ttl",
+            "60s",
+            "--grace",
+            grace,
+            "--owner",
+            owner,
+            "--task",
+            task,
+            "--",
+            "/usr/bin/python3",
+            service.to_str().unwrap(),
+            mode,
+            marker.to_str().unwrap(),
+        ]);
+        let id = result["job"]["id"].as_str().unwrap().to_owned();
+        (id, ready(&marker))
+    }
+    fn bulk(&self, args: &[&str]) -> (bool, Value) {
+        let mut full = vec!["stop", "--all"];
+        full.extend_from_slice(args);
+        let output = self.command(&full).output().unwrap();
+        (output.status.success(), parse(&output))
+    }
+}
+
+fn result_ids(value: &Value) -> Vec<String> {
+    let mut ids: Vec<String> = value["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap().to_owned())
+        .collect();
+    ids.sort();
+    ids
+}
+
+fn sorted(ids: &[&String]) -> Vec<String> {
+    let mut ids: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+    ids.sort();
+    ids
+}
+
+fn port_open(info: &Value) -> bool {
+    let address: SocketAddr = format!("127.0.0.1:{}", info["port"].as_u64().unwrap())
+        .parse()
+        .unwrap();
+    TcpStream::connect_timeout(&address, Duration::from_millis(200)).is_ok()
+}
+
+#[test]
+fn stop_requires_exactly_one_target_and_single_id_json_is_unchanged() {
+    let fixture = Fixture::new();
+    let (id, info) = fixture.start_labeled("a", "t", "normal", "100ms");
+    for args in [
+        vec!["stop"],
+        vec!["stop", "--owner", "a"],
+        vec!["stop", "--task", "t"],
+        vec!["stop", "--dry-run"],
+        vec!["stop", &id, "--all"],
+        vec!["stop", &id, "--owner", "a"],
+        vec!["stop", &id, "--task", "t"],
+        vec!["stop", &id, "--dry-run"],
+    ] {
+        let output = fixture.command(&args).output().unwrap();
+        // Argument errors are usage errors (clap exit 2), not lifecycle failures.
+        assert_eq!(output.status.code(), Some(2), "{args:?} must be rejected");
+    }
+    assert_eq!(fixture.job(&id)["state"], "running");
+    assert!(port_open(&info));
+    let single = fixture.call(&["stop", &id]);
+    let mut keys: Vec<_> = single.as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    assert_eq!(keys, ["job", "reused", "schema_version"]);
+    assert_eq!(single["schema_version"], 1);
+    assert_eq!(single["reused"], false);
+    assert_eq!(single["job"]["state"], "stopped");
+    assert_port_closed(&info);
+}
+
+#[test]
+fn bulk_stop_filters_dry_run_and_cleans_stubborn_groups() {
+    let fixture = Fixture::new();
+    let (a, a_info) = fixture.start_labeled("a", "t1", "stubborn", "100ms");
+    let (b, b_info) = fixture.start_labeled("a", "t2", "stubborn", "100ms");
+    let (c, c_info) = fixture.start_labeled("b", "t1", "normal", "100ms");
+    let deadlines: Vec<_> = [&a, &b, &c]
+        .iter()
+        .map(|id| fixture.job(id)["expires_at_ms"].clone())
+        .collect();
+
+    let (ok, dry) = fixture.bulk(&["--owner", "a", "--task", "t1", "--dry-run"]);
+    assert!(ok, "{dry}");
+    assert_eq!(dry["schema_version"], 1);
+    assert_eq!(dry["dry_run"], true);
+    assert_eq!(dry["complete"], true);
+    assert_eq!(dry["filters"]["owner"], "a");
+    assert_eq!(result_ids(&dry), sorted(&[&a]));
+    assert_eq!(dry["results"][0]["status"], "would_stop");
+    assert_eq!(dry["results"][0]["job"]["task"], "t1");
+    let (ok, dry_all) = fixture.bulk(&["--dry-run"]);
+    assert!(ok);
+    assert_eq!(result_ids(&dry_all), sorted(&[&a, &b, &c]));
+    for (id, deadline) in [&a, &b, &c].iter().zip(&deadlines) {
+        let job = fixture.job(id);
+        assert_eq!(job["state"], "running");
+        assert_eq!(&job["expires_at_ms"], deadline);
+    }
+    for info in [&a_info, &b_info, &c_info] {
+        assert!(port_open(info));
+    }
+
+    // Exact AND: owner "a" with task "t1" selects only A.
+    let (ok, scoped) = fixture.bulk(&["--owner", "a", "--task", "t1"]);
+    assert!(ok, "{scoped}");
+    assert_eq!(scoped["dry_run"], false);
+    assert_eq!(result_ids(&scoped), sorted(&[&a]));
+    assert_eq!(scoped["results"][0]["status"], "finished");
+    assert_eq!(scoped["results"][0]["ok"], true);
+    assert_eq!(scoped["results"][0]["selected_state"], "running");
+    assert_eq!(scoped["results"][0]["job"]["state"], "stopped");
+    assert_port_closed(&a_info);
+    for (id, deadline) in [(&b, &deadlines[1]), (&c, &deadlines[2])] {
+        let job = fixture.job(id);
+        assert_eq!(job["state"], "running");
+        assert_eq!(&job["expires_at_ms"], deadline);
+    }
+    // A label prefix or a non-matching task never widens the selection.
+    let (ok, none) = fixture.bulk(&["--owner", "", "--task", "t"]);
+    assert!(ok);
+    assert!(none["results"].as_array().unwrap().is_empty());
+
+    let (ok, rest) = fixture.bulk(&[]);
+    assert!(ok, "{rest}");
+    assert_eq!(result_ids(&rest), sorted(&[&b, &c]));
+    assert!(rest["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|r| r["job"]["state"] == "stopped"));
+    assert_port_closed(&b_info);
+    assert_port_closed(&c_info);
+    let child = b_info["child"].as_u64().unwrap() as i32;
+    wait(|| (unsafe { libc::kill(child, 0) } == -1).then_some(()));
+
+    // Repeating is an empty success; finished history is retained.
+    let (ok, again) = fixture.bulk(&[]);
+    assert!(ok);
+    assert_eq!(again["complete"], true);
+    assert!(again["results"].as_array().unwrap().is_empty());
+    for id in [&a, &b, &c] {
+        assert_eq!(fixture.job(id)["state"], "stopped");
+    }
+}
+
+#[test]
+fn bulk_stop_is_parallel_bounded_and_ignores_later_launches() {
+    let fixture = Fixture::new();
+    let jobs: Vec<_> = (0..4)
+        .map(|_| fixture.start_labeled("a", "t", "stubborn", "1500ms"))
+        .collect();
+    let mut command = fixture.command(&["stop", "--all"]);
+    let started = Instant::now();
+    let bulk = thread::spawn(move || {
+        let output = command.output().unwrap();
+        (output, Instant::now())
+    });
+    // Every selected job reaches stopping before any can finish its grace.
+    wait(|| {
+        jobs.iter()
+            .all(|(id, _)| fixture.job(id)["state"] != "running")
+            .then_some(())
+    });
+    let (late, late_info) = fixture.start_labeled("a", "t", "normal", "100ms");
+    let (output, finished) = bulk.join().unwrap();
+    let elapsed = finished - started;
+    let value = parse(&output);
+    assert!(output.status.success(), "{value}");
+    let ids: Vec<&String> = jobs.iter().map(|(id, _)| id).collect();
+    assert_eq!(result_ids(&value), sorted(&ids));
+    assert!(!result_ids(&value).contains(&late));
+    // Sequential grace alone would take at least 6s.
+    assert!(elapsed >= Duration::from_millis(1400), "{elapsed:?}");
+    assert!(elapsed < Duration::from_millis(5000), "{elapsed:?}");
+    for (_, info) in &jobs {
+        assert_port_closed(info);
+    }
+    assert_eq!(fixture.job(&late)["state"], "running");
+    assert!(port_open(&late_info));
+}
+
+#[test]
+fn bulk_stop_reports_unverified_and_unreadable_records_but_stops_the_rest() {
+    struct OwnedChild(std::process::Child);
+    impl Drop for OwnedChild {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let fixture = Fixture::new();
+    let (live, live_info) = fixture.start_labeled("a", "t", "normal", "100ms");
+    // An unverified job: a finished record rewritten as running, naming an
+    // unrelated process owned by this test. Its supervisor is long gone.
+    let (record, launch) = fixture.finished_template();
+    let unrelated = OwnedChild(Command::new("/bin/sleep").arg("30").spawn().unwrap());
+    let mut stale = record.clone();
+    stale["state"] = serde_json::json!("running");
+    stale["created_at_ms"] = serde_json::json!(0);
+    stale["finished_at_ms"] = Value::Null;
+    stale["owner"] = serde_json::json!("a");
+    stale["task"] = serde_json::json!("t");
+    stale["guardian_pid"] = serde_json::json!(unrelated.0.id());
+    stale["command_pid"] = serde_json::json!(unrelated.0.id());
+    let unknown = "0000000000aa";
+    stale["id"] = serde_json::json!(unknown);
+    let mut stale_launch = launch.clone();
+    stale_launch["id"] = serde_json::json!(unknown);
+    fixture.seed_files(
+        unknown,
+        &[
+            ("record.json", serde_json::to_vec(&stale).unwrap()),
+            ("launch.json", serde_json::to_vec(&stale_launch).unwrap()),
+        ],
+    );
+    let corrupt = "0000000000bb";
+    fixture.seed_files(corrupt, &[("record.json", b"not json".to_vec())]);
+
+    // A filter cannot prove that an unreadable record does not match.
+    let (ok, dry) = fixture.bulk(&["--owner", "nobody", "--dry-run"]);
+    assert!(!ok);
+    assert_eq!(dry["complete"], false);
+    assert!(dry["results"].as_array().unwrap().is_empty());
+    assert!(dry["warnings"][0].as_str().unwrap().contains(corrupt));
+    let (ok, dry) = fixture.bulk(&["--dry-run"]);
+    assert!(!ok);
+    assert_eq!(result_ids(&dry), sorted(&[&live, &unknown.to_owned()]));
+    assert_eq!(fixture.job(&live)["state"], "running");
+
+    let (ok, value) = fixture.bulk(&["--owner", "a"]);
+    assert!(!ok, "{value}");
+    assert_eq!(value["complete"], false);
+    let results = value["results"].as_array().unwrap();
+    let by_id = |id: &str| results.iter().find(|r| r["id"] == id).unwrap().clone();
+    assert_eq!(by_id(&live)["status"], "finished");
+    assert_eq!(by_id(&live)["job"]["state"], "stopped");
+    assert_eq!(by_id(unknown)["status"], "unverified");
+    assert_eq!(by_id(unknown)["ok"], false);
+    assert!(by_id(unknown)["error"]
+        .as_str()
+        .unwrap()
+        .contains("refusing"));
+    assert!(value["warnings"][0].as_str().unwrap().contains(corrupt));
+    assert_port_closed(&live_info);
+    let mut unrelated = unrelated;
+    assert!(unrelated.0.try_wait().unwrap().is_none());
+    // Teardown must not try to manage the seeded records.
+    fs::remove_dir_all(fixture.state.join(unknown)).unwrap();
+    fs::remove_dir_all(fixture.state.join(corrupt)).unwrap();
+}
+
+#[test]
+fn bulk_stop_waits_for_stopping_jobs_and_concurrent_bulk_stops_agree() {
+    let fixture = Fixture::new();
+    let first = fixture.call(&[
+        "run",
+        "--ttl",
+        "20s",
+        "--grace",
+        "700ms",
+        "--",
+        "/bin/sleep",
+        "20",
+    ])["job"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (second, _) = fixture.start_labeled("a", "t", "stubborn", "700ms");
+    let mut single = fixture.command(&["stop", &first]);
+    let single = thread::spawn(move || single.output().unwrap());
+    wait(|| (fixture.job(&first)["state"] == "stopping").then_some(()));
+    let mut other = fixture.command(&["stop", "--all"]);
+    let other = thread::spawn(move || other.output().unwrap());
+    let (ok, value) = fixture.bulk(&[]);
+    assert!(ok, "{value}");
+    let other = other.join().unwrap();
+    assert!(other.status.success(), "{}", parse(&other));
+    for value in [value, parse(&other)] {
+        for result in value["results"].as_array().unwrap() {
+            assert_eq!(result["status"], "finished");
+            assert_eq!(result["job"]["state"], "stopped");
+        }
+    }
+    assert!(single.join().unwrap().status.success());
+    assert_eq!(fixture.job(&first)["state"], "stopped");
+    assert_eq!(fixture.job(&second)["state"], "stopped");
+}
+
+/// Restores a fixture file on drop, so teardown sees valid state even when an
+/// assertion fails while the file is deliberately corrupted.
+struct Restore(PathBuf, Vec<u8>);
+impl Drop for Restore {
+    fn drop(&mut self) {
+        let _ = fs::write(&self.0, &self.1);
+    }
+}
+
+#[test]
+fn record_naming_another_job_cannot_redirect_bulk_stop() {
+    let fixture = Fixture::new();
+    let (a, a_info) = fixture.start_labeled("o", "A", "normal", "100ms");
+    let (b, b_info) = fixture.start_labeled("o", "B", "normal", "100ms");
+    let b_deadline = fixture.job(&b)["expires_at_ms"].clone();
+    let path = fixture.state.join(&a).join("record.json");
+    let original = fs::read(&path).unwrap();
+    let restore = Restore(path.clone(), original.clone());
+    let mut corrupted: Value = serde_json::from_slice(&original).unwrap();
+    assert_eq!(corrupted["task"], "A");
+    corrupted["id"] = serde_json::json!(b);
+    fs::write(&path, serde_json::to_vec(&corrupted).unwrap()).unwrap();
+
+    let (ok, value) = fixture.bulk(&["--task", "A"]);
+    assert!(!ok, "{value}");
+    assert_eq!(value["complete"], false);
+    assert!(value["results"].as_array().unwrap().is_empty(), "{value}");
+    let warning = value["warnings"][0].as_str().unwrap();
+    assert!(warning.starts_with(&a) && warning.contains("different job"));
+    // An unfiltered view selects B once, from its own record, never via A.
+    let (ok, dry) = fixture.bulk(&["--dry-run"]);
+    assert!(!ok);
+    assert_eq!(result_ids(&dry), sorted(&[&b]));
+    let job = fixture.job(&b);
+    assert_eq!(job["state"], "running");
+    assert_eq!(job["expires_at_ms"], b_deadline);
+    assert!(port_open(&b_info));
+    assert!(port_open(&a_info));
+    drop(restore);
+    assert_eq!(fixture.job(&a)["state"], "running");
+}
+
+/// A test-owned endpoint at a seeded job's control socket. It accepts every
+/// connection and trickles one byte at a time without ever ending a reply.
+struct Trickler {
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    thread: Option<thread::JoinHandle<()>>,
+    dir: PathBuf,
+}
+
+impl Trickler {
+    fn new(dir: PathBuf) -> Self {
+        use std::{io::Write, os::unix::net::UnixListener, sync::atomic::Ordering};
+        let listener = UnixListener::bind(dir.join("ctl.sock")).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = stop.clone();
+        let thread = thread::spawn(move || {
+            let mut streams = Vec::new();
+            while !flag.load(Ordering::Relaxed) {
+                if let Ok((stream, _)) = listener.accept() {
+                    stream.set_nonblocking(true).unwrap();
+                    streams.push(stream);
+                }
+                streams.retain_mut(|stream| match stream.write(b" ") {
+                    Ok(_) => true,
+                    Err(error) => error.kind() == std::io::ErrorKind::WouldBlock,
+                });
+                thread::sleep(Duration::from_millis(20));
+            }
+        });
+        Self {
+            stop,
+            thread: Some(thread),
+            dir,
+        }
+    }
+}
+
+impl Drop for Trickler {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+        // Teardown must not try to manage the seeded record.
+        let _ = fs::remove_dir_all(&self.dir);
+    }
+}
+
+#[test]
+fn trickling_control_endpoint_is_bounded_while_healthy_jobs_stop() {
+    struct OwnedChild(std::process::Child);
+    impl Drop for OwnedChild {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let fixture = Fixture::new();
+    let (healthy, healthy_info) = fixture.start_labeled("a", "trickle", "stubborn", "100ms");
+    let (record, launch) = fixture.finished_template();
+    let unrelated = OwnedChild(Command::new("/bin/sleep").arg("30").spawn().unwrap());
+    let fake = "0000000000cc";
+    let mut seeded = record.clone();
+    for (field, value) in [
+        ("id", serde_json::json!(fake)),
+        ("state", serde_json::json!("running")),
+        ("created_at_ms", serde_json::json!(now_ms())),
+        ("expires_at_ms", serde_json::json!(now_ms() + 60_000)),
+        ("finished_at_ms", Value::Null),
+        ("reason", Value::Null),
+        ("owner", serde_json::json!("a")),
+        ("task", serde_json::json!("trickle")),
+        ("guardian_pid", serde_json::json!(unrelated.0.id())),
+        ("command_pid", serde_json::json!(unrelated.0.id())),
+    ] {
+        seeded[field] = value;
+    }
+    let mut seeded_launch = launch.clone();
+    seeded_launch["id"] = serde_json::json!(fake);
+    fixture.seed_files(
+        fake,
+        &[
+            ("record.json", serde_json::to_vec(&seeded).unwrap()),
+            ("launch.json", serde_json::to_vec(&seeded_launch).unwrap()),
+        ],
+    );
+    let _endpoint = Trickler::new(fixture.state.join(fake));
+
+    let started = Instant::now();
+    let (ok, value) = fixture.bulk(&["--task", "trickle"]);
+    let elapsed = started.elapsed();
+    assert!(!ok, "{value}");
+    assert_eq!(value["complete"], false);
+    // Two Stop attempts, each with an absolute 2s exchange bound.
+    assert!(elapsed >= Duration::from_millis(3_900), "{elapsed:?}");
+    assert!(elapsed < Duration::from_millis(7_000), "{elapsed:?}");
+    let results = value["results"].as_array().unwrap();
+    let by_id = |id: &str| results.iter().find(|r| r["id"] == id).unwrap().clone();
+    assert_eq!(by_id(&healthy)["status"], "finished");
+    assert_eq!(by_id(&healthy)["job"]["state"], "stopped");
+    assert_eq!(by_id(fake)["status"], "failed");
+    assert!(by_id(fake)["error"].as_str().unwrap().contains("2s bound"));
+    assert_port_closed(&healthy_info);
+
+    // A single-ID stop is bounded by the same exchange limit.
+    let started = Instant::now();
+    let output = fixture.command(&["stop", fake]).output().unwrap();
+    assert!(!output.status.success());
+    assert!(started.elapsed() < Duration::from_millis(4_000));
+    let mut unrelated = unrelated;
+    assert!(unrelated.0.try_wait().unwrap().is_none());
+}
+
+#[test]
+fn altered_launch_grace_or_metadata_cannot_abort_other_stops() {
+    let fixture = Fixture::new();
+    let (huge, huge_info) = fixture.start_labeled("g", "grace", "normal", "100ms");
+    let (broken, broken_info) = fixture.start_labeled("g", "grace", "normal", "100ms");
+    let (normal, normal_info) = fixture.start_labeled("g", "grace", "normal", "100ms");
+    let (single, single_info) = fixture.start_labeled("g", "single", "normal", "100ms");
+    let set_huge_grace = |id: &str| {
+        let path = fixture.state.join(id).join("launch.json");
+        let mut launch: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        launch["grace_ms"] = serde_json::json!(u64::MAX);
+        fs::write(&path, serde_json::to_vec(&launch).unwrap()).unwrap();
+    };
+    set_huge_grace(&huge);
+    set_huge_grace(&single);
+    fs::write(fixture.state.join(&broken).join("launch.json"), b"not json").unwrap();
+
+    let (ok, value) = fixture.bulk(&["--task", "grace"]);
+    assert!(ok, "{value}");
+    assert_eq!(value["complete"], true);
+    assert_eq!(result_ids(&value), sorted(&[&huge, &broken, &normal]));
+    for result in value["results"].as_array().unwrap() {
+        assert_eq!(result["status"], "finished");
+        assert_eq!(result["job"]["state"], "stopped");
+    }
+    for info in [&huge_info, &broken_info, &normal_info] {
+        assert_port_closed(info);
+    }
+    assert!(port_open(&single_info));
+    let stopped = fixture.call(&["stop", &single]);
+    assert_eq!(stopped["job"]["state"], "stopped");
+    assert_port_closed(&single_info);
+}
+
+#[test]
+fn bulk_human_output_summarizes_and_escapes_failures() {
+    let fixture = Fixture::new();
+    let (live, live_info) = fixture.start_labeled("h", "human", "normal", "100ms");
+    let (record, launch) = fixture.finished_template();
+    let unknown = "0000000000dd";
+    let mut stale = record.clone();
+    for (field, value) in [
+        ("id", serde_json::json!(unknown)),
+        ("state", serde_json::json!("running")),
+        ("created_at_ms", serde_json::json!(0)),
+        ("finished_at_ms", Value::Null),
+        ("owner", serde_json::json!("h")),
+        ("task", serde_json::json!("human")),
+        ("name", serde_json::json!("x\u{1b}[31my\u{7}")),
+        ("guardian_pid", Value::Null),
+        ("command_pid", Value::Null),
+    ] {
+        stale[field] = value;
+    }
+    let mut stale_launch = launch.clone();
+    stale_launch["id"] = serde_json::json!(unknown);
+    fixture.seed_files(
+        unknown,
+        &[
+            ("record.json", serde_json::to_vec(&stale).unwrap()),
+            ("launch.json", serde_json::to_vec(&stale_launch).unwrap()),
+        ],
+    );
+    let corrupt = "0000000000de";
+    fixture.seed_files(corrupt, &[("record.json", b"not json".to_vec())]);
+    let output = Command::new(env!("CARGO_BIN_EXE_proclease"))
+        .arg("--state-dir")
+        .arg(&fixture.state)
+        .args(["stop", "--all", "--task", "human"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    assert_eq!(output.status.code(), Some(1), "{stdout}\n{stderr}");
+    assert!(stdout.contains("Stopped 1 of 2 selected jobs."), "{stdout}");
+    assert!(
+        stderr.contains(&format!(
+            "{unknown}: unverified: supervisor unavailable; refusing"
+        )),
+        "{stderr}"
+    );
+    assert!(stderr.contains(&format!("Warning: {corrupt}:")), "{stderr}");
+    for text in [&stdout, &stderr] {
+        assert!(
+            !text.contains('\u{1b}') && !text.contains('\u{7}'),
+            "{text:?}"
+        );
+    }
+    assert_eq!(fixture.job(&live)["state"], "stopped");
+    assert_port_closed(&live_info);
+    fs::remove_dir_all(fixture.state.join(unknown)).unwrap();
+    fs::remove_dir_all(fixture.state.join(corrupt)).unwrap();
+}

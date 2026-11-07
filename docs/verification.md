@@ -526,6 +526,72 @@ These tests simulate root-font enlargement and clipboard outcomes; actual
 browser text-size settings, clipboard permission prompts and a full assistive-
 technology audit were not exercised.
 
+## Bulk stop, unreleased source, 2026-11-07
+
+`stop --all [--owner OWNER] [--task TASK] [--dry-run]` is implemented in source
+after v0.1.4 and is not in any published binary, crate or installer. Behavior and
+the JSON envelope are described in the [README](../README.md#bulk-stop-unreleased-source)
+and [architecture](architecture.md#consistency-and-retry-semantics).
+
+Nine process integration tests and four unit tests were added (seven unit plus
+forty integration tests in total), using isolated fixture state only:
+
+- Exactly one target: bare `stop`, filters or `--dry-run` without `--all`, and any
+  ID combined with `--all`/filters/`--dry-run` are rejected without stopping a
+  live job. Single-ID `stop --json` keeps exactly `schema_version`, `job` and
+  `reused`.
+- Exact AND filters stop only the matching job. Unrelated live jobs keep their
+  state, deadlines and listening ports. Dry runs report the exact selection and
+  leave state, deadlines and children unchanged. Unfiltered bulk stop then closes
+  TERM-resistant groups, including a forked descendant. A repeated run is an
+  empty success, and finished history remains listed.
+- Four TERM-resistant jobs with a 1.5-second grace stop in parallel: total time
+  stays below 5 seconds, where sequential grace alone would need 6 seconds. A job
+  launched after every selected job reached `stopping` is not included and keeps
+  running.
+- An unknown record that names an unrelated live process is reported as
+  `unverified` and not signalled. A corrupt record produces a scan warning, also
+  under a non-matching filter. The reachable job is still stopped, and the command
+  exits 1 with `complete: false`.
+- A job already stopping through a single-ID stop is awaited. Two concurrent bulk
+  stops over the same jobs both succeed with only `finished` results.
+- With a live job A in task `A`, A's record rewritten to embed live job B's ID
+  makes `stop --all --task A` exit 1 with `complete: false`, no results and a scan
+  warning naming A. B stays running with its deadline and port unchanged, and an
+  unfiltered dry run lists B once. The record is restored before teardown.
+- A test-owned endpoint at a seeded job's socket accepts every connection and
+  trickles one byte every 20 ms without ending a reply. A bulk stop with a
+  TERM-resistant healthy job in the same task stops the healthy job, reports the
+  endpoint as `failed` after two bounded exchanges and exits 1 within 4 to 7
+  seconds. A single-ID stop of the same endpoint fails within 4 seconds. The
+  unrelated process named in its record is not signalled.
+- Launch metadata altered to `grace_ms` of `u64::MAX`, or made unreadable, no
+  longer panics: those jobs and a normal job in the same bulk stop all finish with
+  `complete: true`, and a single-ID stop with the altered grace also succeeds.
+- Human output prints the summary line, an `unverified` diagnostic and a scan
+  warning, exits 1, and escapes terminal control characters from a seeded record.
+- Every rejected argument combination exits with usage status 2.
+- Unit tests call the selection stopper directly: a job finished between
+  selection and dispatch succeeds without any control socket; a job that is
+  `starting` at selection is observed starting (proved by its probe), then running,
+  and receives exactly one Stop; an unreadable record during dispatch reports the
+  selected record rather than a synthetic one; waits from huge grace are capped and
+  a record naming another job is rejected.
+
+Formatting, Clippy with warnings denied and the full test suite passed locally on
+macOS arm64. The optimized release build completes, but its existing
+`rust-objcopy` warning remains on this host's toolchain (it cannot load
+`libLLVM.dylib`), so local stripping of the release binary is not verified.
+Linux and hosted CI were not run for this change; in particular the Linux
+full-backlog connect retry is not exercised. A many-target saturation run of
+the documented dispatch bound was not performed. An initial independent review
+requested changes (record identity, absolute exchange bounds and metadata-derived
+waits). The focused follow-up review found no remaining material issues. Independent
+CLI probes confirmed rejection of mismatched record IDs without stopping either
+job, failure of a continuously trickling endpoint in about four seconds, and
+successful completion with an oversized grace value without a panic. Their
+isolated fixtures were removed after verifying their supervisors had exited.
+
 ## Filesystem compatibility
 
 A Linux rerun using a macOS-to-Linux OrbStack bind mount failed intermittently

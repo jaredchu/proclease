@@ -78,7 +78,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    crates.io 0.1.3 and docs.rs overview published; source installation verified
 |-- DONE    v0.1.4 ships the Cargo 1.89 fix through GitHub, crates.io and the website
 |-- FIXED   A later teardown-test observation race, without changing released runtime
-`-- DONE    Tabler SVG interface icons and restored arrows verified across three browsers
+|-- DONE    Tabler SVG interface icons and restored arrows verified across three browsers
+`-- SOURCE  Reviewed bulk `stop --all` with filters/dry run; unreleased, 47 local tests pass
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
@@ -111,6 +112,11 @@ archives, registry checksum/default installation, docs.rs and the matching live
 website were verified. Older 0.1.3 registry users retain its documented caveat.
 A subsequent [teardown-test observation race](verification.md#teardown-regression-observation-2026-11-07)
 is corrected in main's test source; published v0.1.4 bytes remain unchanged.
+User-authorized bulk `stop --all` with exact owner/task filters, dry run and an
+aggregate JSON envelope is implemented and reviewed in source only. It is not in
+v0.1.4. The initial review findings are resolved.
+The [verification](verification.md#bulk-stop-unreleased-source-2026-11-07)
+records its tests and limits.
 
 The recent-job window and resource presentation are implementation choices for
 terminal usability. Resource reads never extend leases.

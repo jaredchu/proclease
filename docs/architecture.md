@@ -117,6 +117,32 @@ Repeated stop while stopping polls existing state instead of waiting for an idle
 shutdown socket. A transport failure racing with shutdown is reconciled against
 the latest record; extensions are never automatically replayed.
 
+Bulk stop (`stop --all`, unreleased source) is a client-side fan-out over the same
+per-job sockets, not a new service. It takes the root launch lock only while
+scanning records, which orders the snapshot after in-flight launches and with
+collection; the lock is released before any control, so keepers can still finish
+and collect. The fixed selection holds active and unknown jobs matching exact
+owner/task filters. A record is addressed only by its directory: one whose
+embedded ID differs is rejected as unreadable, so it cannot redirect selection,
+observation or control to another job. Up to 8 workers send Stop. Each `starting`
+job is polled for about 6 seconds until running, and each job gets at most two
+exchanges; a repeated Stop to a job already stopping is answered with an error and
+changes nothing. Then all dispatched jobs are polled together, each until its grace
+(capped at the 10-second `run` maximum, whatever the launch metadata says) plus 2
+seconds. Unreadable launch metadata uses that cap and affects only its own job.
+Unknown jobs and unreadable records are reported, never signalled, and make the
+command exit nonzero. This avoids sequential per-job waiting but is not atomic:
+each group still stops on its own supervisor's schedule.
+
+Client socket operations use non-blocking sockets with absolute deadlines rather
+than per-read timeouts, which a peer trickling bytes could renew indefinitely.
+An availability probe (used by `list`, status reads and selection, including
+under the root lock) connects within 0.5 seconds; a full Linux listen backlog is
+retried only until then, and a timeout reads as an unavailable endpoint. A control
+exchange, single-ID or bulk, completes its connect, request and newline-terminated
+reply of at most 1 MiB within 2 seconds in total. An exchange failure is then
+reconciled with a fresh observation, as before.
+
 Output capture latches a private one-byte `capture.status` marker before
 discarding overflow. The already-open descriptor remains usable during a directory
 permission failure, and the keeper/CLI merge the marker into final/read status.

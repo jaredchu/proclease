@@ -5,7 +5,7 @@ use crate::{
 use anyhow::{bail, Context, Result};
 use std::{
     fs::{File, OpenOptions},
-    io::{BufRead, BufReader, Read, Write},
+    io::{Read, Write},
     os::unix::{
         fs::{FileExt, OpenOptionsExt},
         net::{UnixListener, UnixStream},
@@ -594,21 +594,32 @@ pub fn guard(store: &Store, id: &str) -> Result<()> {
     bail!("group termination unexpectedly returned")
 }
 
+/// Absolute bound for one control exchange: connect, request and reply.
+pub const CONTROL_EXCHANGE: Duration = Duration::from_secs(2);
+/// Largest accepted control reply.
+const CONTROL_REPLY_LIMIT: usize = 1_048_576;
+/// Largest shutdown grace accepted by `run`. Waits derived from launch
+/// metadata are capped here, so altered metadata cannot overflow a deadline.
+pub const MAX_GRACE_MS: u64 = 10_000;
+
+/// Bound for confirming a stop after dispatch: grace (capped) plus two seconds.
+fn stop_bound(grace_ms: u64) -> Duration {
+    Duration::from_millis(grace_ms.min(MAX_GRACE_MS) + 2_000)
+}
+
 fn exchange_control(store: &Store, id: &str, action: &Control) -> Result<Reply> {
-    let mut stream = UnixStream::connect(store.job(id)?.join("ctl.sock"))
+    let deadline = Instant::now() + CONTROL_EXCHANGE;
+    let mut stream = crate::platform::connect_unix(&store.job(id)?.join("ctl.sock"), deadline)
         .context("supervisor unavailable; refusing to signal a PID from disk")?;
-    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
-    stream.set_write_timeout(Some(Duration::from_secs(2)))?;
-    serde_json::to_writer(&mut stream, action)?;
-    stream.write_all(b"\n")?;
-    let mut line = String::new();
-    BufReader::new(stream.take(1_048_577)).read_line(&mut line)?;
-    Ok(serde_json::from_str(&line)?)
+    let mut request = serde_json::to_vec(action)?;
+    request.push(b'\n');
+    let line = crate::platform::exchange_line(&mut stream, &request, deadline, CONTROL_REPLY_LIMIT)
+        .context("control exchange did not complete within its 2s bound")?;
+    Ok(serde_json::from_slice(&line)?)
 }
 
 fn wait_for_stop(store: &Store, id: &str, mut record: Record) -> Result<Record> {
-    let grace = store.launch(id)?.grace_ms;
-    let deadline = Instant::now() + Duration::from_millis(grace + 2_000);
+    let deadline = Instant::now() + stop_bound(store.launch(id)?.grace_ms);
     while record.state.active() && Instant::now() < deadline {
         thread::sleep(TICK);
         record = store.observed_record(id)?;
@@ -638,6 +649,247 @@ fn existing_control_state(
     }
 }
 
+/// Maximum concurrent supervisor control exchanges during a bulk stop.
+pub const BULK_WORKERS: usize = 8;
+/// Bound for waiting on a selected `starting` job before its first Stop.
+const BULK_STARTUP_WAIT: Duration = Duration::from_secs(6);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BulkStatus {
+    /// Dry run: selected and reachable state, nothing sent.
+    WouldStop,
+    /// Reached a terminal state after selection.
+    Finished,
+    /// Supervisor unavailable; no signal was sent to any PID from disk.
+    Unverified,
+    /// Stop not confirmed within its bound, or control failed.
+    Failed,
+}
+
+impl BulkStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::WouldStop => "would_stop",
+            Self::Finished => "finished",
+            Self::Unverified => "unverified",
+            Self::Failed => "failed",
+        }
+    }
+    pub fn ok(self) -> bool {
+        matches!(self, Self::WouldStop | Self::Finished)
+    }
+}
+
+pub struct BulkResult {
+    pub selected: Record,
+    pub record: Record,
+    pub status: BulkStatus,
+    pub error: Option<String>,
+}
+
+/// Fixed selection of active and unverified jobs matching every given filter.
+/// The root launch lock is held only for the scan, which synchronizes with
+/// in-flight launches and collection; it is released before any control.
+pub fn bulk_selection(
+    store: &Store,
+    owner: Option<&str>,
+    task: Option<&str>,
+) -> Result<(Vec<Record>, Vec<String>)> {
+    let (jobs, warnings) = {
+        let _lock = store.lock()?;
+        store.list()?
+    };
+    let selected = jobs
+        .into_iter()
+        .filter(|r| r.state.active() || r.state == State::Unknown)
+        .filter(|r| owner.is_none_or(|owner| r.owner == owner))
+        .filter(|r| task.is_none_or(|task| r.task.as_deref() == Some(task)))
+        .collect();
+    Ok((selected, warnings))
+}
+
+enum Dispatched {
+    Wait(Instant),
+    Done(Box<Record>),
+    Failed(Box<(Record, BulkStatus, String)>),
+}
+
+fn failed(record: Record, status: BulkStatus, error: String) -> Dispatched {
+    Dispatched::Failed(Box::new((record, status, error)))
+}
+
+/// Send at most a bounded number of idempotent Stop requests to one job.
+/// Starting jobs are polled until running; stopping jobs are only awaited.
+fn dispatch_stop(store: &Store, selected: &Record) -> Dispatched {
+    let id = selected.id.as_str();
+    // Unreadable or altered launch metadata only affects this job's wait
+    // bound, which is capped; the supervisor keeps its own grace.
+    let bound = stop_bound(
+        store
+            .launch(id)
+            .map(|launch| launch.grace_ms)
+            .unwrap_or(MAX_GRACE_MS),
+    );
+    let wait_until = || Instant::now() + bound;
+    let started = Instant::now();
+    let mut attempts = 0;
+    let mut last_error = String::new();
+    // Failures report the selected or last actually observed record.
+    let mut record = selected.clone();
+    loop {
+        record = match store.observed_record(id) {
+            Ok(observed) => observed,
+            Err(error) => return failed(record, BulkStatus::Failed, format!("{error:#}")),
+        };
+        match record.state {
+            State::Unknown => {
+                return failed(
+                    record,
+                    BulkStatus::Unverified,
+                    "supervisor unavailable; refusing to signal a PID from disk".into(),
+                )
+            }
+            State::Stopping => return Dispatched::Wait(wait_until()),
+            state if !state.active() => return Dispatched::Done(Box::new(record)),
+            State::Starting => {
+                if started.elapsed() > BULK_STARTUP_WAIT {
+                    return failed(
+                        record,
+                        BulkStatus::Failed,
+                        "startup did not complete".into(),
+                    );
+                }
+                thread::sleep(TICK);
+                continue;
+            }
+            _ => (),
+        }
+        if attempts >= 2 {
+            return failed(
+                record,
+                BulkStatus::Failed,
+                format!("control response unavailable: {last_error}"),
+            );
+        }
+        attempts += 1;
+        match exchange_control(store, id, &Control::Stop) {
+            // An "already stopping" reply also means shutdown is under way.
+            Ok(_) => return Dispatched::Wait(wait_until()),
+            Err(error) => last_error = format!("{error:#}"),
+        }
+    }
+}
+
+/// Stop a fixed selection. Control exchanges run on a small worker pool, then
+/// all dispatched jobs share one polling loop, each bounded by its own grace
+/// (capped at 10s) plus two seconds from dispatch. Each Stop exchange has an
+/// absolute 2s bound and at most two are attempted per job. Unknown jobs are
+/// never signalled.
+pub fn stop_selected(store: &Store, selected: Vec<Record>) -> Vec<BulkResult> {
+    use std::sync::atomic::AtomicUsize;
+    let next = AtomicUsize::new(0);
+    let outcomes: Mutex<Vec<(usize, Dispatched)>> = Mutex::new(Vec::new());
+    thread::scope(|scope| {
+        for _ in 0..BULK_WORKERS.min(selected.len()) {
+            scope.spawn(|| loop {
+                let index = next.fetch_add(1, Ordering::Relaxed);
+                let Some(record) = selected.get(index) else {
+                    return;
+                };
+                let outcome = if record.state == State::Unknown {
+                    failed(
+                        record.clone(),
+                        BulkStatus::Unverified,
+                        "supervisor unavailable; refusing to signal a PID from disk".into(),
+                    )
+                } else {
+                    dispatch_stop(store, record)
+                };
+                outcomes
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push((index, outcome));
+            });
+        }
+    });
+    let mut outcomes = outcomes.into_inner().unwrap_or_else(|e| e.into_inner());
+    outcomes.sort_by_key(|(index, _)| *index);
+    let mut results: Vec<BulkResult> = Vec::with_capacity(selected.len());
+    let mut pending = Vec::new();
+    for ((index, outcome), selected) in outcomes.into_iter().zip(selected) {
+        debug_assert_eq!(index, results.len());
+        let result = match outcome {
+            Dispatched::Done(record) => BulkResult {
+                record: *record,
+                selected,
+                status: BulkStatus::Finished,
+                error: None,
+            },
+            Dispatched::Wait(deadline) => {
+                pending.push((results.len(), deadline));
+                BulkResult {
+                    record: selected.clone(),
+                    selected,
+                    status: BulkStatus::Failed,
+                    error: None,
+                }
+            }
+            Dispatched::Failed(failure) => {
+                let (record, status, error) = *failure;
+                BulkResult {
+                    record,
+                    selected,
+                    status,
+                    error: Some(error),
+                }
+            }
+        };
+        results.push(result);
+    }
+    while !pending.is_empty() {
+        let now = Instant::now();
+        pending.retain(|&(index, deadline)| {
+            let result = &mut results[index];
+            match store.observed_record(&result.selected.id) {
+                Ok(record) if !record.state.active() && record.state != State::Unknown => {
+                    result.record = record;
+                    result.status = BulkStatus::Finished;
+                    result.error = None;
+                    false
+                }
+                Ok(record) if record.state == State::Unknown => {
+                    result.record = record;
+                    result.status = BulkStatus::Unverified;
+                    result.error = Some("control endpoint lost; cleanup is not verified".into());
+                    false
+                }
+                Ok(record) => {
+                    result.record = record;
+                    if now >= deadline {
+                        result.error = Some(
+                            "job did not finish within its stop bound (grace up to 10s, plus 2s)"
+                                .into(),
+                        );
+                        return false;
+                    }
+                    true
+                }
+                Err(error) => {
+                    if now >= deadline {
+                        result.error = Some(format!("{error:#}"));
+                        return false;
+                    }
+                    true
+                }
+            }
+        });
+        if !pending.is_empty() {
+            thread::sleep(TICK);
+        }
+    }
+    results
+}
+
 pub fn control(store: &Store, id: &str, action: Control) -> Result<Record> {
     let record = store.observed_record(id)?;
     if let Some(record) = existing_control_state(store, id, &action, &record)? {
@@ -662,5 +914,166 @@ pub fn control(store: &Store, id: &str, action: Control) -> Result<Record> {
     match action {
         Control::Stop => wait_for_stop(store, id, reply.record),
         Control::Extend { .. } => Ok(reply.record),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::DirBuilderExt;
+
+    fn store() -> (tempfile::TempDir, Store) {
+        let mut builder = tempfile::Builder::new();
+        builder.prefix("u");
+        let dir = match std::env::var_os("PROCLEASE_TEST_ROOT") {
+            Some(root) => {
+                std::fs::create_dir_all(&root).unwrap();
+                builder.tempdir_in(root).unwrap()
+            }
+            None => builder.tempdir().unwrap(),
+        };
+        let store = Store::open(dir.path().join("s")).unwrap();
+        (dir, store)
+    }
+
+    /// Commit launch and record files for a job with no process behind it.
+    fn seed(store: &Store, id: &str, state: State) -> Record {
+        let now = now_ms();
+        let launch = Launch {
+            id: id.into(),
+            argv: vec!["/usr/bin/true".into()],
+            cwd: "/".into(),
+            owner: "o".into(),
+            task: Some("t".into()),
+            name: None,
+            url: None,
+            key: None,
+            fingerprint: String::new(),
+            created_at_ms: now,
+            expires_at_ms: now + 60_000,
+            grace_ms: 100,
+            log_limit_bytes: 1024,
+        };
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(store.root.join(id))
+            .unwrap();
+        crate::store::atomic_json(&store.root.join(id).join("launch.json"), &launch).unwrap();
+        let mut record = Record::new(&launch);
+        record.state = state;
+        store.save(&record).unwrap();
+        record
+    }
+
+    #[test]
+    fn metadata_bounds_are_capped_and_record_identity_is_checked() {
+        assert_eq!(stop_bound(u64::MAX), Duration::from_millis(12_000));
+        assert_eq!(stop_bound(100), Duration::from_millis(2_100));
+        let (_dir, store) = store();
+        let mut record = seed(&store, "00000000000b", State::Running);
+        record.id = "00000000000c".into();
+        crate::store::atomic_json(&store.root.join("00000000000b/record.json"), &record).unwrap();
+        let error = store.record("00000000000b").unwrap_err().to_string();
+        assert!(error.contains("different job"), "{error}");
+    }
+
+    #[test]
+    fn job_finished_before_dispatch_is_success_without_control() {
+        let (_dir, store) = store();
+        let mut record = seed(&store, "00000000000a", State::Running);
+        let selected = record.clone();
+        record.reason = Some(Reason::CommandExit);
+        record.exit_code = Some(0);
+        record.finish();
+        store.save(&record).unwrap();
+        // No control socket exists, so any attempted exchange would fail.
+        let results = stop_selected(&store, vec![selected]);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, BulkStatus::Finished);
+        assert_eq!(results[0].selected.state, State::Running);
+        assert_eq!(results[0].record.state, State::Exited);
+        assert!(results[0].error.is_none());
+    }
+
+    #[test]
+    fn observation_failure_preserves_the_selected_record() {
+        let (_dir, store) = store();
+        let selected = seed(&store, "00000000000d", State::Running);
+        std::fs::write(store.root.join("00000000000d/record.json"), b"not json").unwrap();
+        let results = stop_selected(&store, vec![selected]);
+        assert_eq!(results[0].status, BulkStatus::Failed);
+        assert_eq!(results[0].record.id, "00000000000d");
+        assert_eq!(results[0].record.state, State::Running);
+        assert_eq!(results[0].record.owner, "o");
+        assert_eq!(results[0].record.task.as_deref(), Some("t"));
+        assert!(results[0].error.is_some());
+    }
+
+    #[test]
+    fn selected_starting_job_is_stopped_once_running() {
+        let (_dir, store) = store();
+        let id = "00000000000e";
+        let selected = seed(&store, id, State::Starting);
+        let socket = store.root.join(id).join("ctl.sock");
+        // A test-owned endpoint plays the supervisor. It turns the job running
+        // only after a probe proves the dispatcher observed it starting.
+        let listener = UnixListener::bind(&socket).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let server_store = store.clone();
+        let server = thread::spawn(move || {
+            let store = server_store;
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let mut probes_while_starting = 0;
+            let mut stops = 0;
+            let mut record = store.record(id).unwrap();
+            while Instant::now() < deadline && stops == 0 {
+                let mut stream = match listener.accept() {
+                    Ok((stream, _)) => stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(5));
+                        continue;
+                    }
+                    Err(error) => panic!("{error}"),
+                };
+                stream.set_nonblocking(true).unwrap();
+                let request = read_control(&mut stream, Instant::now() + Duration::from_secs(1));
+                match request {
+                    Ok(Some(Control::Stop)) => {
+                        assert_eq!(record.state, State::Running);
+                        stops += 1;
+                        record.state = State::Stopping;
+                        record.reason = Some(Reason::Requested);
+                        store.save(&record).unwrap();
+                        let reply = Reply {
+                            record: record.clone(),
+                            error: None,
+                        };
+                        write_reply(&mut stream, &reply, Instant::now() + Duration::from_secs(1));
+                        record.finish();
+                        store.save(&record).unwrap();
+                        std::fs::remove_file(&socket).unwrap();
+                    }
+                    Ok(None) if record.state == State::Starting => {
+                        probes_while_starting += 1;
+                        record.state = State::Running;
+                        store.save(&record).unwrap();
+                    }
+                    Ok(None) => (),
+                    other => panic!("unexpected request: {:?}", other.err()),
+                }
+            }
+            (probes_while_starting, stops)
+        });
+        let results = stop_selected(&store, vec![selected]);
+        let (probes, stops) = server.join().unwrap();
+        assert_eq!((probes, stops), (1, 1));
+        assert_eq!(results[0].selected.state, State::Starting);
+        assert_eq!(
+            results[0].status,
+            BulkStatus::Finished,
+            "{:?}",
+            results[0].error
+        );
+        assert_eq!(results[0].record.state, State::Stopped);
     }
 }

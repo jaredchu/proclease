@@ -113,8 +113,34 @@ enum Commands {
         #[arg(long)]
         by: String,
     },
-    /// Stop one managed job and its supported process group.
-    Stop { id: String },
+    /// Stop one managed job, or explicitly every selected active job, and its
+    /// supported process group.
+    Stop {
+        #[arg(
+            required_unless_present = "all",
+            conflicts_with_all = ["all", "owner", "task", "dry_run"]
+        )]
+        id: Option<String>,
+        #[arg(
+            long,
+            help = "Stop every active job in this state directory matching all filters"
+        )]
+        all: bool,
+        #[arg(
+            long,
+            requires = "all",
+            help = "With --all: exact declared owner label (not authorization)"
+        )]
+        owner: Option<String>,
+        #[arg(long, requires = "all", help = "With --all: exact task label")]
+        task: Option<String>,
+        #[arg(
+            long,
+            requires = "all",
+            help = "With --all: show the selection without stopping anything"
+        )]
+        dry_run: bool,
+    },
     /// Show the live process table; Ctrl+C closes the view, not the jobs.
     Watch {
         #[arg(long, help = "Include finished jobs from retained history")]
@@ -334,6 +360,87 @@ fn validate_label(value: &str) -> Result<()> {
     Ok(())
 }
 
+/// Bulk stop of a fixed selection. Exit status 1 when any selected job is not
+/// confirmed finished (or, for a dry run, is unverified) or the scan warned.
+fn stop_all(
+    store: &Store,
+    owner: Option<&str>,
+    task: Option<&str>,
+    dry_run: bool,
+    json_output: bool,
+    color: display::ColorChoice,
+) -> Result<i32> {
+    for label in [owner, task].into_iter().flatten() {
+        validate_label(label)?;
+    }
+    let (selected, warnings) = lifecycle::bulk_selection(store, owner, task)?;
+    let results = if dry_run {
+        selected
+            .into_iter()
+            .map(|record| {
+                let unknown = record.state == State::Unknown;
+                lifecycle::BulkResult {
+                    selected: record.clone(),
+                    record,
+                    status: if unknown {
+                        lifecycle::BulkStatus::Unverified
+                    } else {
+                        lifecycle::BulkStatus::WouldStop
+                    },
+                    error: unknown.then(|| {
+                        "supervisor unavailable; it would not be signalled from disk".to_owned()
+                    }),
+                }
+            })
+            .collect()
+    } else {
+        lifecycle::stop_selected(store, selected)
+    };
+    let complete = warnings.is_empty() && results.iter().all(|r| r.status.ok());
+    if json_output {
+        let entries: Vec<_> = results
+            .iter()
+            .map(|r| {
+                json!({"id": r.selected.id, "selected_state": r.selected.state,
+                "status": r.status.as_str(), "ok": r.status.ok(),
+                "error": r.error, "job": view(&r.record)})
+            })
+            .collect();
+        println!(
+            "{}",
+            json!({"schema_version": SCHEMA_VERSION, "dry_run": dry_run,
+            "filters": {"owner": owner, "task": task},
+            "complete": complete, "results": entries, "warnings": warnings})
+        );
+    } else {
+        let records: Vec<_> = results.iter().map(|r| r.record.clone()).collect();
+        if !records.is_empty() {
+            display::print_table(&records, true, color, &resources::UsageMap::new())?;
+        }
+        let succeeded = results.iter().filter(|r| r.status.ok()).count();
+        if dry_run {
+            println!(
+                "Would stop {succeeded} of {} selected jobs; nothing was changed.",
+                results.len()
+            );
+        } else {
+            println!("Stopped {succeeded} of {} selected jobs.", results.len());
+        }
+        for r in results.iter().filter(|r| !r.status.ok()) {
+            eprintln!(
+                "{}: {}: {}",
+                r.selected.id,
+                r.status.as_str(),
+                clean(r.error.as_deref().unwrap_or("not confirmed"))
+            );
+        }
+        for warning in &warnings {
+            eprintln!("Warning: {}", clean(warning));
+        }
+    }
+    Ok(if complete { 0 } else { 1 })
+}
+
 fn dispatch(cli: &Cli) -> Result<i32> {
     let store = Store::open(
         cli.state_dir
@@ -357,7 +464,7 @@ fn dispatch(cli: &Cli) -> Result<i32> {
         } => {
             let ttl = duration_ms(ttl)?;
             let grace = duration_ms(grace)?;
-            if grace > 10_000 {
+            if grace > lifecycle::MAX_GRACE_MS {
                 bail!("shutdown grace cannot exceed 10s");
             }
             if *log_limit == 0 || *log_limit > 16 * 1_048_576 {
@@ -521,9 +628,28 @@ fn dispatch(cli: &Cli) -> Result<i32> {
             )?;
             print_record(&record, false, cli.json, cli.color)?;
         }
-        Commands::Stop { id } => {
+        Commands::Stop { id: Some(id), .. } => {
             let record = lifecycle::control(&store, id, Control::Stop)?;
             print_record(&record, false, cli.json, cli.color)?;
+        }
+        Commands::Stop {
+            id: None,
+            all,
+            owner,
+            task,
+            dry_run,
+        } => {
+            if !*all {
+                bail!("specify a job ID or --all");
+            }
+            return stop_all(
+                &store,
+                owner.as_deref(),
+                task.as_deref(),
+                *dry_run,
+                cli.json,
+                cli.color,
+            );
         }
         Commands::Watch {
             all,

@@ -79,6 +79,7 @@ proclease list --all
 proclease logs JOB_ID --tail 50
 proclease extend JOB_ID --by 1h
 proclease stop JOB_ID
+proclease stop --all --task preview --dry-run   # unreleased source only
 proclease watch
 proclease prune --dry-run
 ```
@@ -148,7 +149,63 @@ unavailable values are `null`. An unavailable group has `resources: null`.
 - Stop during shutdown returns lifecycle state; extension of a stopping job is
   rejected. If a response is lost, inspect `list` before retrying an operation.
 
-The deadline is based on system wall time; moving the clock backwards can delay
+### Bulk stop (unreleased source)
+
+`stop --all` is available in the current source and is **not** in the published
+v0.1.4 binaries or installer. `stop` requires exactly one target: a job ID, or
+`--all`. Filters and `--dry-run` are accepted only with `--all`.
+
+```sh
+proclease stop --all --task preview --dry-run --json
+proclease stop --all --owner claude --task preview --json
+proclease stop --all
+```
+
+- Selection covers active (`starting`, `running`, `stopping`) and unverified
+  (`unknown`) jobs in the selected state directory only. It never scans or signals
+  other OS processes. `--owner` and `--task` are exact matches, combined with AND.
+  They are declared labels, not identity or authorization.
+- The selection is fixed once, under a brief hold of the root launch lock, before
+  any control. Jobs launched afterwards are not included. Finished jobs are ignored
+  and their history is not collected by this command.
+- `--dry-run` reports the exact selection without sending Stop, changing leases or
+  deleting history.
+- Each job uses the same supervisor socket and TERM, grace, KILL lifecycle as a
+  single stop. Unknown jobs are reported as `unverified` and never signalled.
+  A `starting` job is polled briefly until running; already stopping jobs are
+  awaited; jobs that finished since selection succeed without a request.
+- A record is identified only by its job directory. A record whose embedded ID
+  names another job is a scan warning and is never selected or controlled.
+- Every socket operation has an absolute deadline that trickled bytes cannot
+  extend: 0.5 seconds per availability probe, and 2 seconds per control exchange
+  (connect, request and reply, at most 1 MiB). Up to 8 workers send Stop; each job
+  gets at most about 6 seconds to leave `starting` and at most two exchanges, so
+  one unresponsive job occupies a worker for at most about 12 seconds. Every
+  dispatched job is then polled together until its own grace (capped at 10
+  seconds, the `run` maximum, even if metadata says otherwise) plus 2 seconds; a
+  polling pass can add up to 0.5 seconds per unresponsive pending job. Typical
+  total time is the longest selected grace plus 2 seconds. Many unresponsive
+  supervisors lengthen dispatch in batches of 8. Local file reads are not
+  separately bounded. Shutdown is not atomic or instantaneous.
+- Exit status is 0 only when every selected job is confirmed finished (or, in a
+  dry run, would be stopped) and the scan had no warnings. An unreadable record
+  is a warning even with filters, because it could match. An empty selection with
+  no warnings succeeds.
+
+Bulk JSON (`schema_version: 1`) retains every result instead of a single `error`:
+
+```json
+{"schema_version": 1, "dry_run": false,
+ "filters": {"owner": "claude", "task": "preview"}, "complete": true,
+ "results": [{"id": "0123456789ab", "selected_state": "running",
+              "status": "finished", "ok": true, "error": null, "job": {"...": "..."}}],
+ "warnings": []}
+```
+
+`status` is `would_stop` (dry run), `finished`, `unverified` or `failed`; `job`
+is the latest observed record. Single-ID `stop JOB_ID --json` output is unchanged.
+
+Lease deadlines are based on system wall time; moving the clock backwards can delay
 expiry. Forward jumps can expire jobs sooner. This is an explicit initial limit.
 
 ## State and output
