@@ -91,8 +91,11 @@ by 24 hours from creation. A request at or after expiry cannot revive the job.
 Metadata is replaced atomically using private files and filesystem synchronization.
 This requires filesystem support for atomic replacement visible to concurrent
 readers; VM shared folders are not assumed to preserve those semantics.
-The keeper takes final write ownership after the guardian exits. Status reads
-never renew leases or rewrite active lifecycle state; list/watch may collect
+The keeper takes final write ownership after the guardian exits. A finished
+result derived by `list`, or returned by `stop`, can precede that final write,
+socket removal and the keeper's own collection. Anything that deletes a state
+directory, including test teardown, must first wait for its supervisors to exit.
+Status reads never renew leases or rewrite active lifecycle state; list/watch may collect
 confirmed finished history under the retention policy.
 Default list/watch views select active jobs, `unknown` jobs whose cleanup is
 unverified, and records without completion timestamps. Up to five newest confirmed

@@ -225,7 +225,77 @@ impl Drop for Fixture {
                 }
             }
         }
+        // A job can be observed as finished, and `stop` can return, before its
+        // keeper has made its final record write, removed its socket and
+        // collected history under the root lock. Deleting the tree in that
+        // window races those writes and leaves partial job directories. Wait
+        // for every supervisor of this state; never delete beneath a live one.
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            let live = self.supervisors();
+            if live.is_empty() {
+                return;
+            }
+            if Instant::now() >= deadline {
+                self.dir.disable_cleanup(true);
+                let message = format!(
+                    "supervisors {live:?} still own fixture state; retained {}",
+                    self.dir.path().display()
+                );
+                if thread::panicking() {
+                    eprintln!("{message}");
+                } else {
+                    panic!("{message}");
+                }
+                return;
+            }
+            thread::sleep(Duration::from_millis(35));
+        }
     }
+}
+
+impl Fixture {
+    /// Live keeper/guardian processes whose argument vector names this
+    /// fixture's canonical state root. Identification uses the running
+    /// process, not PIDs copied from (possibly seeded) records, and never
+    /// sends a signal.
+    fn supervisors(&self) -> Vec<u32> {
+        match fs::canonicalize(&self.state) {
+            Ok(root) => supervisors_of(&root),
+            Err(_) => Vec::new(),
+        }
+    }
+}
+
+/// Running (non-zombie) keeper/guardian processes whose argument vector names
+/// `root`, a canonical state root. Matching is by the live process's argv, not
+/// by PID alone, so a recycled PID owned by an unrelated process never matches,
+/// and an exited but unreaped (zombie) supervisor, which can no longer write,
+/// is not reported. Works after `root` has been deleted.
+fn supervisors_of(root: &std::path::Path) -> Vec<u32> {
+    use sysinfo::{ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, UpdateKind};
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
+    );
+    let mut live: Vec<u32> = system
+        .processes()
+        .iter()
+        .filter(|(_, process)| {
+            let cmd = process.cmd();
+            process.status() != ProcessStatus::Zombie
+                && process.thread_kind().is_none()
+                && cmd.len() == 5
+                && cmd[1] == "--state-dir"
+                && root == std::path::Path::new(&cmd[2])
+                && (cmd[3] == "__keeper" || cmd[3] == "__guard")
+        })
+        .map(|(pid, _)| pid.as_u32())
+        .collect();
+    live.sort_unstable();
+    live
 }
 
 fn parse(output: &Output) -> Value {
@@ -728,6 +798,56 @@ fn failed_history_deletion_is_quarantined_and_does_not_block_keyed_launches() {
         .iter()
         .any(|id| id == "000000000001"));
     assert!(!pending.exists());
+}
+
+#[test]
+fn teardown_waits_for_keeper_finalization_before_removing_state() {
+    let fixture = Fixture::new();
+    let launched = fixture.call(&[
+        "run",
+        "--ttl",
+        "30s",
+        "--grace",
+        "2s",
+        "--",
+        "/bin/sleep",
+        "30",
+    ]);
+    let id = launched["job"]["id"].as_str().unwrap().to_owned();
+    let keeper = launched["job"]["keeper_pid"].as_u64().unwrap() as u32;
+    let guardian = launched["job"]["guardian_pid"].as_u64().unwrap() as i32;
+    // After a guardian crash the keeper terminates the group, then waits out
+    // the grace before its final record write, socket removal and collection.
+    assert_eq!(unsafe { libc::kill(guardian, libc::SIGKILL) }, 0);
+    assert_eq!(fixture.terminal(&id)["state"], "interrupted");
+    let record: Value =
+        serde_json::from_slice(&fs::read(fixture.state.join(&id).join("record.json")).unwrap())
+            .unwrap();
+    if record["state"] == "stopping" {
+        // The finished state was derived from an absent group (on macOS a
+        // retained zombie leader is not a live member); the keeper has not
+        // finalized and still writes into this state.
+        assert!(
+            fixture.supervisors().contains(&keeper),
+            "keeper {keeper} must be identified while it owns pending writes"
+        );
+    }
+    let root = fixture.dir.path().to_owned();
+    let state_root = fs::canonicalize(&fixture.state).unwrap();
+    drop(fixture);
+    // The keeper may be absent, or exited but not yet reaped (a zombie, e.g.
+    // under a Linux subreaper); either way it can no longer write. Only a
+    // still-running supervisor of this fixture's state root fails, and a PID
+    // recycled by an unrelated process does not match its argv.
+    let live = supervisors_of(&state_root);
+    assert!(
+        live.is_empty(),
+        "teardown returned while keeper {keeper} was still running (live supervisors {live:?})"
+    );
+    assert!(
+        !root.exists(),
+        "fixture state must be removed only after its keeper exits"
+    );
 }
 
 #[test]

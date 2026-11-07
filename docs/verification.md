@@ -179,6 +179,50 @@ warnings denied, three unit tests and thirty integration tests, and an optimized
 release build. Hosted macOS and Ubuntu results for individual source revisions
 are available in the [Rust checks workflow](https://github.com/jaredchu/proclease/actions/workflows/ci.yml).
 
+### Fixture teardown residue, 2026-11-07
+
+A local full-suite run after those corrections left four partial fixture
+directories in the test root. Each held only the state lock and one job directory
+with a terminal `record.json` from the expiry, guardian-failure,
+environment-inheritance or environment-probe test. No recorded PID was alive.
+
+The cause was test teardown. It stopped listed jobs, then removed its temporary
+directory without waiting for their keepers. A job can be reported finished before
+its keeper's final record write, socket removal and history collection under the
+root lock: `list` derives the result from an absent group, and `stop` returns it.
+On macOS a retained zombie leader is not a live member, so after a guardian crash
+this window lasts the whole grace period. Recursive removal fails when those
+writes make a directory non-empty again, which leaves the rest in place.
+Supervisors do not recreate a deleted job directory or state root; the late files
+land in directories that still exist.
+
+Replaying the earlier teardown immediately after a quick `/usr/bin/true` job
+finished left the same pattern in 4 of 40 runs: the lock alone, or the lock with
+the keeper's final `exited` record. After a guardian crash with 100ms grace, the
+keeper was still running at deletion in 40 of 40 runs. Waiting for the keeper to
+exit before deletion left nothing in 80 runs.
+
+The correction is test-only. Teardown waits up to 15 seconds for each keeper and
+guardian whose argument vector names the fixture's canonical state root. It
+identifies them from live processes, not record PIDs that tests may seed, and
+sends no signal. If any remain, it retains the directory, reports their PIDs and
+fails the test; during an existing panic it only reports them. Production code is
+unchanged. The keeper's writes after an observed finished state are its documented
+final-write ownership, and deleting live state is outside the supported contract.
+A new regression crashes a guardian with a two-second grace. Teardown must return
+only after the keeper has exited and the fixture directory is gone. With the
+earlier teardown, it failed in 10 of 10 macOS runs.
+
+Local macOS arm64 checks passed: formatting, Clippy with warnings denied, three
+unit and thirty-one integration tests, and an optimized release build. After the
+full run, the test root was empty and no supervisor or fixture service was
+running. Linux probes a group with
+`kill(-pgid, 0)`, which still counts an unreaped leader, so the derived window is
+expected to be shorter there. The regression checks keeper ownership only when it
+observes that window; its teardown assertions apply on both platforms. Hosted
+results for individual revisions are available in the
+[Rust checks workflow](https://github.com/jaredchu/proclease/actions/workflows/ci.yml).
+
 ## Filesystem compatibility
 
 A Linux rerun using a macOS-to-Linux OrbStack bind mount failed intermittently

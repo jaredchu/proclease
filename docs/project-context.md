@@ -68,8 +68,10 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    On-demand CPU/RSS group totals in tables and opt-in JSON
 |-- DONE    Native four-platform prerelease, archives and verified installation
 |-- DONE    Dark monochrome website, browser QA and proclease.com publication
-`-- FIXED   Four startup/retry review defects; regression checks pass,
-            source corrections not released
+|-- FIXED   Four startup/retry review defects; regression checks pass,
+|           source corrections not released
+`-- FIXED   Test teardown residue; fixtures now wait for their supervisors
+            (test-only, local regression passed, unreleased)
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
@@ -78,7 +80,10 @@ Codex preview session and the corrected registry-selection guidance. Restricted
 agent host profiles remain untested. A comparative benchmark is needed before claiming
 measured superiority over another supervisor. The unreleased
 [startup and retry corrections](verification.md#startup-and-retry-corrections-2026-11-07)
-record their regressions and current verification limits.
+record their regressions and current verification limits. A test-teardown race
+that left partial fixture directories is
+[corrected in the test fixtures](verification.md#fixture-teardown-residue-2026-11-07);
+production lifecycle code was unchanged.
 
 The recent-job window and resource presentation are implementation choices for
 terminal usability. Resource reads never extend leases.
