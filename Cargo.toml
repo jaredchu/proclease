@@ -40,3 +40,11 @@ tempfile = "3"
 [profile.release]
 lto = "thin"
 strip = true
+
+# Build scripts, procedural macros and their dependencies run on the host only
+# during the build. Cargo applies the release `strip` setting to them as well.
+# On macOS with Rust 1.89, a stripped `clap_derive` proc-macro library failed to
+# load (E0463). Leaving host build units unstripped avoids this; the shipped
+# `proclease` binary remains stripped and thin-LTO optimized.
+[profile.release.build-override]
+strip = false

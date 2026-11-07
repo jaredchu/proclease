@@ -48,8 +48,9 @@ cargo install proclease --version 0.1.3 --locked
 proclease --version
 ```
 
-On macOS with Rust/Cargo 1.89, a stripped release build can fail to load a
-procedural-macro dependency. On the verification host this command succeeded:
+On macOS with Rust/Cargo 1.89, the published 0.1.3 crate's stripped release
+build can fail to load a procedural-macro dependency. On the verification host
+this command succeeded:
 
 ```sh
 CARGO_PROFILE_RELEASE_STRIP=none cargo install proclease --version 0.1.3 --locked
@@ -67,6 +68,10 @@ cd proclease
 cargo install --path . --locked
 proclease --version
 ```
+
+Current source leaves only build-time helpers such as procedural macros
+unstripped; this default command passed with Rust 1.89 on the macOS verification
+host. The installed `proclease` binary remains stripped.
 
 Cargo installs only the `proclease` CLI. Set up the skill separately: see
 [Install the skill](#install-the-skill), using a source checkout or an extracted

@@ -75,7 +75,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    v0.1.3 experimental prerelease; four native builds and assets verified
 |-- DONE    Website identity, type and search refresh published on proclease.com
 |-- DONE    Installer choice labels wrap at 200% text; only requested arrows removed
-`-- DONE    crates.io 0.1.3 and docs.rs overview published; source installation verified
+|-- DONE    crates.io 0.1.3 and docs.rs overview published; source installation verified
+`-- FIXED   Cargo 1.89 host-build stripping in source; registry delivery needs a new version
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
@@ -123,6 +124,8 @@ Instruction-discovery evidence and limits are recorded in
   direct host testing. Same-user local control is not authenticated agent identity.
 - macOS Developer ID signing/notarization is not configured. See the
   [release procedure](releasing.md) for binary and registry delivery.
-- On the macOS verification host, Rust/Cargo 1.89 needed release stripping
-  disabled for registry installation; current stable passed with defaults.
-  See [registry verification](verification.md#registry-and-website-controls-2026-11-07).
+- The published 0.1.3 crate can require a stripping workaround on macOS with
+  Rust/Cargo 1.89. Current source fixes build-time stripping while preserving
+  the stripped CLI; default installation passed on the verification host.
+  Registry delivery requires a new version. See the
+  [fix and verification limits](verification.md#cargo-189-build-time-stripping-fix-2026-11-07).

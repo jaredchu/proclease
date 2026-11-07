@@ -56,6 +56,14 @@ locked dependencies: `uuid 1.29.0` in `Cargo.lock` declares `rust-version =
 prebuilt archives do not need Rust. Raising the requirement, or changing the
 lockfile to lower it, is a separate reviewed change.
 
+The release profile strips the shipped binary and uses thin LTO. Its
+`build-override` leaves host build units, including procedural macros, unstripped:
+on a macOS host, Rust 1.89 could not load a stripped `clap_derive` (E0463).
+The `msrv-install` job in the [Rust checks](../.github/workflows/ci.yml) packages
+the source and installs it with Rust 1.89 default release settings on hosted macOS
+and Linux runners. Keep that job passing; do not replace it with a
+`CARGO_PROFILE_*` environment override.
+
 Publish only a version whose runtime source matches its GitHub release tag:
 
 1. Confirm `src/`, `tests/`, `skills/` and `Cargo.lock` are byte-identical to
@@ -85,3 +93,5 @@ with a [docs.rs crate overview](https://docs.rs/crate/proclease/0.1.3).
 Use current stable Rust/Cargo for the recommended source installation. The
 [registry verification](verification.md#registry-and-website-controls-2026-11-07)
 records the macOS Rust/Cargo 1.89 release-stripping caveat and tested override.
+The published 0.1.3 crate predates the `build-override` fix and cannot change;
+only a later published version can include it.

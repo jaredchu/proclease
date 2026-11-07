@@ -380,6 +380,41 @@ served files matched the reviewed commit over anonymous HTTPS. Live checks at
 1440px and at 320px with 200% text passed labels, keyboard choice, command and
 download updates, demo symbols and horizontal bounds without page errors.
 
+## Cargo 1.89 build-time stripping fix, 2026-11-07
+
+The release profile now leaves only host build units, including procedural macros,
+unstripped via `[profile.release.build-override] strip = false`. The shipped CLI
+keeps `strip = true` and thin LTO. Runtime source, dependencies, lockfile, version
+0.1.3 and the declared Rust minimum are unchanged.
+
+On the native macOS ARM64 verification host, clean Rust 1.89 release builds and
+installs of the published crate reproduced E0463 while loading `clap_derive`.
+The same inputs with only the build override succeeded. Replaying the dependency
+compiler command with the stripped versus unstripped procedural-macro library
+reproduced that difference. The precise binary-layout cause remains undetermined;
+this does not establish failure on every macOS host. Current stable 1.99.1 built
+both variants successfully.
+
+The normalized 16-file source package retains the override. Installing that
+extracted package with Rust/Cargo 1.89, locked dependencies and no `CARGO_PROFILE_*`
+or rustflag overrides passed. The installed CLI passed version/help and a
+three-second lease smoke test: the service started, disappeared at expiry, and its
+supervisors exited before state removal. Compiler arguments retain release
+optimization, thin LTO and symbol stripping for the CLI. The resulting 1.89 binary
+was 1,480,048 bytes, versus 1,861,288 with the earlier all-units stripping workaround.
+The change affects temporary build artifacts rather than adding installed helpers.
+
+Formatting, Clippy with warnings denied, all three unit plus thirty-one integration
+tests and a stable optimized build passed. The packaged-source CI steps failed
+against the old manifest and passed against the fix on this host. The new
+`msrv-install` job covers default Rust 1.89 installs on hosted macOS and Linux;
+hosted results will be recorded after the committed change runs.
+
+The existing crates.io 0.1.3 release and GitHub assets are unchanged. Their
+[earlier caveat and workaround](#registry-and-website-controls-2026-11-07) still apply
+to that published crate. A later version is required to deliver this source fix
+through the registry.
+
 ## Filesystem compatibility
 
 A Linux rerun using a macOS-to-Linux OrbStack bind mount failed intermittently

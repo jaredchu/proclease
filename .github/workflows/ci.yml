@@ -27,3 +27,33 @@ jobs:
           PROCLEASE_TEST_ROOT: ${{ runner.temp }}/proclease
           RUST_BACKTRACE: 1
       - run: cargo build --locked --release
+
+  # Installs the packaged source with the declared minimum Rust and default
+  # release settings. On a macOS host, Rust 1.89 failed this step when release
+  # stripping also applied to proc-macro build dependencies.
+  msrv-install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.89.0"
+      - name: Install packaged source with Rust 1.89 defaults
+        env:
+          ROOT: ${{ runner.temp }}/msrv
+        run: |
+          if env | grep '^CARGO_PROFILE_'; then
+            echo "profile overrides must not be set" >&2
+            exit 1
+          fi
+          cargo --version
+          cargo package --locked --no-verify
+          mkdir -p "$ROOT/src"
+          tar -xzf target/package/proclease-*.crate -C "$ROOT/src"
+          cargo install --locked --path "$ROOT"/src/proclease-* --root "$ROOT/install"
+          "$ROOT/install/bin/proclease" --version
