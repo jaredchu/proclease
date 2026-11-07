@@ -72,8 +72,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |           source corrections not released
 |-- FIXED   Test teardown residue; fixtures now wait for their supervisors
 |           (test-only, local regression passed, unreleased)
-`-- PREPARED v0.1.3 candidate on its own branch; local native checks pass,
-            hosted four-target build, tag and publication pending
+`-- PREPARED v0.1.3 candidate on its own branch; four native targets pass,
+            tag and publication pending
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;

@@ -264,7 +264,18 @@ not a release.
   changed. `cargo doc --no-deps` built local CLI documentation. `cargo rustdoc
   --lib` reports no library target, so docs.rs would show only an overview.
 
-The hosted four-target release workflow has not been run for this candidate.
+The committed candidate `8398c56` passed the
+[four-target native release workflow](https://github.com/jaredchu/proclease/actions/runs/42339399964).
+Each macOS ARM64/Intel and Ubuntu 22.04 ARM64/x64 job passed formatting, Clippy,
+three unit and thirty-one integration tests, the optimized build, native archive
+expiry and isolated installer checks. The branch run skipped the tag-only draft
+job. All four downloaded archives matched their individual SHA-256 files and
+contained the executable, portable skill, README and license. The separate
+[Rust checks](https://github.com/jaredchu/proclease/actions/runs/42339391124) and
+[website checks](https://github.com/jaredchu/proclease/actions/runs/42339391147)
+also passed. No tag, release, registry upload or website deployment was created.
+A clean source package from `8398c56` passed build verification and identified
+that commit in Cargo's VCS metadata, without a dirty flag.
 
 ## Filesystem compatibility
 
