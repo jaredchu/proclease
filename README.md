@@ -112,13 +112,16 @@ unavailable values are `null`. An unavailable group has `resources: null`.
   followed by KILL after a default two-second grace. `--grace` can be set up to 10s.
 - Elapsed wall time includes sleep. An overdue job is stopped when execution
   resumes. No process can enforce a deadline while the machine is powered off.
+  If startup is delayed past the deadline, the job finishes `expired` without
+  running the command.
 - Killing either supervision process triggers fail-closed group cleanup. There is
   no automatic restart or recovery that resumes a service after supervision fails.
 - Each run is a separate job. Assign `--key REQUEST_ID` on the **initial run** to
   make retries idempotent for that command, directory, environment and launch
   policy. Reuse the same key unchanged. Adding a key later does not identify an
   earlier keyless job. A retained retry never renews or resurrects a job; a different
-  context is rejected. Empty interrupted-launch reservations and those containing
+  context is rejected. A retry of a failed launch returns that `failed` record and
+  exits nonzero. Empty interrupted-launch reservations and those containing
   only private generated atomic-write temporary files are ignored without deleting
   state; unreadable/ambiguous launch metadata still fails closed.
 - Stop during shutdown returns lifecycle state; extension of a stopping job is

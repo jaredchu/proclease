@@ -1,4 +1,4 @@
-use crate::model::{Launch, Record, State};
+use crate::model::{Launch, Reason, Record, State};
 use anyhow::{bail, Context, Result};
 use fs2::FileExt;
 use serde::{de::DeserializeOwned, Serialize};
@@ -223,7 +223,10 @@ impl Store {
                 };
                 let own_completion =
                     completed_id == Some(name.as_str()) && record.keeper_pid == std::process::id();
-                if !own_completion && !process_is_absent(record.keeper_pid) {
+                if !own_completion
+                    && !never_supervised(&record)
+                    && !process_is_absent(record.keeper_pid)
+                {
                     return Ok(None);
                 }
                 if record
@@ -376,6 +379,18 @@ impl Store {
         jobs.sort_by_key(|job| job.created_at_ms);
         Ok((jobs, warnings))
     }
+}
+
+/// A launch finalized by the CLI after its keeper could not be spawned. Every
+/// keeper records its PID before any other lifecycle write, so a failed record
+/// with no keeper, guardian or command PID was never supervised and has no
+/// process to verify. Starting, unknown and other terminal states never match.
+fn never_supervised(record: &Record) -> bool {
+    record.state == State::Failed
+        && record.reason == Some(Reason::LaunchFailed)
+        && record.keeper_pid == 0
+        && record.guardian_pid.is_none()
+        && record.command_pid.is_none()
 }
 
 fn group_is_absent(pid: u32) -> bool {

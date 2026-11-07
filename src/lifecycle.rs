@@ -11,6 +11,7 @@ use std::{
         net::{UnixListener, UnixStream},
         process::CommandExt,
     },
+    path::Path,
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -86,11 +87,41 @@ fn internal(store: &Store, kind: &str, id: &str) -> Result<Command> {
     Ok(command)
 }
 
+/// Called with the root launch lock held, after launch metadata is committed.
 pub fn start_keeper(store: &Store, id: &str) -> Result<()> {
-    let mut command = internal(store, "__keeper", id)?;
-    command.stdin(Stdio::null());
-    detach(&mut command);
-    let mut keeper = command.spawn().context("cannot start supervisor")?;
+    let spawned = internal(store, "__keeper", id).and_then(|mut command| {
+        command.stdin(Stdio::null());
+        detach(&mut command);
+        command.spawn().context("cannot start supervisor")
+    });
+    let mut keeper = match spawned {
+        Ok(keeper) => keeper,
+        Err(error) => {
+            // No keeper process exists, so neither a guardian nor the command
+            // can have started. Finish the committed record under the launch
+            // lock; a retry then sees a failed launch rather than an unknown one.
+            let finalized = (|| -> Result<()> {
+                let mut record = store.record(id)?;
+                if record.state != State::Starting
+                    || record.keeper_pid != 0
+                    || record.guardian_pid.is_some()
+                    || record.command_pid.is_some()
+                {
+                    bail!("unexpected lifecycle state after failed supervisor spawn");
+                }
+                record.reason = Some(Reason::LaunchFailed);
+                record.error = Some(format!("{error:#}"));
+                record.finish();
+                store.save(&record)
+            })();
+            return match finalized {
+                Ok(()) => Ok(()),
+                Err(save) => {
+                    Err(error.context(format!("failed launch was not recorded: {save:#}")))
+                }
+            };
+        }
+    };
     let started = Instant::now();
     loop {
         let record = store.record(id)?;
@@ -362,12 +393,23 @@ fn serve_control(listener: &UnixListener, record: &mut Record, store: &Store) ->
     Ok(())
 }
 
-pub fn guard(store: &Store, id: &str) -> Result<()> {
-    let launch: Launch = store.launch(id)?;
-    let dir = store.job(id)?;
-    let mut record = store.record(id)?;
+/// Guardian resources prepared before the command is spawned.
+struct GuardSetup {
+    interrupted: Arc<AtomicBool>,
+    parent_gone: Arc<AtomicBool>,
+    listener: UnixListener,
+    sink: Arc<Mutex<LogSink>>,
+    capture_marker: Arc<File>,
+}
+
+fn prepare_guard(
+    store: &Store,
+    dir: &Path,
+    launch: &Launch,
+    record: &mut Record,
+) -> Result<GuardSetup> {
     record.guardian_pid = Some(std::process::id());
-    store.save(&record)?;
+    store.save(record)?;
     if unsafe { libc::getpgrp() } != std::process::id() as i32 {
         bail!("guardian must own its process group");
     }
@@ -413,7 +455,39 @@ pub fn guard(store: &Store, id: &str) -> Result<()> {
         .custom_flags(libc::O_NOFOLLOW)
         .open(dir.join("capture.status"))?;
     capture_marker.write_all(b"0")?;
-    let capture_marker = Arc::new(capture_marker);
+    Ok(GuardSetup {
+        interrupted,
+        parent_gone,
+        listener,
+        sink,
+        capture_marker: Arc::new(capture_marker),
+    })
+}
+
+pub fn guard(store: &Store, id: &str) -> Result<()> {
+    let launch: Launch = store.launch(id)?;
+    let dir = store.job(id)?;
+    let mut record = store.record(id)?;
+    let GuardSetup {
+        interrupted,
+        parent_gone,
+        listener,
+        sink,
+        capture_marker,
+    } = match prepare_guard(store, &dir, &launch, &mut record) {
+        Ok(setup) => setup,
+        Err(error) => {
+            // The command has not been spawned, so this is a launch failure,
+            // not lost supervision. The keeper preserves this terminal state.
+            record.reason = Some(Reason::LaunchFailed);
+            record.error = Some(format!("{error:#}"));
+            record.finish();
+            if let Err(save) = store.save(&record) {
+                return Err(error.context(format!("launch failure was not recorded: {save:#}")));
+            }
+            return Err(error);
+        }
+    };
     let truncated = Arc::new(AtomicBool::new(false));
     let log_failed = Arc::new(AtomicBool::new(false));
     let mut command = Command::new(&launch.argv[0]);
@@ -432,6 +506,17 @@ pub fn guard(store: &Store, id: &str) -> Result<()> {
             libc::signal(libc::SIGHUP, libc::SIG_DFL);
             Ok(())
         });
+    }
+    // Startup can be delayed by scheduling, suspension or slow setup. A lease
+    // already past its persisted deadline must not execute the command. A
+    // deadline reached between this check and exec is handled by the first
+    // supervision tick below, which stops the anchored group.
+    if now_ms() >= record.expires_at_ms {
+        record.reason = Some(Reason::Deadline);
+        record.error = Some("lease expired before the command was started".into());
+        record.finish();
+        store.save(&record)?;
+        return Ok(());
     }
     let mut child = match command.spawn() {
         Ok(child) => child,

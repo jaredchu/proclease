@@ -145,6 +145,40 @@ added conservative file-name/type/permission checks and regressions
 that retain rejection of symlinks, directories and ambiguous state. That final
 refinement was validated locally, without another independent review round.
 
+### Startup and retry corrections, 2026-11-07
+
+An independent review of 0.1.2 found four defects, reproduced on macOS arm64:
+retry fingerprints aliased argv `[/usr/bin/true, A, value]` with argv
+`[/usr/bin/true]` plus `A=value`; a 1ms lease could run its command after the
+persisted deadline; a guardian setup failure such as a denied socket bind was
+reported as an `interrupted` launch with exit 0; and a failed keeper spawn left a
+`starting` record that later retries reused as `unknown`, while prune skipped it.
+The [architecture](architecture.md) describes the corrected behavior. The corrected code is not yet in a released version.
+
+New regressions are deterministic rather than timing-dependent:
+
+- A unit test checks the documented collision, section separation and acceptance
+  of an earlier-format hash only for its exact stored argv and directory. An
+  integration test repeats the collision through `run` with a controlled
+  environment. It also rewrites a retained record to the earlier encoding: the
+  same context is reused, while the colliding and changed contexts are rejected.
+- Overdue-startup and guardian setup failures run the internal supervisor on a
+  committed launch: one with a deadline already in the past, and one with a
+  non-socket file at the control path. Neither runs its marker command. Same-key
+  retries return `expired` and `failed` respectively, the latter with exit 1.
+- Keeper-spawn failure applies a one-process `RLIMIT_NPROC` limit only to the CLI.
+  The run and its retry exit 1 with a `failed` record. The record is collected by
+  age; seeded `starting`, `unknown`, `interrupted` and live-guardian records without
+  a keeper PID remain protected. The test is skipped for root, which bypasses the limit.
+
+`expiry_does_not_wait_for_application_readiness` now accepts either outcome of its
+500ms lease under load: the command is killed, or it never starts.
+
+Local macOS arm64 checks after these changes passed: formatting, Clippy with
+warnings denied, three unit tests and thirty integration tests, and an optimized
+release build. Hosted macOS and Ubuntu results for individual source revisions
+are available in the [Rust checks workflow](https://github.com/jaredchu/proclease/actions/workflows/ci.yml).
+
 ## Filesystem compatibility
 
 A Linux rerun using a macOS-to-Linux OrbStack bind mount failed intermittently

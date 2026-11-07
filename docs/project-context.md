@@ -67,14 +67,18 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    Version 0.1.2 briefly shows up to five finished jobs for 30 seconds
 |-- DONE    On-demand CPU/RSS group totals in tables and opt-in JSON
 |-- DONE    Native four-platform prerelease, archives and verified installation
-`-- DONE    Dark monochrome website, browser QA and proclease.com publication
+|-- DONE    Dark monochrome website, browser QA and proclease.com publication
+`-- FIXED   Four startup/retry review defects; regression checks pass,
+            source corrections not released
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
 [verification](verification.md) records evidence and limits, including a real
 Codex preview session and the corrected registry-selection guidance. Restricted
 agent host profiles remain untested. A comparative benchmark is needed before claiming
-measured superiority over another supervisor.
+measured superiority over another supervisor. The unreleased
+[startup and retry corrections](verification.md#startup-and-retry-corrections-2026-11-07)
+record their regressions and current verification limits.
 
 The recent-job window and resource presentation are implementation choices for
 terminal usability. Resource reads never extend leases.

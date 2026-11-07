@@ -94,7 +94,12 @@ impl Fixture {
         })
     }
     fn finished_template(&self) -> (Value, Value) {
-        let result = self.call(&["run", "--grace", "100ms", "--", "/usr/bin/true"]);
+        self.template(&["run", "--grace", "100ms", "--", "/usr/bin/true"])
+    }
+    /// Run a short command, then remove its job and return its records.
+    /// The launch record carries this test process's context fingerprint.
+    fn template(&self, args: &[&str]) -> (Value, Value) {
+        let result = self.call(args);
         let id = result["job"]["id"].as_str().unwrap();
         let record = self.terminal(id);
         let pid = record["keeper_pid"].as_u64().unwrap() as i32;
@@ -110,24 +115,84 @@ impl Fixture {
         (record, launch)
     }
     fn seed_history(&self, id: &str, record: &Value, launch: &Value, finished: u64) {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = self.state.join(id);
-        fs::create_dir(&dir).unwrap();
-        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
         let mut record = record.clone();
         record["id"] = serde_json::json!(id);
         record["finished_at_ms"] = serde_json::json!(finished);
         let mut launch = launch.clone();
         launch["id"] = serde_json::json!(id);
-        for (name, bytes) in [
-            ("record.json", serde_json::to_vec(&record).unwrap()),
-            ("launch.json", serde_json::to_vec(&launch).unwrap()),
-            ("output.log", b"retained test output".to_vec()),
+        self.seed_files(
+            id,
+            &[
+                ("record.json", serde_json::to_vec(&record).unwrap()),
+                ("launch.json", serde_json::to_vec(&launch).unwrap()),
+                ("output.log", b"retained test output".to_vec()),
+            ],
+        );
+    }
+    /// Commit a launch exactly as `run` does before starting its keeper, with
+    /// the persisted lease shifted to begin at `created`.
+    fn seed_starting(&self, id: &str, record: &Value, launch: &Value, created: u64) {
+        let ttl =
+            launch["expires_at_ms"].as_u64().unwrap() - launch["created_at_ms"].as_u64().unwrap();
+        let mut launch = launch.clone();
+        launch["id"] = serde_json::json!(id);
+        launch["created_at_ms"] = serde_json::json!(created);
+        launch["expires_at_ms"] = serde_json::json!(created + ttl);
+        let mut record = record.clone();
+        for (field, value) in [
+            ("id", serde_json::json!(id)),
+            ("created_at_ms", launch["created_at_ms"].clone()),
+            ("expires_at_ms", launch["expires_at_ms"].clone()),
+            ("state", serde_json::json!("starting")),
+            ("keeper_pid", serde_json::json!(0)),
+            ("logs_truncated", serde_json::json!(false)),
         ] {
+            record[field] = value;
+        }
+        for field in [
+            "reason",
+            "guardian_pid",
+            "command_pid",
+            "exit_code",
+            "finished_at_ms",
+            "error",
+        ] {
+            record[field] = Value::Null;
+        }
+        self.seed_files(
+            id,
+            &[
+                ("record.json", serde_json::to_vec(&record).unwrap()),
+                ("launch.json", serde_json::to_vec(&launch).unwrap()),
+            ],
+        );
+    }
+    fn seed_files(&self, id: &str, files: &[(&str, Vec<u8>)]) {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = self.state.join(id);
+        fs::create_dir(&dir).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+        for (name, bytes) in files {
             fs::write(dir.join(name), bytes).unwrap();
             fs::set_permissions(dir.join(name), fs::Permissions::from_mode(0o600)).unwrap();
         }
     }
+    /// Run the hidden keeper in the foreground for a seeded starting job. It
+    /// returns only after its guardian group is cleaned up and state is final.
+    fn keep(&self, id: &str) -> (Output, Value) {
+        let output = self.command(&["__keeper", id]).output().unwrap();
+        let record =
+            serde_json::from_slice(&fs::read(self.state.join(id).join("record.json")).unwrap())
+                .unwrap();
+        (output, record)
+    }
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
 }
 
 impl Drop for Fixture {
@@ -256,10 +321,17 @@ fn expiry_does_not_wait_for_application_readiness() {
         marker.to_str().unwrap(),
     ]);
     let id = result["job"]["id"].as_str().unwrap();
-    let pid = result["job"]["command_pid"].as_u64().unwrap() as i32;
     let job = fixture.terminal(id);
     assert_eq!(job["state"], "expired");
     assert_eq!(job["reason"], "deadline");
+    // Under heavy load the short lease can pass before the guardian spawns
+    // the command; it then expires without ever starting it.
+    let Some(pid) = result["job"]["command_pid"].as_u64() else {
+        assert!(job["command_pid"].is_null());
+        assert!(!marker.exists());
+        return;
+    };
+    let pid = pid as i32;
     wait(|| {
         if unsafe { libc::kill(pid, 0) } == -1
             && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
@@ -1192,4 +1264,309 @@ fn empty_launch_reservation_does_not_block_keyed_runs() {
         .as_str()
         .unwrap()
         .contains("cannot safely resolve"));
+}
+
+#[test]
+fn retry_context_separates_arguments_from_environment_and_verifies_legacy_records() {
+    use sha2::{Digest, Sha256};
+    let fixture = Fixture::new();
+    let cwd = fixture.dir.path().to_owned();
+    let launch_in = |target: &Fixture, args: &[&str], extra: &[(&str, &str)]| {
+        let mut command = target.command(args);
+        command
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .envs(extra.iter().copied())
+            .current_dir(&cwd);
+        command.output().unwrap()
+    };
+    let run = |argv: &[&str], extra: &[(&str, &str)]| {
+        let mut args = vec!["run", "--grace", "100ms", "--key", "aliased", "--"];
+        args.extend_from_slice(argv);
+        launch_in(&fixture, &args, extra)
+    };
+    let rejected = |output: Output| {
+        assert!(!output.status.success());
+        assert!(parse(&output)["error"]
+            .as_str()
+            .unwrap()
+            .contains("different launch context"));
+    };
+    // Earlier versions hashed these two contexts to the same bytes.
+    let long = ["/usr/bin/true", "A", "value"];
+    let short = ["/usr/bin/true"];
+    let first = run(&long, &[]);
+    assert!(first.status.success());
+    let id = parse(&first)["job"]["id"].as_str().unwrap().to_owned();
+    fixture.terminal(&id);
+    rejected(run(&short, &[("A", "value")]));
+    let retry = parse(&run(&long, &[]));
+    assert_eq!(retry["reused"], true);
+    assert_eq!(retry["job"]["id"], id.as_str());
+
+    // A record written with the earlier encoding remains usable for its exact
+    // context, but its ambiguous hash alone does not identify a launch.
+    let path = fixture.state.join(&id).join("launch.json");
+    let mut launch: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert!(launch["fingerprint"].as_str().unwrap().starts_with("v2:"));
+    let mut digest = Sha256::new();
+    digest.update(launch["cwd"].as_str().unwrap().as_bytes());
+    digest.update([0]);
+    for arg in launch["argv"].as_array().unwrap() {
+        digest.update(arg.as_str().unwrap().as_bytes());
+        digest.update([0]);
+    }
+    // The platform can add entries at process start (macOS sets
+    // __CF_USER_TEXT_ENCODING), so observe the inherited environment through a
+    // separate, isolated job instead of assuming it.
+    let probe = Fixture::new();
+    let shown = parse(&launch_in(
+        &probe,
+        &["run", "--grace", "100ms", "--", "/usr/bin/env"],
+        &[],
+    ));
+    let probe_id = shown["job"]["id"].as_str().unwrap();
+    assert_eq!(probe.terminal(probe_id)["state"], "exited");
+    let observed = fs::read_to_string(probe.state.join(probe_id).join("output.log")).unwrap();
+    let mut env: Vec<_> = observed
+        .lines()
+        .filter_map(|line| line.split_once('='))
+        .filter(|(key, _)| *key != "_" && *key != "SHLVL")
+        .collect();
+    env.sort();
+    assert!(env.contains(&("PATH", "/usr/bin:/bin")), "{observed}");
+    for (key, value) in env {
+        for part in [key, value] {
+            digest.update(part.as_bytes());
+            digest.update([0]);
+        }
+    }
+    launch["fingerprint"] = serde_json::json!(format!("{:x}", digest.finalize()));
+    fs::write(&path, serde_json::to_vec(&launch).unwrap()).unwrap();
+    let legacy = parse(&run(&long, &[]));
+    assert_eq!(legacy["reused"], true);
+    assert_eq!(legacy["job"]["id"], id.as_str());
+    rejected(run(&short, &[("A", "value")]));
+    rejected(run(&long, &[("B", "changed")]));
+    assert_eq!(
+        fixture.call(&["list", "--all"])["jobs"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let text = fs::read_to_string(&path).unwrap()
+        + &fs::read_to_string(fixture.state.join(&id).join("record.json")).unwrap();
+    assert!(
+        !text.contains("/usr/bin:/bin"),
+        "environment must not be persisted"
+    );
+}
+
+#[test]
+fn overdue_startup_expires_without_starting_the_command() {
+    let fixture = Fixture::new();
+    let marker = fixture.dir.path().join("late-start");
+    let args = [
+        "run",
+        "--ttl",
+        "30s",
+        "--grace",
+        "100ms",
+        "--key",
+        "late-start",
+        "--",
+        "/usr/bin/touch",
+        marker.to_str().unwrap(),
+    ];
+    // A generous lease lets the template complete even on a slow host.
+    let (record, launch) = fixture.template(&args);
+    assert_eq!(record["state"], "exited", "{record}");
+    assert_eq!(record["exit_code"], 0, "{record}");
+    assert!(marker.exists(), "the template command must have run");
+    fs::remove_file(&marker).unwrap();
+    // A committed launch whose supervisor starts after the persisted deadline,
+    // as after a slow or suspended startup, without depending on timing: the
+    // seeded 30s lease began 60s ago.
+    let id = "0000000000e1";
+    fixture.seed_starting(id, &record, &launch, now_ms() - 60_000);
+    let (output, record) = fixture.keep(id);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(record["state"], "expired");
+    assert_eq!(record["reason"], "deadline");
+    assert!(record["command_pid"].is_null());
+    assert!(record["guardian_pid"].is_u64());
+    assert!(record["finished_at_ms"].is_u64());
+    assert!(
+        !marker.exists(),
+        "an overdue lease must not run its command"
+    );
+    let retry = fixture.call(&args);
+    assert_eq!(retry["reused"], true);
+    assert_eq!(retry["job"]["id"], id);
+    assert_eq!(retry["job"]["state"], "expired");
+    assert!(!marker.exists());
+}
+
+#[test]
+fn guardian_setup_failure_is_a_failed_launch() {
+    let fixture = Fixture::new();
+    let marker = fixture.dir.path().join("setup-fault");
+    let args = [
+        "run",
+        "--ttl",
+        "30s",
+        "--grace",
+        "100ms",
+        "--key",
+        "setup-fault",
+        "--",
+        "/usr/bin/touch",
+        marker.to_str().unwrap(),
+    ];
+    let (record, launch) = fixture.template(&args);
+    fs::remove_file(&marker).unwrap();
+    let id = "0000000000e2";
+    fixture.seed_starting(id, &record, &launch, now_ms());
+    // An existing non-socket path makes the guardian's control bind fail
+    // before it spawns the command.
+    fs::write(fixture.state.join(id).join("ctl.sock"), b"").unwrap();
+    let (output, record) = fixture.keep(id);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(record["state"], "failed");
+    assert_eq!(record["reason"], "launch_failed");
+    assert!(record["command_pid"].is_null());
+    assert!(record["error"]
+        .as_str()
+        .unwrap()
+        .contains("cannot bind control socket"));
+    let diagnostic = fs::read_to_string(fixture.state.join(id).join("supervisor.log")).unwrap();
+    assert!(
+        diagnostic.contains("cannot bind control socket"),
+        "{diagnostic}"
+    );
+    assert!(!marker.exists());
+    let retry = fixture.command(&args).output().unwrap();
+    assert!(
+        !retry.status.success(),
+        "a failed launch must not report success"
+    );
+    let retry = parse(&retry);
+    assert_eq!(retry["reused"], true);
+    assert_eq!(retry["job"]["id"], id);
+    assert_eq!(retry["job"]["state"], "failed");
+    assert!(!marker.exists());
+}
+
+#[test]
+fn unspawned_keeper_is_a_failed_collectable_launch_but_uncertain_startup_is_kept() {
+    use std::os::unix::process::CommandExt;
+    // Root bypasses the process limit used to make the keeper spawn fail.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let fixture = Fixture::new();
+    let marker = fixture.dir.path().join("no-keeper");
+    let args = [
+        "run",
+        "--ttl",
+        "30s",
+        "--grace",
+        "100ms",
+        "--key",
+        "no-keeper",
+        "--",
+        "/usr/bin/touch",
+        marker.to_str().unwrap(),
+    ];
+    let mut limited = fixture.command(&args);
+    // Applied only to the CLI process: this user already has more than one
+    // process, so the CLI's keeper fork fails after launch metadata commits.
+    unsafe {
+        limited.pre_exec(|| {
+            let mut limit: libc::rlimit = std::mem::zeroed();
+            if libc::getrlimit(libc::RLIMIT_NPROC, &mut limit) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            limit.rlim_cur = 1;
+            if libc::setrlimit(libc::RLIMIT_NPROC, &limit) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let output = limited.output().unwrap();
+    assert!(!output.status.success());
+    let failed = parse(&output);
+    assert_eq!(failed["job"]["state"], "failed", "{failed}");
+    assert_eq!(failed["job"]["reason"], "launch_failed");
+    assert_eq!(failed["job"]["keeper_pid"], 0);
+    assert!(failed["job"]["error"]
+        .as_str()
+        .unwrap()
+        .contains("cannot start supervisor"));
+    let id = failed["job"]["id"].as_str().unwrap().to_owned();
+    let retry = fixture.command(&args).output().unwrap();
+    assert!(
+        !retry.status.success(),
+        "a failed launch must not be reused as success"
+    );
+    let retry = parse(&retry);
+    assert_eq!(retry["reused"], true);
+    assert_eq!(retry["job"]["id"], id.as_str());
+    assert_eq!(retry["job"]["state"], "failed");
+    assert!(!marker.exists());
+
+    // Uncertain outcomes keep the conservative protection, even without a
+    // recorded keeper PID: a startup that never acknowledged, unknown state, a
+    // non-launch failure, and a launch failure with a recorded guardian.
+    let path = fixture.state.join(&id).join("record.json");
+    let record: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let launch: Value =
+        serde_json::from_slice(&fs::read(fixture.state.join(&id).join("launch.json")).unwrap())
+            .unwrap();
+    let mut protected = Vec::new();
+    for (index, (state, reason, guardian)) in [
+        ("starting", Value::Null, Value::Null),
+        ("unknown", Value::Null, Value::Null),
+        (
+            "interrupted",
+            serde_json::json!("supervision_lost"),
+            Value::Null,
+        ),
+        (
+            "failed",
+            serde_json::json!("launch_failed"),
+            serde_json::json!(unsafe { libc::getpgrp() }),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let seeded = format!("0000000000f{index}");
+        let mut uncertain = record.clone();
+        uncertain["state"] = serde_json::json!(state);
+        uncertain["reason"] = reason;
+        uncertain["guardian_pid"] = guardian;
+        uncertain["created_at_ms"] = serde_json::json!(0);
+        let mut launch = launch.clone();
+        launch["key"] = Value::Null;
+        fixture.seed_history(&seeded, &uncertain, &launch, 1);
+        protected.push(seeded);
+    }
+
+    let mut aged = record;
+    aged["finished_at_ms"] = serde_json::json!(1);
+    fs::write(&path, serde_json::to_vec(&aged).unwrap()).unwrap();
+    let preview = fixture.call(&["prune", "--dry-run"]);
+    assert_eq!(preview["candidates"], serde_json::json!([id]));
+    let report = fixture.call(&["prune"]);
+    assert_eq!(report["removed"], serde_json::json!([id]));
+    assert!(!fixture.state.join(&id).exists());
+    for seeded in protected {
+        assert!(
+            fixture.state.join(&seeded).exists(),
+            "uncertain job {seeded} was collected"
+        );
+    }
 }

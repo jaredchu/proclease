@@ -37,6 +37,18 @@ numeric ID being reused during cleanup. If the guardian crashes, the keeper
 enforces cleanup. If the keeper crashes, EOF causes the guardian to clean up.
 Simultaneous destruction of both supervisors is outside this fail-closed guarantee.
 
+Startup failures before the service is spawned are launch failures. If the CLI
+cannot spawn the keeper, it records the committed job as `failed` while holding
+the launch lock; that record names no supervisor PID and can be collected as
+normal finished history. Guardian setup errors, such as a control-socket bind or
+capture-file failure, are recorded as `failed` with the original error, and `run`
+exits nonzero. Immediately before spawning the service, the guardian compares the
+persisted deadline with wall time. An overdue lease finishes `expired` without
+running the command. A deadline reached between that check and exec is enforced
+on the first supervision tick through the same group cleanup. A supervisor that
+exits, times out or never acknowledges startup is not treated as proof that no
+service started; that state remains `interrupted` or `unknown` and protected.
+
 Both supervisors arm process-group cleanup immediately after spawning their child.
 Returning through a metadata read/write error or another post-spawn failure cannot
 skip TERM/KILL cleanup. The keeper disarms that guard before reaping its leader,
@@ -57,6 +69,13 @@ unverified state. Such observation never signals or adopts a process.
 A root advisory lock serializes launch reservations. A unique 12-hex-digit ID
 names each job. Explicit retry keys match a launch-context fingerprint covering
 the argument vector, canonical directory and environment, plus owner/task fields.
+The fingerprint hashes typed cwd, argv and environment sections with element
+counts and byte lengths, so moving text between arguments and environment changes
+it. Stored argv and directory must also match exactly. Records from earlier
+versions use an unprefixed hash without section boundaries; they are accepted
+only when stored argv and directory match exactly and that earlier hash matches.
+With those fixed, the hash identifies one environment because operating-system
+arguments, paths and environment entries cannot contain NUL.
 While history is retained, they return the original record, including terminal
 records, without renewal. Purging history ends that key's deduplication window.
 Changing a context while reusing a key is an error. There is no automatic
@@ -142,7 +161,9 @@ No sampled usage is persisted and no monitoring daemon is introduced. See the
 The lifecycle integration suite covers expiry, TERM-resistant descendants,
 surviving children after leader exit, explicit stop/extension, observation without
 renewal, individual keeper/guardian crashes, bounded logs, retry idempotency,
-concurrent retries, private state and launch-context inheritance.
+concurrent retries, private state and launch-context inheritance. Startup
+regressions cover argument/environment fingerprint separation and earlier-format
+records, overdue leases, guardian setup failure and failed keeper spawn.
 
 These are local implementation tests, not direct tests inside every Codex or
 Claude permission profile. Real host compatibility, system sleep/wake and a
