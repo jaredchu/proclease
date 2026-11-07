@@ -93,10 +93,11 @@ runs `cargo rustdoc --lib`.
 ProcLease has only a binary target, so docs.rs shows a crate overview,
 README and source rather than an API. No docs.rs metadata is configured.
 
-Current registry release: [proclease 0.1.4](https://crates.io/crates/proclease/0.1.4),
-with a [docs.rs crate overview](https://docs.rs/crate/proclease/0.1.4).
-The [v0.1.4 publication](verification.md#v014-publication-2026-11-07) records a
-verified default Rust/Cargo 1.89 registry install without profile overrides.
+Current registry release: [proclease 0.1.5](https://crates.io/crates/proclease/0.1.5),
+with a [docs.rs crate overview](https://docs.rs/crate/proclease/0.1.5).
+The [v0.1.5 publication](verification.md#v015-publication-2026-11-08) records
+fresh binary and default Rust/Cargo 1.89 registry installs, including bulk stop
+and expiry checks without profile overrides.
 Current stable Rust/Cargo remains recommended. The immutable published 0.1.3
 crate predates this fix; its earlier
 [caveat and workaround](verification.md#registry-and-website-controls-2026-11-07)

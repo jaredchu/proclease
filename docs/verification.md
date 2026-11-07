@@ -653,6 +653,54 @@ platforms. The guard is cooperative: these checks use one build for every
 participant and do not cover clients or running keepers from older builds,
 which ignore it.
 
+## v0.1.5 publication, 2026-11-08
+
+The experimental [v0.1.5 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.5),
+[crates.io 0.1.5](https://crates.io/crates/proclease/0.1.5) and
+[docs.rs overview](https://docs.rs/crate/proclease/0.1.5) are public. Binary and
+registry provenance tags point to `95957163c030b7fd09811d0168388af917a8a549`.
+The reviewed release changes versions/pins, release guidance, skill wording and
+a website FAQ; runtime/test source, dependencies, release profiles and minimum
+Rust are unchanged from the retention correction.
+
+The four-native [release run](https://github.com/jaredchu/proclease/actions/runs/42394169502)
+passed on macOS ARM64/Intel and Ubuntu 22.04 ARM64/x64: formatting, Clippy, all
+9 unit/42 integration tests, optimized builds, extracted-archive expiry and
+installer checksum-failure checks. Branch, tag and
+[main Rust checks](https://github.com/jaredchu/proclease/actions/runs/42395063720)
+and matching website checks passed, including default Rust 1.89 package installs.
+
+All ten draft assets were inspected before publication. Names, safe archive
+contents, source/skill/README/license bytes and both checksum sets matched.
+Anonymous public downloads matched those inspected bytes. Both ELF binaries
+report stripped; both Mach-O files have no Rust-mangled symbol entries and a
+macOS 15.0 minimum. ARM64 strict ad-hoc signature verification passed; Intel is
+unsigned. Hosted logs contain no stripping-tool failure. These facts are not
+Developer ID signing, notarization or a browser-quarantine acceptance test;
+publisher signing/notarization remains required before stable promotion.
+
+The clean 16-file source package and anonymous registry download matched SHA-256
+`dfaa54cd11d863c50a0e4b544f84ca46bb00c9ed3939a58c961ea0d04089213c` and the tagged
+VCS commit. Extracted-package tests passed under Rust 1.89, publication dry run
+passed, and a fresh default Cargo 1.89 registry install passed version/help,
+scoped bulk dry-run/stop, preservation of an unrelated test lease, and expiry.
+The host-native archive and a fresh published-binary installer passed the same
+bulk/expiry checks. Fresh binary installations created both host skill links with
+the release's exact skill bytes. Tests used isolated registries and cleaned up
+their own supervisors.
+
+Main was fast-forwarded to the release commit after assets were public. The live
+[website](https://proclease.com/) serves all twelve files byte-identical to the
+committed release website. Its installer fetched the same native binary and
+skill bytes. Chromium, Firefox and WebKit passed live release links, all four
+platform download pins, skill choices/copy, the bulk-stop FAQ with keyboard and
+without JavaScript, and horizontal bounds at 320/390/768/1440px and 320px with
+200% root text. No page errors occurred. Root-font enlargement and scripted
+clipboard behavior do not establish a full device or assistive-technology audit.
+The v0.1.4 release assets and both provenance tags remain unchanged. The
+cooperative-retention and existing-keeper upgrade limits remain as described in
+the README.
+
 ## Filesystem compatibility
 
 A Linux rerun using a macOS-to-Linux OrbStack bind mount failed intermittently

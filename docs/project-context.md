@@ -1,6 +1,6 @@
 # ProcLease project context
 
-Last reviewed: 2026-11-07.
+Last reviewed: 2026-11-08.
 
 ## Purpose and scope
 
@@ -42,10 +42,10 @@ verification limits.
 - **Implementation choice:** use proven Rust/Unix primitives and per-job supervisors
   launched in the caller's execution context. Avoid a login-wide service accepting
   arbitrary execution requests from potentially restricted agents.
-- **Publication:** the experimental [v0.1.4 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.4)
+- **Publication:** the experimental [v0.1.5 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.5)
   provides four native binaries, checksums and a verified installer. The CLI
-  source is also published on [crates.io](https://crates.io/crates/proclease/0.1.4),
-  with a [docs.rs overview](https://docs.rs/crate/proclease/0.1.4). The public
+  source is also published on [crates.io](https://crates.io/crates/proclease/0.1.5),
+  with a [docs.rs overview](https://docs.rs/crate/proclease/0.1.5). The public
   [website](https://proclease.com) serves static assets through a Cloudflare Worker;
   [website source and deployment](../website/README.md) are maintained here.
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
@@ -79,13 +79,14 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    v0.1.4 ships the Cargo 1.89 fix through GitHub, crates.io and the website
 |-- FIXED   A later teardown-test observation race, without changing released runtime
 |-- DONE    Tabler SVG interface icons and restored arrows verified across three browsers
-|-- SOURCE  Reviewed bulk `stop --all`; 47 tests pass on macOS/Linux, unreleased
-`-- SOURCE  Reviewed bulk-stop retention fix; 51 tests pass on macOS/Linux, unreleased
+|-- DONE    Scoped bulk `stop --all` and retention protection released in v0.1.5
+`-- DONE    v0.1.5 four-native/registry/website release and fresh installs verified
 ```
 
-The v0.1.5 experimental release candidate packages bulk stop and its retention
-correction with matching installer, shared skill and website pins. Publication,
-registry installation, live website verification and the local upgrade are pending.
+The [v0.1.5 publication](verification.md#v015-publication-2026-11-08) packages bulk
+stop and its retention correction with matching installer, shared skill and live
+website pins. Four native builds passed all 51 tests; fresh binary and default
+Rust 1.89 registry installations passed scoped bulk-stop and expiry checks.
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
 [verification](verification.md) records evidence and limits, including a real
@@ -111,15 +112,15 @@ restores those interface arrows as SVGs and standardizes the other UI icons,
 with browser checks and locally bundled source/license provenance.
 [Design and SEO/GEO decisions](../website/README.md#identity-and-type) describe
 the implementation and supporting sources. The refresh is live on proclease.com.
-The [v0.1.4 publication](verification.md#v014-publication-2026-11-07) delivers the
+The [v0.1.4 publication](verification.md#v014-publication-2026-11-07) delivered the
 Cargo 1.89 build-time stripping fix without changing runtime behavior. Native
 archives, registry checksum/default installation, docs.rs and the matching live
 website were verified. Older 0.1.3 registry users retain its documented caveat.
 A subsequent [teardown-test observation race](verification.md#teardown-regression-observation-2026-11-07)
 is corrected in main's test source; published v0.1.4 bytes remain unchanged.
 User-authorized bulk `stop --all` with exact owner/task filters, dry run and an
-aggregate JSON envelope is implemented and reviewed in source only. It is not in
-v0.1.4. The initial review findings are resolved; hosted stable macOS/Ubuntu checks
+aggregate JSON envelope is reviewed and released in v0.1.5. It is not in v0.1.4.
+The initial review findings are resolved; hosted stable macOS/Ubuntu checks
 and both Rust 1.89 package installations pass.
 The [verification](verification.md#bulk-stop-unreleased-source-2026-11-07)
 records its tests and limits. A later probe found that completion retention could
