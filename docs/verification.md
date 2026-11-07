@@ -228,8 +228,8 @@ results for individual revisions are available in the
 The [v0.1.3 notes](releases/v0.1.3.md) cover the startup/retry corrections and
 the fixture teardown correction above. The candidate updates the version,
 installer pin and mirror, README and website links, and the draft title. These
-results are preliminary local checks of an uncommitted macOS arm64 working tree,
-not a release.
+initial results describe local checks of an uncommitted macOS arm64 working tree.
+The later publication outcome is recorded [below](#v013-publication-2026-11-07).
 
 - Formatting, Clippy with warnings denied and the optimized release build passed.
 - The first full test run failed one test:
@@ -279,7 +279,7 @@ that commit in Cargo's VCS metadata, without a dirty flag.
 
 ## Website refresh, 2026-11-07
 
-The unpublished website sources use a new SVG lease-ring mark and matching
+The pre-publication website review covered a new SVG lease-ring mark and matching
 16/32/48px ICO, PNG and Apple touch icons, plus a 1200x630 social image. A fluid
 rem-based scale reduces the hero heading to 36–56px and raises labels to at least
 12px at default browser text size. Copy and demo states contain no em dashes.
@@ -306,8 +306,36 @@ assistive-technology audit.
 One minor limitation remains: at 320px with 200% text, the closed native skills
 selector shortens `Codex + Claude Code`; opening the picker displays the full
 option. No ranking, indexing, rich-result, field performance or AI-citation
-outcome was measured. No website deployment was performed, and the v0.1.3 pins
-still require the matching release to be published before deployment.
+outcome was measured during that implementation task. The subsequent release
+and website deployment are recorded below; the selector limitation remains.
+
+## v0.1.3 publication, 2026-11-07
+
+The experimental [v0.1.3 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.3)
+is published from tag commit `bdbe7854a3bd3f1adcd8d2a00ebfff944f2424cd`.
+The [tag release workflow](https://github.com/jaredchu/proclease/actions/runs/42345415344)
+passed native macOS ARM64/Intel and Ubuntu 22.04 ARM64/x64 builds. Each passed
+formatting, Clippy, three unit plus thirty-one integration tests, optimized build,
+archive startup/expiry and isolated installer checksum-failure checks.
+
+All ten draft assets were inspected before publication: four archives, their
+individual checksum files, combined
+[SHA256SUMS](https://github.com/jaredchu/proclease/releases/download/v0.1.3/SHA256SUMS)
+and the installer. Every archive matched both checksum records, had safe members
+and executable permissions, and contained README/license/skill bytes matching
+the tag. The installer and release notes also matched the reviewed tag. The
+macOS ARM64 archive passed an additional extracted-binary expiry check and
+isolated installer check. Afterwards, all ten public assets were downloaded
+anonymously and matched the inspected draft bytes.
+
+Main was fast-forwarded to the released commit before website deployment. All
+eleven files served by [proclease.com](https://proclease.com/) matched that
+commit over anonymous HTTPS. Live Chromium smoke checks at 1440 and 390px passed
+demo expiry, download selection and horizontal bounds without page errors. The
+live installer fetched the public release and installed the matching native
+v0.1.3 binary into isolated directories. No global installation was changed.
+The [enlarged-text selector limitation](#website-refresh-2026-11-07) remains.
+Registry publication, including crates.io/docs.rs, is still deferred.
 
 ## Filesystem compatibility
 

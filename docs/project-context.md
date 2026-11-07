@@ -42,7 +42,7 @@ verification limits.
 - **Implementation choice:** use proven Rust/Unix primitives and per-job supervisors
   launched in the caller's execution context. Avoid a login-wide service accepting
   arbitrary execution requests from potentially restricted agents.
-- **Publication:** the experimental [v0.1.2 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.2)
+- **Publication:** the experimental [v0.1.3 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.3)
   provides four native binaries, checksums and a verified installer. The public
   [website](https://proclease.com) serves static assets through a Cloudflare Worker;
   [website source and deployment](../website/README.md) are maintained here.
@@ -68,35 +68,32 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    On-demand CPU/RSS group totals in tables and opt-in JSON
 |-- DONE    Native four-platform prerelease, archives and verified installation
 |-- DONE    Dark monochrome website, browser QA and proclease.com publication
-|-- FIXED   Four startup/retry review defects; regression checks pass,
-|           source corrections not released
-|-- FIXED   Test teardown residue; fixtures now wait for their supervisors
-|           (test-only, local regression passed, unreleased)
-|-- PREPARED v0.1.3 candidate on its own branch; four native targets pass,
-|           tag and publication pending
-`-- PREPARED Website identity, type and search refresh; not deployed,
-            with one narrow enlarged-text selector limitation
+|-- DONE    Four startup/retry corrections released in v0.1.3
+|-- DONE    Test teardown now waits for fixture supervisors; released in v0.1.3
+|-- DONE    v0.1.3 experimental prerelease; four native builds and assets verified
+`-- DONE    Website identity, type and search refresh published on proclease.com;
+            one narrow enlarged-text selector limitation remains
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
 [verification](verification.md) records evidence and limits, including a real
 Codex preview session and the corrected registry-selection guidance. Restricted
 agent host profiles remain untested. A comparative benchmark is needed before claiming
-measured superiority over another supervisor. The unreleased
+measured superiority over another supervisor. The v0.1.3
 [startup and retry corrections](verification.md#startup-and-retry-corrections-2026-11-07)
 record their regressions and current verification limits. A test-teardown race
 that left partial fixture directories is
 [corrected in the test fixtures](verification.md#fixture-teardown-residue-2026-11-07);
 production lifecycle code was unchanged.
-The [v0.1.3 candidate](verification.md#v013-release-candidate-2026-11-07) pins
-release links to assets that do not exist yet, so it stays off main until the
-release is published.
+The [v0.1.3 publication](verification.md#v013-publication-2026-11-07) records
+the release at `bdbe785`, verified assets, the main-branch fast-forward and
+anonymous HTTPS checks of the deployed website and installer.
 The website sources now include a lease-ring identity, a readable fluid type
 scale, em-dash-free copy and source-backed search metadata.
 [Website verification](verification.md#website-refresh-2026-11-07) records
 responsive checks and a remaining enlarged-text selector limitation.
 [Design and SEO/GEO decisions](../website/README.md#identity-and-type) describe
-the implementation and supporting sources. This refresh is not deployed.
+the implementation and supporting sources. The refresh is live on proclease.com.
 
 The recent-job window and resource presentation are implementation choices for
 terminal usability. Resource reads never extend leases.
