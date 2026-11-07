@@ -407,8 +407,11 @@ The change affects temporary build artifacts rather than adding installed helper
 Formatting, Clippy with warnings denied, all three unit plus thirty-one integration
 tests and a stable optimized build passed. The packaged-source CI steps failed
 against the old manifest and passed against the fix on this host. The new
-`msrv-install` job covers default Rust 1.89 installs on hosted macOS and Linux;
-hosted results will be recorded after the committed change runs.
+`msrv-install` job covers default Rust 1.89 installs on hosted macOS and Linux.
+[Hosted Rust checks](https://github.com/jaredchu/proclease/actions/runs/42350528337)
+passed for source commit `1aa746a`: both minimum-Rust packaged installs and both
+stable full-check jobs succeeded. The old manifest was tested as a failing control
+locally, not on those hosted runners.
 
 The existing crates.io 0.1.3 release and GitHub assets are unchanged. Their
 [earlier caveat and workaround](#registry-and-website-controls-2026-11-07) still apply
