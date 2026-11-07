@@ -7,14 +7,13 @@ Last reviewed: 2026-11-06.
 Put an explicit lifetime on local development processes started by coding agents.
 The first version targets macOS and Linux foreground services, especially Node/Vite/Next,
 through a Rust CLI and one portable ProcLease skill for Codex and Claude Code.
+This public context records contributor-facing decisions, behavior and
+verification limits.
 
 ## Decisions and authority
 
 - **Approved by owner, 2026-11-06:** name ProcLease, a new standalone Rust CLI
   project and shared skill.
-- **Owner-reported, 2026-11-06:** `proclease.com` was purchased through Cloudflare.
-  The active Cloudflare zone, custom-domain binding and public HTTPS site were
-  verified during publication. Registrar ownership was not independently inspected.
 - **Approved by owner, 2026-11-06:** adopt Context Docs for this project.
 - **Approved by owner, 2026-11-06:** publish as an open-source project under
   `jaredchu` on GitHub. The MIT-licensed source is public at
@@ -45,8 +44,8 @@ through a Rust CLI and one portable ProcLease skill for Codex and Claude Code.
   arbitrary execution requests from potentially restricted agents.
 - **Publication:** the experimental [v0.1.2 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.2)
   provides four native binaries, checksums and a verified installer. The public
-  [website](https://proclease.com) uses static assets in the owner's Cloudflare
-  account; [website source and deployment](../website/README.md) are maintained here.
+  [website](https://proclease.com) serves static assets through a Cloudflare Worker;
+  [website source and deployment](../website/README.md) are maintained here.
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
   proxying, auto-restart, hosted dashboards and package-registry distribution.
 
@@ -58,8 +57,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    Rust CLI, expiry enforcement and process lifecycle tests
 |-- DONE    Shared skill validation and real Vite/Next expiry smoke tests
 |-- DONE    Six review fixes and macOS/Linux regression tests
-|-- DONE    Focused Astra/Fable reviews and interrupted-write refinement
-|-- DONE    User-local CLI installation and Codex/Claude skill discovery
+|-- DONE    Focused independent reviews and interrupted-write refinement
+|-- DONE    Installation and Codex/Claude skill discovery validated
 |-- DONE    Public MIT-licensed GitHub repository, contributor credits and hosted CI
 |-- FIXED   Shared-registry guidance after a real Codex preview launch
 |-- FIXED   Expiry test startup race identified in hosted macOS diagnostics
@@ -77,14 +76,13 @@ Codex preview session and the corrected registry-selection guidance. Restricted
 agent host profiles remain untested. A comparative benchmark is needed before claiming
 measured superiority over another supervisor.
 
-The recent-job window and resource presentation are implementation choices in
-response to the owner's usability requests. Resource reads never extend leases.
+The recent-job window and resource presentation are implementation choices for
+terminal usability. Resource reads never extend leases.
 See [resource units and limits](../README.md#resource-usage).
 
 Context maintenance is adopted in `AGENTS.md`, reached by `CLAUDE.md` import.
-Claude Code's local `/context` command confirmed both files under project memory
-on 2026-11-06, with no model request. Automatic instruction loading in a future
-Codex chat has not been independently checked.
+Instruction-discovery evidence and limits are recorded in
+[verification](verification.md#completed-checks).
 
 ## Canonical references
 

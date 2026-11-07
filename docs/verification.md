@@ -47,27 +47,25 @@ and in hosted macOS/Ubuntu CI.
 - An optimized macOS release binary builds locally.
 - Claude Code's local `/context` command listed the project `CLAUDE.md` and its
   imported `AGENTS.md`, confirming the intended context-maintenance discovery
-  route for the observed invocation. No model request was needed for this check.
-- The CLI was installed into the user's existing `~/.local/bin` PATH directory.
-  The installed binary matched the tested release; an isolated job expired and
-  its keyed retry reused the terminal job. The normal private state was readable.
-- The shared skill was linked into `~/.agents/skills/proclease` and
-  `~/.claude/skills/proclease`. A fresh Codex app-server `skills/list` returned it
-  enabled at user scope, and Claude Code's local `/context` listed it as a user
-  skill. These discovery checks started no model turns.
+  route for the observed invocation. Automatic instruction loading in a future
+  Codex chat has not been independently checked.
+- An installation smoke test used a binary matching the tested release: an
+  isolated job expired and its keyed retry reused the terminal job.
+- A fresh Codex app-server `skills/list` returned the linked shared skill enabled
+  at user scope, and Claude Code's local `/context` listed it as a user skill.
 - [Hosted Rust checks](https://github.com/jaredchu/proclease/actions/runs/42202334004)
   passed on `macos-latest` and `ubuntu-latest` at commit `8932479`. Both jobs
   completed formatting, Clippy with warnings denied, all seventeen tests and an
   optimized release build.
 - Version 0.1.1 at `5a3bcd0` passed [hosted macOS and Ubuntu checks](https://github.com/jaredchu/proclease/actions/runs/42211702346),
-  including all twenty-six tests, formatting, Clippy and release builds. The same
-  release was installed locally with the updated shared skill and verified terminal views.
+  including all twenty-six tests, formatting, Clippy and release builds. A local
+  installation smoke test verified the updated shared skill and terminal views.
 - Version 0.1.2 at `3b71397` passed [hosted macOS and Ubuntu checks](https://github.com/jaredchu/proclease/actions/runs/42215574600):
-  all twenty-eight tests, formatting, Clippy and release builds. The installed
-  macOS binary matches the tested release, and both installed skill links resolve
-  to the validated shared source. An installed live-watch smoke test warmed up
-  from unavailable CPU to a nonzero reading without changing expiry; its
-  disposable service was stopped and then reported no live metrics.
+  all twenty-eight tests, formatting, Clippy and release builds. A macOS
+  installation smoke test used the matching release binary and validated shared
+  skill. Live watch warmed up from unavailable CPU to a nonzero reading without
+  changing expiry; its disposable service was stopped and then reported no live
+  metrics.
 - A real local Codex session discovered the skill and launched an Astro preview
   through ProcLease. It selected a task-specific state directory, which made the
   job invisible to the user's default `watch`. After stopping that job and
@@ -134,16 +132,16 @@ deletion as intended. Production retention code was unchanged.
 
 ## Review corrections
 
-Independent Astra and Fable reviews identified six issues. Cleanup guards now
+Independent reviews identified six issues. Cleanup guards now
 cover post-spawn metadata failures; nonblocking control requests have absolute
 time budgets; provably empty launch reservations do not block keyed runs;
 shutdown controls reconcile lifecycle state; an already-open capture marker
 preserves shutdown truncation; and the skill assigns retry keys on the initial
-launch. Focused Astra and Fable reviews found no remaining P1/P2 issues in these
+launch. Focused independent reviews found no remaining P1/P2 issues in these
 fixes.
-Fable identified a P3 residual: a reservation containing only an interrupted
-atomic-write temporary file still blocked keyed runs. The coordinator corrected
-that case with conservative file-name/type/permission checks and regressions
+A later review identified a P3 residual: a reservation containing only an
+interrupted atomic-write temporary file still blocked keyed runs. The correction
+added conservative file-name/type/permission checks and regressions
 that retain rejection of symlinks, directories and ambiguous state. That final
 refinement was validated locally, without another independent review round.
 
