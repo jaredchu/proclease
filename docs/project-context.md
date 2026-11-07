@@ -80,7 +80,7 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- FIXED   A later teardown-test observation race, without changing released runtime
 |-- DONE    Tabler SVG interface icons and restored arrows verified across three browsers
 |-- SOURCE  Reviewed bulk `stop --all`; 47 tests pass on macOS/Linux, unreleased
-`-- SOURCE  Reviewed bulk-stop retention fix; 51 local tests pass, unreleased
+`-- SOURCE  Reviewed bulk-stop retention fix; 51 tests pass on macOS/Linux, unreleased
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
@@ -121,8 +121,9 @@ The [verification](verification.md#bulk-stop-unreleased-source-2026-11-07)
 records its tests and limits. A later probe found that completion retention could
 collect selected records before results were read; a
 [source correction](verification.md#correction-retention-race-during-bulk-stop-2026-11-07)
-adds a reviewed process-lifetime retention lock and regressions. All 51 local tests,
-formatting, Clippy and an optimized build pass; hosted checks are pending.
+adds a reviewed process-lifetime retention lock and regressions. All 51 tests,
+formatting, Clippy and optimized builds pass locally and in hosted macOS/Ubuntu
+checks; both default Rust 1.89 package installations pass.
 
 The recent-job window and resource presentation are implementation choices for
 terminal usability. Resource reads never extend leases.

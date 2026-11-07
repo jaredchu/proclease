@@ -645,9 +645,13 @@ in 7.45 seconds. No injected delay or production hook is present in the source.
 Final local macOS arm64 validation passes formatting, Clippy with warnings denied,
 all 9 unit/42 integration tests and an optimized build. The existing local
 `rust-objcopy`/`libLLVM.dylib` warning remains; local stripping is not verified.
-Hosted results are pending. The guard is cooperative: these checks use one build
-for every participant and do not cover clients or running keepers from older
-builds, which ignore it.
+Implementation commit `0b8a626` passed hosted
+[Rust checks](https://github.com/jaredchu/proclease/actions/runs/42378740137):
+all 9 unit/42 integration tests, formatting, Clippy and optimized builds on stable
+macOS/Ubuntu, plus default Rust 1.89 packaged-source installations on both
+platforms. The guard is cooperative: these checks use one build for every
+participant and do not cover clients or running keepers from older builds,
+which ignore it.
 
 ## Filesystem compatibility
 
