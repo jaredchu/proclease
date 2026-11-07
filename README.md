@@ -7,8 +7,9 @@ foreground service with a deadline; inspect its status and bounded logs from lat
 tool calls; explicitly extend it or let it expire. Reading logs never renews it.
 
 **Status:** experimental, MIT-licensed open source. Tested locally on macOS arm64
-and Linux aarch64 in a non-root container. It is not published to a package
-registry. Domain: `proclease.com`; no hosted service is required.
+and Linux aarch64 in a non-root container. Install a prebuilt binary, or build
+the CLI with Cargo; see [Build](#build). Domain: `proclease.com`; no hosted
+service is required.
 
 Source and issues: [jaredchu/proclease](https://github.com/jaredchu/proclease).
 Website: [proclease.com](https://proclease.com).
@@ -33,11 +34,20 @@ For manual installation, download an archive from the
 [experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.3),
 verify it against `SHA256SUMS`, extract it and place `proclease` on PATH. Each
 archive includes the skill, README and MIT license. See the
-[release notes](docs/releases/v0.1.3.md) for tested platforms and signing limits.
+[release notes](https://github.com/jaredchu/proclease/blob/v0.1.3/docs/releases/v0.1.3.md)
+for tested platforms and signing limits.
 
 ## Build
 
-Install Git and a current stable Rust toolchain, then:
+Building from source needs Rust 1.89 or newer; the prebuilt installer above does
+not need Rust. To build the CLI from the crates.io registry:
+
+```sh
+cargo install proclease --version 0.1.3 --locked
+proclease --version
+```
+
+To build from a Git checkout instead:
 
 ```sh
 git clone https://github.com/jaredchu/proclease.git
@@ -45,6 +55,10 @@ cd proclease
 cargo install --path . --locked
 proclease --version
 ```
+
+Cargo installs only the `proclease` CLI. Set up the skill separately: see
+[Install the skill](#install-the-skill), using a source checkout or an extracted
+release archive for the skill folder.
 
 ## Use
 
@@ -67,7 +81,7 @@ details and preview URLs. It switches to a stacked layout in narrow terminals. C
 for terminals; `NO_COLOR`, `TERM=dumb` or `--color never` disables them, and
 `--color always` forces them. Redirected output and JSON stay uncolored by default.
 
-![ProcLease terminal table showing example jobs](docs/assets/terminal-preview.png)
+![ProcLease terminal table showing example jobs](https://raw.githubusercontent.com/jaredchu/proclease/v0.1.3/docs/assets/terminal-preview.png)
 
 A real disposable worker and synthetic history rows shown with
 `proclease watch --all`; the default view briefly shows recently finished jobs
@@ -177,7 +191,7 @@ running inside a Linux VM or container.
 
 ## Install the skill
 
-The same [skill folder](skills/proclease/SKILL.md) works as an instruction-only
+The same [skill folder](https://github.com/jaredchu/proclease/blob/v0.1.3/skills/proclease/SKILL.md) works as an instruction-only
 skill in both hosts. With `proclease` on the executor's PATH, link the folder into
 each host you use:
 
@@ -204,7 +218,7 @@ automatic cross-task reuse, reverse proxying and auto-restart are out of scope.
 An unavailable control endpoint is not permission to kill a PID copied from disk.
 
 Existing tools already cover much of general process management. See
-[architecture and comparison](docs/architecture.md) for ProcLease's narrower
+[architecture and comparison](https://github.com/jaredchu/proclease/blob/main/docs/architecture.md) for ProcLease's narrower
 expiry focus and the evidence needed before making comparative claims.
 
 ## Development
@@ -223,11 +237,12 @@ Readiness and expiry tests use separate budgets: a fixture may take time to star
 while the lease still runs from creation. Failure output includes the relevant
 fixture metadata and bounded supervisor/output logs.
 
-Start contributor work with [project context](docs/project-context.md).
-See [verification](docs/verification.md) for completed checks and current limits.
+Start contributor work with [project context](https://github.com/jaredchu/proclease/blob/main/docs/project-context.md).
+See [verification](https://github.com/jaredchu/proclease/blob/main/docs/verification.md)
+for completed checks and current limits.
 Bug reports and pull requests are welcome. Include your OS, ProcLease version,
 reproduction commands and observed lifecycle state when reporting a process issue.
-See [contributing and commit attribution](CONTRIBUTING.md).
+See [contributing and commit attribution](https://github.com/jaredchu/proclease/blob/main/CONTRIBUTING.md).
 
 ## Credits and license
 
@@ -235,6 +250,6 @@ Created and maintained by [Jared Chu](https://github.com/jaredchu), with
 [OpenAI Codex](https://github.com/codex) and Claude contributing to the project.
 Codex led the initial implementation and documentation. Claude, through Claude
 Code, contributed independent review and validation. See the
-[contribution and attribution policy](CONTRIBUTING.md#commit-attribution).
+[contribution and attribution policy](https://github.com/jaredchu/proclease/blob/main/CONTRIBUTING.md#commit-attribution).
 
-Released under the [MIT license](LICENSE).
+Released under the [MIT license](https://github.com/jaredchu/proclease/blob/v0.1.3/LICENSE).

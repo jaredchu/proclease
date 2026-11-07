@@ -31,13 +31,51 @@ For a new release:
 
 Release archives include `proclease`, the portable skill, README and MIT license.
 The packaging checks use Python 3.12 or newer, supplied in CI; users do not need
-Python or Rust for binary installation. macOS Developer ID signing/notarization,
-package registries and Homebrew distribution are not configured.
+Python or Rust for binary installation. macOS Developer ID signing/notarization
+and Homebrew distribution are not configured.
 
-The manifest keeps `publish = false`. `cargo package --list` and a local
-`cargo package` build show what a crates.io source package would contain.
+## crates.io
+
+The owner authorized crates.io publication of the CLI source, so the manifest
+sets `publish = ["crates-io"]`. Its `include` list limits the source package to
+`src/`, `tests/` (the lifecycle suite and its fixture), the portable skill,
+README and license; Cargo adds `Cargo.toml` and `Cargo.lock`. The website,
+workflows, helper scripts, agent instructions and other docs stay out of it.
+
+Because the package omits `docs/` and other repository files, the README uses
+portable links rather than relying on any registry rewriting of relative paths.
+Links to files outside the package are absolute GitHub URLs: release-specific
+files (release notes, skill, license) use `blob/vVERSION`, living contributor
+documents use `blob/main`, and the terminal image uses its
+`raw.githubusercontent.com/jaredchu/proclease/vVERSION/...` URL. Only in-page
+`#anchor` links stay relative. Each target must exist at the named ref.
+
+The manifest's `rust-version = "1.89"` matches the existing requirement of the
+locked dependencies: `uuid 1.29.0` in `Cargo.lock` declares `rust-version =
+"1.89.0"`. Source and registry builds therefore need Rust 1.89 or newer; the
+prebuilt archives do not need Rust. Raising the requirement, or changing the
+lockfile to lower it, is a separate reviewed change.
+
+Publish only a version whose runtime source matches its GitHub release tag:
+
+1. Confirm `src/`, `tests/`, `skills/` and `Cargo.lock` are byte-identical to
+   `vVERSION`, the working tree is clean and the publication commit is reviewed.
+   The crate's manifest metadata and README may differ from the binary tag; that
+   publication commit is their provenance record.
+2. Inspect `cargo package --list --locked`, then run `cargo package --locked`,
+   which builds the extracted package. Running `cargo test --locked` inside the
+   extracted package, with a short `PROCLEASE_TEST_ROOT`, checks that the suite
+   is self-contained.
+3. Run `cargo publish --dry-run --locked`. It needs crates.io index access but no
+   token. A dry run with `--allow-dirty` is only preliminary evidence.
+4. With an authorized crates.io login, run `cargo publish --locked` from the
+   same clean commit. A crates.io version cannot be replaced; yanking only
+   blocks new lockfile resolution.
+5. After a successful upload, tag that publication commit `crates-vVERSION`.
+   Never move the existing `vVERSION` binary-release tag.
+
 [Docs.rs builds](https://docs.rs/about/builds) follow crates.io publication; its
 [builder command](https://github.com/rust-lang/docs.rs/blob/main/crates/lib/docs_rs_rustwide/src/args.rs)
 runs `cargo rustdoc --lib`.
-ProcLease has only a binary target, so docs.rs would show a crate overview,
-README and source rather than an API. Registry publication is a separate decision.
+ProcLease has only a binary target, so docs.rs shows a crate overview,
+README and source rather than an API. No docs.rs metadata is configured.

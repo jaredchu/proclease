@@ -1,12 +1,24 @@
 const release = "https://github.com/jaredchu/proclease/releases/download/v0.1.3/";
-const agent = document.querySelector("#agent");
 const command = document.querySelector("#install-command");
 const feedback = document.querySelector("#copy-feedback");
-agent.addEventListener("change", () => {
+const download = document.querySelector("#download");
+const checked = name => document.querySelector(`input[name="${name}"]:checked`).value;
+function updateCommand() {
+  const agent = checked("agent");
   command.textContent = "curl -fsSL https://proclease.com/install.sh | sh" +
-    (agent.value === "none" ? "" : " -s -- --skills " + agent.value);
+    (agent === "none" ? "" : " -s -- --skills " + agent);
+}
+function updateDownload() {
+  download.href = release + "proclease-v0.1.3-" + checked("platform") + ".tar.gz";
+}
+// Sync with any choice the browser restored before this script ran.
+updateCommand();
+updateDownload();
+document.querySelector("#agent").addEventListener("change", () => {
+  updateCommand();
   feedback.textContent = "";
 });
+document.querySelector("#platform").addEventListener("change", updateDownload);
 document.querySelector("#copy-install").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(command.textContent);
@@ -36,9 +48,6 @@ for (const tab of tabs) {
     tabs[index].focus();
   });
 }
-document.querySelector("#platform").addEventListener("change", event => {
-  document.querySelector("#download").href = release + "proclease-v0.1.3-" + event.target.value + ".tar.gz";
-});
 let expired = false;
 const advance = document.querySelector("#demo-advance");
 advance.addEventListener("click", () => {

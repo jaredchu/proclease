@@ -2,12 +2,23 @@
 name = "proclease"
 version = "0.1.3"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.89"
 description = "Put an explicit lifetime on development processes started by coding agents"
 homepage = "https://proclease.com"
 repository = "https://github.com/jaredchu/proclease"
 license = "MIT"
-publish = false
+readme = "README.md"
+keywords = ["process", "lease", "dev-server", "coding-agent", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+publish = ["crates-io"]
+# Source package: build and test inputs, the portable skill, README and license.
+include = [
+    "/src/",
+    "/tests/",
+    "/skills/proclease/SKILL.md",
+    "/README.md",
+    "/LICENSE",
+]
 
 [dependencies]
 anyhow = "1"

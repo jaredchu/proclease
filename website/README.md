@@ -23,8 +23,9 @@ proclease run --owner codex --task website-preview --ttl 30m -- python3 -m http.
 ```
 
 Visit `http://127.0.0.1:4387`, then stop the returned job when finished. Browser
-checks cover the lease demo, replay, clipboard, keyboard tabs, platform download
-selection, FAQ and horizontal bounds at 320/390/768/1440 pixels.
+checks cover the lease demo, replay, clipboard, keyboard tabs, skill and platform
+choices, FAQ and horizontal bounds at 320/390/768/1440 pixels, plus 200% text
+at 320 and 390 pixels.
 
 ## Publish
 
@@ -55,6 +56,9 @@ process. Header, footer, SVG favicon, `favicon.ico` (16/32/48),
 from that SVG; edit the SVG first and re-render. Type uses a rem-based fluid
 scale (12px minimum labels, 16px body), so browser text size settings apply.
 Website copy and demo states avoid em dashes; unavailable values read `n/a`.
+The skill and platform choices are native radio groups rather than selects, so
+long labels wrap at narrow widths and enlarged text. Links and buttons do not use
+the `↗` and `↓` arrow glyphs; the demo's `→` and `↺` controls remain.
 
 ## Search and answer-engine decisions
 
