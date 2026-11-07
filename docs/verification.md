@@ -413,10 +413,63 @@ passed for source commit `1aa746a`: both minimum-Rust packaged installs and both
 stable full-check jobs succeeded. The old manifest was tested as a failing control
 locally, not on those hosted runners.
 
-The existing crates.io 0.1.3 release and GitHub assets are unchanged. Their
+The source-fix task left the existing crates.io 0.1.3 release and GitHub assets
+unchanged. Their
 [earlier caveat and workaround](#registry-and-website-controls-2026-11-07) still apply
-to that published crate. A later version is required to deliver this source fix
-through the registry.
+to that published crate. The subsequent
+[v0.1.4 publication](#v014-publication-2026-11-07) delivers the fix through the registry.
+
+## v0.1.4 publication, 2026-11-07
+
+The experimental [v0.1.4 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.4)
+and [crates.io 0.1.4](https://crates.io/crates/proclease/0.1.4) are published from
+`23bbb1d8765db562033110f3e989df74f823d07b`, tagged `v0.1.4` and `crates-v0.1.4`.
+The release changes package version, installer/website pins and release guidance;
+runtime Rust source, dependencies and portable skill are unchanged from v0.1.3.
+It delivers the previously reviewed build-time stripping fix. The old 0.1.3
+release assets and tags remain intact.
+
+The [tag release workflow](https://github.com/jaredchu/proclease/actions/runs/42351396541)
+passed four native macOS ARM64/Intel and Ubuntu 22.04 ARM64/x64 jobs. Each ran
+formatting, Clippy, three unit plus thirty-one integration tests, optimized build,
+archive expiry and installer corruption checks. Separate
+[tag Rust checks](https://github.com/jaredchu/proclease/actions/runs/42351396478)
+passed both default Rust 1.89 packaged installs and stable checks; the
+[website checks](https://github.com/jaredchu/proclease/actions/runs/42351396440)
+also passed. A clean extracted crate separately passed all 34 tests with Rust
+1.89 on native macOS ARM64, and the publish dry run passed before upload.
+
+All ten draft assets matched their GitHub digests, individual/combined checksums
+and committed README/license/skill/installer bytes. Archives had safe members,
+executable permissions and the expected architectures. The host-native archive
+passed additional expiry and installer checks. After publication, all ten assets
+were downloaded anonymously and matched the inspected draft bytes.
+
+A local stable compilation emitted a failed-stripping-tool warning and was used
+only as compilation evidence, not as the shipped artifact or stripping proof.
+The hosted release logs had no stripping failure. The shipped macOS ARM64 binary
+was 1,435,760 bytes with 165 symbol entries and no Rust-mangled symbol entries;
+its linker ad hoc signature passed strict verification. Both Linux files were
+identified as stripped ELF executables. These are artifact checks, not Developer
+ID signing, notarization or a browser-quarantine Gatekeeper acceptance test.
+Publisher signing and notarization remain deferred for experimental releases and
+required before stable macOS promotion.
+
+The normalized 16-file crate retains the build override and clean VCS provenance.
+Registry metadata and an anonymous download matched the reviewed package SHA-256:
+`37ad5d390eb79215066b525df61be4da5633e2738ac2d49c06d08925b59c0866`.
+A fresh registry install with Rust/Cargo 1.89, locked dependencies and no profile
+or rustflag overrides passed. Its CLI reported `proclease 0.1.4`, passed help and
+started then expired a service; its supervisors exited before isolated state was
+removed. The [docs.rs overview](https://docs.rs/crate/proclease/0.1.4) returned
+HTTP 200 with the updated README and expected binary-only designation.
+
+Main was fast-forwarded to the release before website deployment. All eleven
+files on [proclease.com](https://proclease.com/) matched the committed source over
+anonymous HTTPS. The live installer fetched a byte-identical host-native release
+binary into isolated directories. Live Chromium checks passed all four v0.1.4
+platform-download choices, release links, removed glyphs and 320px bounds with
+200% root text, without page errors. No global installation was changed.
 
 ## Filesystem compatibility
 

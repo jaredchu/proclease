@@ -24,6 +24,8 @@ For a new release:
    a **draft prerelease** titled `ProcLease vVERSION experimental preview`, with
    four archives, their checksums and `install.sh`.
 3. Download the draft assets, verify the combined checksums and inspect the notes.
+   Check build logs for failed stripping tools and inspect the shipped binaries;
+   a successful Cargo build alone does not prove stripping succeeded.
    Test the host-native archive/installer in isolated state. Publish the draft
    only after those checks pass; keep the experimental/prerelease flag.
 4. Publish the matching website from its committed source and verify anonymous
@@ -91,11 +93,11 @@ runs `cargo rustdoc --lib`.
 ProcLease has only a binary target, so docs.rs shows a crate overview,
 README and source rather than an API. No docs.rs metadata is configured.
 
-The v0.1.4 candidate includes the build-time stripping fix. After publication,
-verify [proclease 0.1.4](https://crates.io/crates/proclease/0.1.4) and its
-[docs.rs crate overview](https://docs.rs/crate/proclease/0.1.4).
-Use current stable Rust/Cargo for the recommended source installation. The
-[registry verification](verification.md#registry-and-website-controls-2026-11-07)
-records the macOS Rust/Cargo 1.89 release-stripping caveat and tested override.
-The published 0.1.3 crate predates the `build-override` fix and cannot change;
-only a later published version can include it.
+Current registry release: [proclease 0.1.4](https://crates.io/crates/proclease/0.1.4),
+with a [docs.rs crate overview](https://docs.rs/crate/proclease/0.1.4).
+The [v0.1.4 publication](verification.md#v014-publication-2026-11-07) records a
+verified default Rust/Cargo 1.89 registry install without profile overrides.
+Current stable Rust/Cargo remains recommended. The immutable published 0.1.3
+crate predates this fix; its earlier
+[caveat and workaround](verification.md#registry-and-website-controls-2026-11-07)
+remain documented for users of that version.

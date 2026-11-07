@@ -42,10 +42,10 @@ verification limits.
 - **Implementation choice:** use proven Rust/Unix primitives and per-job supervisors
   launched in the caller's execution context. Avoid a login-wide service accepting
   arbitrary execution requests from potentially restricted agents.
-- **Publication:** the experimental [v0.1.3 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.3)
+- **Publication:** the experimental [v0.1.4 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.4)
   provides four native binaries, checksums and a verified installer. The CLI
-  source is also published on [crates.io](https://crates.io/crates/proclease/0.1.3),
-  with a [docs.rs overview](https://docs.rs/crate/proclease/0.1.3). The public
+  source is also published on [crates.io](https://crates.io/crates/proclease/0.1.4),
+  with a [docs.rs overview](https://docs.rs/crate/proclease/0.1.4). The public
   [website](https://proclease.com) serves static assets through a Cloudflare Worker;
   [website source and deployment](../website/README.md) are maintained here.
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
@@ -76,7 +76,7 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    Website identity, type and search refresh published on proclease.com
 |-- DONE    Installer choice labels wrap at 200% text; only requested arrows removed
 |-- DONE    crates.io 0.1.3 and docs.rs overview published; source installation verified
-`-- FIXED   Cargo 1.89 host-build stripping in source; registry delivery needs a new version
+`-- DONE    v0.1.4 ships the Cargo 1.89 fix through GitHub, crates.io and the website
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
@@ -101,6 +101,10 @@ resolves the enlarged-text selector limitation and removes only the requested
 upward-right and downward arrows.
 [Design and SEO/GEO decisions](../website/README.md#identity-and-type) describe
 the implementation and supporting sources. The refresh is live on proclease.com.
+The [v0.1.4 publication](verification.md#v014-publication-2026-11-07) delivers the
+Cargo 1.89 build-time stripping fix without changing runtime behavior. Native
+archives, registry checksum/default installation, docs.rs and the matching live
+website were verified. Older 0.1.3 registry users retain its documented caveat.
 
 The recent-job window and resource presentation are implementation choices for
 terminal usability. Resource reads never extend leases.
@@ -125,8 +129,3 @@ Instruction-discovery evidence and limits are recorded in
 - macOS Developer ID signing/notarization is deferred for experimental releases
   and required before promotion to stable. See the
   [release procedure](releasing.md) for binary and registry delivery.
-- The published 0.1.3 crate can require a stripping workaround on macOS with
-  Rust/Cargo 1.89. Current source fixes build-time stripping while preserving
-  the stripped CLI; default installation passed on the verification host.
-  Registry delivery requires a new version. See the
-  [fix and verification limits](verification.md#cargo-189-build-time-stripping-fix-2026-11-07).
