@@ -79,7 +79,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    v0.1.4 ships the Cargo 1.89 fix through GitHub, crates.io and the website
 |-- FIXED   A later teardown-test observation race, without changing released runtime
 |-- DONE    Tabler SVG interface icons and restored arrows verified across three browsers
-`-- SOURCE  Reviewed bulk `stop --all`; 47 tests pass on macOS/Linux, unreleased
+|-- SOURCE  Reviewed bulk `stop --all`; 47 tests pass on macOS/Linux, unreleased
+`-- SOURCE  Reviewed bulk-stop retention fix; 51 local tests pass, unreleased
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
@@ -117,7 +118,11 @@ aggregate JSON envelope is implemented and reviewed in source only. It is not in
 v0.1.4. The initial review findings are resolved; hosted stable macOS/Ubuntu checks
 and both Rust 1.89 package installations pass.
 The [verification](verification.md#bulk-stop-unreleased-source-2026-11-07)
-records its tests and limits.
+records its tests and limits. A later probe found that completion retention could
+collect selected records before results were read; a
+[source correction](verification.md#correction-retention-race-during-bulk-stop-2026-11-07)
+adds a reviewed process-lifetime retention lock and regressions. All 51 local tests,
+formatting, Clippy and an optimized build pass; hosted checks are pending.
 
 The recent-job window and resource presentation are implementation choices for
 terminal usability. Resource reads never extend leases.

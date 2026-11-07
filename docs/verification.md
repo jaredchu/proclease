@@ -597,6 +597,58 @@ job, failure of a continuously trickling endpoint in about four seconds, and
 successful completion with an oversized grace value without a panic. Their
 isolated fixtures were removed after verifying their supervisors had exited.
 
+### Correction: retention race during bulk stop, 2026-11-07
+
+The checks above did not cover completion retention pressure. A later independent
+probe stopped 105 real jobs with one trickling endpoint: all 105 jobs stopped, but
+five healthy results were reported `failed` with missing records or stale `running`
+snapshots. Each keeper's completion prune had collected selected records under the
+newest-100 limit before the delayed dispatch phase ended and polling read them.
+
+Source now holds a [process-lifetime retention lock](architecture.md#consistency-and-retry-semantics)
+from the selection scan until results are captured; collection defers while it is
+held. This remains unreleased source. Added regressions (isolated fixture state):
+
+- Three real jobs, a trickling endpoint and 100 newer finished records seeded so
+  each completed job is the oldest: all three are `finished`/`stopped` and only
+  the endpoint fails. On the previous source the same test fails with
+  `unknown job …: No such file or directory` and a stale `running` record. After
+  keepers exit, `prune` collects the three stopped jobs and keeps the 100 newer.
+- The test holds the root launch lock, confirms the shared guard is held, then
+  stops the bulk process with `SIGSTOP` (acknowledged by `waitpid`) and checks
+  protection again before releasing the root lock. If protection was lost before
+  suspension, it kills/reaps that owned child while still holding the root lock
+  and retries within a bound, preventing a suspended final prune from acquiring
+  the root lock. Meanwhile `prune` and
+  `prune --dry-run` report `deferred` and keep 101 seeded records; a new launch
+  completes within 3 seconds and is not selected. After the stopped bulk process
+  is killed, `prune` collects the oldest record. A symlinked `.retention` makes
+  `stop --all` fail before any job is contacted, without creating the target;
+  dry run still lists the selection.
+- Unit tests: two concurrent guards keep a completed selected record through real
+  pruning until the last guard is released, then normal retention removes it; an
+  unprotected (dry-run) selection loses the record and reports `failed`, never
+  success; a symlinked or FIFO guard refuses protection without blocking and
+  defers collection with a warning.
+
+Two independent reviews accepted the runtime correction. The original 105-job
+probe was repeated against the corrected executable: all 105 real jobs reported
+`finished`/`stopped`, only the deliberately trickling endpoint failed, and normal
+retention returned to 100 finished records. All fixture processes exited.
+
+A focused review exposed a test-only scheduling race between the guard probe
+and suspension. The final post-suspension recovery check was validated locally,
+without another independent review round: a scratch copy inserted a six-second
+delay before suspension, forced the lost-protection recovery branch, and passed
+in 7.45 seconds. No injected delay or production hook is present in the source.
+
+Final local macOS arm64 validation passes formatting, Clippy with warnings denied,
+all 9 unit/42 integration tests and an optimized build. The existing local
+`rust-objcopy`/`libLLVM.dylib` warning remains; local stripping is not verified.
+Hosted results are pending. The guard is cooperative: these checks use one build
+for every participant and do not cover clients or running keepers from older
+builds, which ignore it.
+
 ## Filesystem compatibility
 
 A Linux rerun using a macOS-to-Linux OrbStack bind mount failed intermittently

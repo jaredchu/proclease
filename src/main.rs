@@ -373,7 +373,8 @@ fn stop_all(
     for label in [owner, task].into_iter().flatten() {
         validate_label(label)?;
     }
-    let (selected, warnings) = lifecycle::bulk_selection(store, owner, task)?;
+    // Dry runs take no retention protection; they consume nothing afterwards.
+    let (selected, warnings, guard) = lifecycle::bulk_selection(store, owner, task, !dry_run)?;
     let results = if dry_run {
         selected
             .into_iter()
@@ -394,7 +395,19 @@ fn stop_all(
             })
             .collect()
     } else {
-        lifecycle::stop_selected(store, selected)
+        let results = lifecycle::stop_selected(store, selected);
+        // Every result is captured; release protection, then let normal
+        // retention collect anything deferred while it was held.
+        drop(guard);
+        match store.prune(false, None) {
+            Ok(report) => {
+                for warning in report.warnings {
+                    eprintln!("History cleanup: {}", clean(&warning));
+                }
+            }
+            Err(error) => eprintln!("History cleanup deferred: {}", clean(&format!("{error:#}"))),
+        }
+        results
     };
     let complete = warnings.is_empty() && results.iter().all(|r| r.status.ok());
     if json_output {
@@ -549,7 +562,8 @@ fn dispatch(cli: &Cli) -> Result<i32> {
                     "{}",
                     json!({"schema_version": SCHEMA_VERSION, "dry_run": dry_run,
                     "max_age_hours": 24, "max_finished": store::HISTORY_MAX_FINISHED,
-                    "candidates": report.candidates, "removed": report.removed, "warnings": report.warnings})
+                    "deferred": report.deferred, "candidates": report.candidates,
+                    "removed": report.removed, "warnings": report.warnings})
                 );
             } else {
                 if *dry_run {
@@ -559,6 +573,12 @@ fn dispatch(cli: &Cli) -> Result<i32> {
                 }
                 for id in &report.candidates {
                     println!("{id}");
+                }
+                if report.deferred {
+                    eprintln!(
+                        "Job collection deferred while a bulk stop protects its selection; \
+                         retention resumes after it finishes."
+                    );
                 }
                 for warning in &report.warnings {
                     eprintln!("Warning: {}", clean(warning));

@@ -1,6 +1,6 @@
 use crate::{
     model::{extend_deadline, now_ms, Control, Launch, Reason, Record, Reply, State},
-    store::Store,
+    store::{RetentionGuard, Store},
 };
 use anyhow::{bail, Context, Result};
 use std::{
@@ -687,17 +687,31 @@ pub struct BulkResult {
     pub error: Option<String>,
 }
 
+/// A fixed bulk selection, its scan warnings and, unless it is a dry run,
+/// the retention protection that keeps selected records until consumed.
+pub type BulkSelection = (Vec<Record>, Vec<String>, Option<RetentionGuard>);
+
 /// Fixed selection of active and unverified jobs matching every given filter.
 /// The root launch lock is held only for the scan, which synchronizes with
 /// in-flight launches and collection; it is released before any control.
+/// With `protect`, retention protection is acquired under that lock before the
+/// scan; failure to acquire it aborts before any job is contacted. The caller
+/// must hold the returned guard until every result is captured.
 pub fn bulk_selection(
     store: &Store,
     owner: Option<&str>,
     task: Option<&str>,
-) -> Result<(Vec<Record>, Vec<String>)> {
-    let (jobs, warnings) = {
+    protect: bool,
+) -> Result<BulkSelection> {
+    let (jobs, warnings, guard) = {
         let _lock = store.lock()?;
-        store.list()?
+        let guard = if protect {
+            Some(store.protect_retention_locked()?)
+        } else {
+            None
+        };
+        let (jobs, warnings) = store.list()?;
+        (jobs, warnings, guard)
     };
     let selected = jobs
         .into_iter()
@@ -705,7 +719,7 @@ pub fn bulk_selection(
         .filter(|r| owner.is_none_or(|owner| r.owner == owner))
         .filter(|r| task.is_none_or(|task| r.task.as_deref() == Some(task)))
         .collect();
-    Ok((selected, warnings))
+    Ok((selected, warnings, guard))
 }
 
 enum Dispatched {
@@ -784,7 +798,9 @@ fn dispatch_stop(store: &Store, selected: &Record) -> Dispatched {
 /// all dispatched jobs share one polling loop, each bounded by its own grace
 /// (capped at 10s) plus two seconds from dispatch. Each Stop exchange has an
 /// absolute 2s bound and at most two are attempted per job. Unknown jobs are
-/// never signalled.
+/// never signalled. A missing or unreadable record is never a success; the
+/// caller's retention guard keeps finished selected records collectable only
+/// after this returns.
 pub fn stop_selected(store: &Store, selected: Vec<Record>) -> Vec<BulkResult> {
     use std::sync::atomic::AtomicUsize;
     let next = AtomicUsize::new(0);
@@ -1007,6 +1023,143 @@ mod tests {
         assert_eq!(results[0].record.owner, "o");
         assert_eq!(results[0].record.task.as_deref(), Some("t"));
         assert!(results[0].error.is_some());
+    }
+
+    /// A finished, never-supervised record: collectable by normal retention.
+    fn seed_history(store: &Store, id: &str, finished_at_ms: u64) {
+        let mut record = seed(store, id, State::Starting);
+        record.reason = Some(Reason::LaunchFailed);
+        record.finish();
+        record.finished_at_ms = Some(finished_at_ms);
+        store.save(&record).unwrap();
+    }
+
+    /// Simulate the selected job's keeper recording completion. Its own
+    /// completion is collectable by the prune that keeper runs next.
+    fn complete_as_keeper(store: &Store, id: &str) {
+        let mut record = store.record(id).unwrap();
+        record.state = State::Stopping;
+        record.reason = Some(Reason::Requested);
+        record.keeper_pid = std::process::id();
+        record.finish();
+        store.save(&record).unwrap();
+    }
+
+    #[test]
+    fn retention_guard_preserves_selection_until_last_holder_releases() {
+        let (_dir, store) = store();
+        // One hundred newer finished records put any completing selected job
+        // first in line for count-based collection.
+        let newer = now_ms() + 600_000;
+        for index in 0..100 {
+            seed_history(&store, &format!("{index:012x}"), newer + index);
+        }
+        let protected = "0000000000a1";
+        let unprotected = "0000000000a2";
+        seed(&store, protected, State::Running);
+        seed(&store, unprotected, State::Running);
+        // Bound, never-accepting endpoints keep both observably running.
+        let _endpoints: Vec<_> = [protected, unprotected]
+            .iter()
+            .map(|id| UnixListener::bind(store.root.join(id).join("ctl.sock")).unwrap())
+            .collect();
+
+        // Control: a dry-run style selection takes no pin, so real pruning
+        // collects its completed job before results could be read.
+        let (dry, _, none) = bulk_selection(&store, None, None, false).unwrap();
+        assert!(none.is_none());
+        complete_as_keeper(&store, unprotected);
+        let report = store.prune(false, Some(unprotected)).unwrap();
+        assert!(!report.deferred);
+        assert_eq!(report.removed, vec![unprotected.to_owned()]);
+        let lost: Vec<_> = dry.into_iter().filter(|r| r.id == unprotected).collect();
+        let results = stop_selected(&store, lost);
+        assert_eq!(
+            results[0].status,
+            BulkStatus::Failed,
+            "missing is never success"
+        );
+        assert!(results[0].error.is_some());
+
+        // Two concurrent bulk callers each hold protection.
+        let (selected, warnings, first) = bulk_selection(&store, None, None, true).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let (_, _, second) = bulk_selection(&store, None, None, true).unwrap();
+        assert_eq!(selected.len(), 1);
+        complete_as_keeper(&store, protected);
+        let report = store.prune(false, Some(protected)).unwrap();
+        assert!(
+            report.deferred && report.removed.is_empty(),
+            "{:?}",
+            report.removed
+        );
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+        assert!(store.root.join(protected).exists());
+        let results = stop_selected(&store, selected);
+        assert_eq!(
+            results[0].status,
+            BulkStatus::Finished,
+            "{:?}",
+            results[0].error
+        );
+        assert_eq!(results[0].record.state, State::Stopped);
+
+        drop(first);
+        assert!(store.prune(false, Some(protected)).unwrap().deferred);
+        assert!(store.root.join(protected).exists());
+        // A dry-run preview reports protection without collecting.
+        let preview = store.prune(true, Some(protected)).unwrap();
+        assert!(preview.deferred);
+        assert_eq!(preview.candidates, vec![protected.to_owned()]);
+        drop(second);
+        // After the last holder releases, normal retention resumes.
+        let report = store.prune(false, Some(protected)).unwrap();
+        assert!(!report.deferred);
+        assert_eq!(report.removed, vec![protected.to_owned()]);
+        assert!(store.list().unwrap().0.len() == 100);
+    }
+
+    #[test]
+    fn invalid_retention_guard_fails_before_control_and_is_not_followed() {
+        let (dir, store) = store();
+        let id = "0000000000b1";
+        seed(&store, id, State::Running);
+        let guard = store.root.join(".retention");
+        let target = dir.path().join("elsewhere");
+        std::os::unix::fs::symlink(&target, &guard).unwrap();
+        let error = bulk_selection(&store, None, None, true)
+            .err()
+            .expect("symlinked guard must refuse protection");
+        assert!(
+            format!("{error:#}").contains("retention guard"),
+            "{error:#}"
+        );
+        assert!(!target.exists());
+        // Dry runs take no protection and remain available.
+        let (selected, _, none) = bulk_selection(&store, None, None, false).unwrap();
+        assert_eq!(selected.len(), 1);
+        assert!(none.is_none());
+        // Collection cannot verify protection, so it defers with a warning.
+        let report = store.prune(false, None).unwrap();
+        assert!(report.deferred);
+        assert!(
+            report.warnings[0].contains("retention guard"),
+            "{:?}",
+            report.warnings
+        );
+        assert!(!target.exists());
+
+        // A FIFO neither blocks the open nor counts as a guard.
+        std::fs::remove_file(&guard).unwrap();
+        let path = std::ffi::CString::new(guard.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        assert!(bulk_selection(&store, None, None, true).is_err());
+        assert!(store.prune(false, None).unwrap().deferred);
+        std::fs::remove_file(&guard).unwrap();
+        assert!(bulk_selection(&store, None, None, true)
+            .unwrap()
+            .2
+            .is_some());
     }
 
     #[test]

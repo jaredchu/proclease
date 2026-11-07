@@ -21,12 +21,27 @@ pub const HISTORY_MAX_AGE_MS: u64 = 24 * 60 * 60 * 1000;
 pub const HISTORY_MAX_FINISHED: usize = 100;
 /// Absolute bound for one supervisor availability probe.
 pub const OBSERVE_CONNECT: std::time::Duration = std::time::Duration::from_millis(500);
+/// Advisory lock file guarding history collection. A bulk stop holds a shared
+/// lock on its own open file description from its selection scan until its
+/// results are captured; collection of job directories requires a
+/// nonblocking exclusive lock. The OS releases the lock when the holder exits,
+/// including on a crash or kill, so no persisted pin can be orphaned.
+const RETENTION_GUARD: &str = ".retention";
 
 #[derive(Default, Serialize)]
 pub struct PruneReport {
     pub candidates: Vec<String>,
     pub removed: Vec<String>,
     pub warnings: Vec<String>,
+    /// Job collection was skipped because a bulk stop protects its selection,
+    /// or because protection could not be verified.
+    pub deferred: bool,
+}
+
+/// Shared retention protection held for the lifetime of this value or of the
+/// process, whichever ends first. It never blocks keepers or launches.
+pub struct RetentionGuard {
+    _file: File,
 }
 
 pub fn valid_id(id: &str) -> bool {
@@ -170,14 +185,84 @@ impl Store {
         FileExt::lock_exclusive(&file)?;
         Ok(file)
     }
+    /// Open the guard without following a symlink, without blocking on a FIFO,
+    /// and only if it is a private regular file owned by the current user.
+    fn retention_file(&self) -> Result<File> {
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(self.root.join(RETENTION_GUARD))
+            .context("cannot open retention guard")?;
+        let metadata = file.metadata()?;
+        if !metadata.is_file()
+            || metadata.uid() != unsafe { libc::geteuid() }
+            || metadata.mode() & 0o077 != 0
+        {
+            bail!("retention guard must be a private regular file owned by the current user");
+        }
+        Ok(file)
+    }
+
+    /// Protect every current job directory from history collection. Called
+    /// with the root launch lock held, before the selection scan, so no
+    /// collection can run between the snapshot and protection. Collection
+    /// holds the root lock too, so a failed attempt indicates an error rather
+    /// than contention; it never blocks.
+    pub fn protect_retention_locked(&self) -> Result<RetentionGuard> {
+        let file = self.retention_file()?;
+        FileExt::try_lock_shared(&file)
+            .context("cannot protect selected jobs from history collection")?;
+        Ok(RetentionGuard { _file: file })
+    }
+
+    /// An exclusive guard permitting job collection, or `None` while any
+    /// bulk stop holds protection. Never blocks.
+    fn collection_permit(&self) -> Result<Option<File>> {
+        let file = self.retention_file()?;
+        match FileExt::try_lock_exclusive(&file) {
+            Ok(()) => Ok(Some(file)),
+            Err(error)
+                if error.kind() == std::io::ErrorKind::WouldBlock
+                    || error.raw_os_error() == fs2::lock_contended_error().raw_os_error() =>
+            {
+                Ok(None)
+            }
+            Err(error) => Err(error).context("cannot check retention guard"),
+        }
+    }
+
     pub fn prune(&self, dry_run: bool, completed_id: Option<&str>) -> Result<PruneReport> {
         let _lock = self.lock()?;
         self.prune_locked(dry_run, completed_id)
     }
 
     /// The root launch lock serializes collection with retry lookup/reservation.
+    /// Quarantined directories are always retried; they left the job namespace
+    /// before any bulk selection could protect them. Job directories are only
+    /// collected while no bulk stop holds retention protection; otherwise the
+    /// report is marked deferred and a later prune collects them.
     pub fn prune_locked(&self, dry_run: bool, completed_id: Option<&str>) -> Result<PruneReport> {
         let mut report = PruneReport::default();
+        // Held until return. Protection is acquired only under the root lock,
+        // which this caller holds, so it cannot begin during collection.
+        let _permit = match self.collection_permit() {
+            Ok(Some(permit)) => Some(permit),
+            Ok(None) => {
+                report.deferred = true;
+                None
+            }
+            Err(error) => {
+                report.deferred = true;
+                report
+                    .warnings
+                    .push(format!("history collection deferred: {error:#}"));
+                None
+            }
+        };
         let mut finished = Vec::new();
         for entry in fs::read_dir(&self.root)? {
             let entry = entry?;
@@ -248,6 +333,9 @@ impl Store {
             }
         }
         finished.sort();
+        if report.deferred && !dry_run {
+            return Ok(report);
+        }
         let excess = finished.len().saturating_sub(HISTORY_MAX_FINISHED);
         let now = crate::model::now_ms();
         for (index, (time, id)) in finished.into_iter().enumerate() {

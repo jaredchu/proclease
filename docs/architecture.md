@@ -113,6 +113,24 @@ processes. A verified candidate is atomically renamed into a reserved private
 quarantine before recursive deletion; interrupted deletion is retried from there,
 so partial records do not poison keyed launches. Symlinked job/quarantine roots
 are refused. Cleanup failures are warnings, not evidence that space was reclaimed.
+Bulk stop protects its fixed selection with a process-lifetime advisory lock on
+the private `.retention` file in the state root. It acquires a nonblocking shared
+lock while holding the root launch lock, before its scan, and holds it until all
+results are captured. Collection, always under the root launch lock, needs a
+nonblocking exclusive lock on the same file; while any bulk stop holds it, job
+directories are not collected (quarantine retries continue) and the report is
+marked deferred. Concurrent bulk stops share the lock; collection resumes after
+the last releases it. The OS releases it on exit, crash or kill, so no persisted
+pin can be orphaned; after a crash or kill no final pass runs, and collection
+resumes on the next ordinary trigger. The lock is cooperative: clients and
+already-running keepers from builds without it ignore it, so protection requires
+every process pruning the same state directory to include it. The guard is opened
+without following symlinks or blocking on FIFOs and must be a private regular
+file; otherwise bulk stop fails before
+any control and collection defers with a warning. Dry runs take no lock. The
+protection is global rather than per job: during a bulk stop, unrelated finished
+history can temporarily exceed the bound. The root launch lock is never held
+across control or waiting, and keeper process cleanup never waits for this lock.
 Repeated stop while stopping polls existing state instead of waiting for an idle
 shutdown socket. A transport failure racing with shutdown is reconciled against
 the latest record; extensions are never automatically replayed.
@@ -120,9 +138,10 @@ the latest record; extensions are never automatically replayed.
 Bulk stop (`stop --all`, unreleased source) is a client-side fan-out over the same
 per-job sockets, not a new service. It takes the root launch lock only while
 scanning records, which orders the snapshot after in-flight launches and with
-collection; the lock is released before any control, so keepers can still finish
-and collect. The fixed selection holds active and unknown jobs matching exact
-owner/task filters. A record is addressed only by its directory: one whose
+collection; the lock is released before any control, so keepers can still finish.
+Collection is deferred until results are captured (see retention above). The
+fixed selection holds active and unknown jobs matching exact owner/task filters.
+A record is addressed only by its directory: one whose
 embedded ID differs is rejected as unreadable, so it cannot redirect selection,
 observation or control to another job. Up to 8 workers send Stop. Each `starting`
 job is polled for about 6 seconds until running, and each job gets at most two

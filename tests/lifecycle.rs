@@ -2258,3 +2258,218 @@ fn bulk_human_output_summarizes_and_escapes_failures() {
     fs::remove_dir_all(fixture.state.join(unknown)).unwrap();
     fs::remove_dir_all(fixture.state.join(corrupt)).unwrap();
 }
+
+impl Fixture {
+    /// A seeded running job served by a test-owned trickling endpoint.
+    fn seed_trickler(&self, id: &str, task: &str, record: &Value, launch: &Value) -> Trickler {
+        let mut seeded = record.clone();
+        for (field, value) in [
+            ("id", serde_json::json!(id)),
+            ("state", serde_json::json!("running")),
+            ("created_at_ms", serde_json::json!(now_ms())),
+            ("expires_at_ms", serde_json::json!(now_ms() + 60_000)),
+            ("finished_at_ms", Value::Null),
+            ("reason", Value::Null),
+            ("owner", serde_json::json!("r")),
+            ("task", serde_json::json!(task)),
+            ("guardian_pid", Value::Null),
+            ("command_pid", Value::Null),
+        ] {
+            seeded[field] = value;
+        }
+        let mut seeded_launch = launch.clone();
+        seeded_launch["id"] = serde_json::json!(id);
+        self.seed_files(
+            id,
+            &[
+                ("record.json", serde_json::to_vec(&seeded).unwrap()),
+                ("launch.json", serde_json::to_vec(&seeded_launch).unwrap()),
+            ],
+        );
+        Trickler::new(self.state.join(id))
+    }
+    fn sleeper(&self, task: &str) -> String {
+        let result = self.call(&[
+            "run",
+            "--ttl",
+            "60s",
+            "--grace",
+            "10ms",
+            "--owner",
+            "r",
+            "--task",
+            task,
+            "--",
+            "/bin/sleep",
+            "60",
+        ]);
+        result["job"]["id"].as_str().unwrap().to_owned()
+    }
+}
+
+#[test]
+fn bulk_stop_retains_selected_records_under_completion_retention_pressure() {
+    let fixture = Fixture::new();
+    let (record, launch) = fixture.finished_template();
+    // One hundred newer finished records make every job completed by this
+    // bulk stop the oldest, so each keeper's own completion prune would
+    // collect it while dispatch is still delayed by the trickling endpoint.
+    let newer = now_ms() + 600_000;
+    let history: Vec<String> = (0..100).map(|i| format!("{:012x}", 0x100 + i)).collect();
+    for (index, id) in history.iter().enumerate() {
+        fixture.seed_history(id, &record, &launch, newer + index as u64);
+    }
+    let real: Vec<String> = (0..3).map(|_| fixture.sleeper("retain")).collect();
+    let fake = "0000000000cf";
+    let _endpoint = fixture.seed_trickler(fake, "retain", &record, &launch);
+
+    let (ok, value) = fixture.bulk(&["--task", "retain"]);
+    assert!(!ok, "{value}");
+    let results = value["results"].as_array().unwrap();
+    assert_eq!(results.len(), 4, "{value}");
+    for result in results {
+        if result["id"] == fake {
+            assert_eq!(result["status"], "failed", "{result}");
+            assert!(result["error"].as_str().unwrap().contains("2s bound"));
+        } else {
+            assert!(real.iter().any(|id| result["id"] == id.as_str()));
+            assert_eq!(result["status"], "finished", "{result}");
+            assert_eq!(result["job"]["state"], "stopped", "{result}");
+            assert!(result["error"].is_null(), "{result}");
+        }
+    }
+    // Once keepers exit, normal count-based retention resumes and collects
+    // the oldest finished jobs, here the three just stopped.
+    wait_for(Duration::from_secs(10), || {
+        fixture.supervisors().is_empty().then_some(())
+    });
+    let report = fixture.call(&["prune"]);
+    assert_eq!(report["deferred"], false, "{report}");
+    for id in &real {
+        assert!(!fixture.state.join(id).exists(), "{id} retained: {report}");
+    }
+    for id in &history {
+        assert!(fixture.state.join(id).exists());
+    }
+}
+
+#[test]
+fn retention_protection_is_crash_released_and_never_blocks_launches() {
+    struct OwnedChild(std::process::Child);
+    impl Drop for OwnedChild {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let fixture = Fixture::new();
+    let (record, launch) = fixture.finished_template();
+    let old = now_ms() - 60_000;
+    let history: Vec<String> = (0..101).map(|i| format!("{:012x}", 0x200 + i)).collect();
+    for (index, id) in history.iter().enumerate() {
+        fixture.seed_history(id, &record, &launch, old + index as u64);
+    }
+    let fake = "0000000000ce";
+    let _endpoint = fixture.seed_trickler(fake, "slow", &record, &launch);
+    let spawn_bulk = || {
+        let mut command = fixture.command(&["stop", "--all", "--task", "slow"]);
+        command
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        OwnedChild(command.spawn().unwrap())
+    };
+    let mut bulk = spawn_bulk();
+
+    // Freeze this exact child once it holds protection, so the checks below do
+    // not depend on its short dispatch window. Holding the root launch lock
+    // here means the child is not inside its root-locked selection; as it is
+    // the only possible holder, a contended exclusive probe proves its shared
+    // guard is active. Check it again after the acknowledged stop: the child
+    // could have dropped protection and queued its final prune in between.
+    // Kill/reap a missed child before releasing the root lock, or its pending
+    // lock acquisition could leave it suspended while holding that lock.
+    wait_for(Duration::from_secs(3), || {
+        let root = fs::File::open(fixture.state.join(".lock")).ok()?;
+        fs2::FileExt::lock_exclusive(&root).unwrap();
+        let guard = fs::File::open(fixture.state.join(".retention")).ok()?;
+        match fs2::FileExt::try_lock_exclusive(&guard) {
+            Ok(()) => return None,
+            Err(error) => assert_eq!(
+                error.raw_os_error(),
+                fs2::lock_contended_error().raw_os_error(),
+                "{error}"
+            ),
+        }
+        let pid = bulk.0.id() as libc::pid_t;
+        assert_eq!(unsafe { libc::kill(pid, libc::SIGSTOP) }, 0);
+        let mut status = 0;
+        assert_eq!(
+            unsafe { libc::waitpid(pid, &mut status, libc::WUNTRACED) },
+            pid
+        );
+        assert!(libc::WIFSTOPPED(status), "bulk not stopped: {status}");
+        match fs2::FileExt::try_lock_exclusive(&guard) {
+            Ok(()) => {
+                bulk.0.kill().unwrap();
+                bulk.0.wait().unwrap();
+                bulk = spawn_bulk();
+                return None;
+            }
+            Err(error) => assert_eq!(
+                error.raw_os_error(),
+                fs2::lock_contended_error().raw_os_error(),
+                "{error}"
+            ),
+        }
+        Some(())
+    });
+
+    // While the bulk stop holds protection, explicit collection is deferred.
+    let report = fixture.call(&["prune", "--dry-run"]);
+    assert_eq!(report["deferred"], true, "{report}");
+    let report = fixture.call(&["prune"]);
+    assert_eq!(report["deferred"], true, "{report}");
+    assert!(report["removed"].as_array().unwrap().is_empty());
+    assert!(fixture.state.join(&history[0]).exists());
+    // Launches (which also run collection under the root lock) progress and
+    // are excluded from the already fixed selection.
+    let started = Instant::now();
+    let later = fixture.sleeper("slow");
+    assert!(started.elapsed() < Duration::from_secs(3));
+    assert!(bulk.0.try_wait().unwrap().is_none(), "bulk ended too early");
+    let report = fixture.call(&["prune", "--dry-run"]);
+    assert_eq!(report["deferred"], true, "{report}");
+
+    // A killed holder cannot leave protection behind. SIGKILL also ends a
+    // stopped process, and no finalizer runs.
+    bulk.0.kill().unwrap();
+    bulk.0.wait().unwrap();
+    let report = fixture.call(&["prune"]);
+    assert_eq!(report["deferred"], false, "{report}");
+    assert_eq!(
+        report["removed"],
+        serde_json::json!([history[0]]),
+        "{report}"
+    );
+    assert_eq!(fixture.job(&later)["state"], "running");
+
+    // Protection that cannot be verified fails before any job is contacted.
+    let guard = fixture.state.join(".retention");
+    let target = fixture.dir.path().join("elsewhere");
+    fs::remove_file(&guard).unwrap();
+    std::os::unix::fs::symlink(&target, &guard).unwrap();
+    let output = fixture
+        .command(&["stop", "--all", "--task", "slow"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let error = parse(&output)["error"].as_str().unwrap().to_owned();
+    assert!(error.contains("retention guard"), "{error}");
+    assert!(!target.exists());
+    assert_eq!(fixture.job(&later)["state"], "running");
+    let (_, dry) = fixture.bulk(&["--dry-run", "--task", "slow"]);
+    assert_eq!(dry["results"].as_array().unwrap().len(), 2, "{dry}");
+    fs::remove_file(&guard).unwrap();
+    let job = fixture.call(&["stop", &later])["job"].clone();
+    assert_eq!(job["state"], "stopped");
+}

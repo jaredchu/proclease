@@ -166,10 +166,24 @@ proclease stop --all
   other OS processes. `--owner` and `--task` are exact matches, combined with AND.
   They are declared labels, not identity or authorization.
 - The selection is fixed once, under a brief hold of the root launch lock, before
-  any control. Jobs launched afterwards are not included. Finished jobs are ignored
-  and their history is not collected by this command.
-- `--dry-run` reports the exact selection without sending Stop, changing leases or
-  deleting history.
+  any control. Jobs launched afterwards are not included. Finished jobs are ignored.
+- A non-dry-run bulk stop also takes a shared retention lock under that brief hold.
+  Until every result is captured, history collection of all job directories is
+  deferred, so completion records of selected jobs cannot be collected before they
+  are reported. Keepers and launches still proceed. A bulk stop that completes
+  normally releases the lock, then runs one normal collection pass. If it crashes
+  or is killed, the OS releases the lock and no final pass runs; ordinary
+  opportunistic collection resumes on the next trigger, such as a launch, a job
+  completion or `prune`. If protection cannot be acquired (for example, the
+  `.retention` lock file is a symlink), the command fails before contacting any
+  job. A missing record is never reported as a successful stop.
+- Retention protection is cooperative. Older clients and keepers already running
+  from an older build ignore `.retention` and can still collect selected records;
+  upgrading the foreground CLI does not change them. Protection holds only when
+  every process that prunes the same state directory, including running keepers,
+  includes it.
+- `--dry-run` reports the exact selection without sending Stop, changing leases,
+  deleting history or deferring collection.
 - Each job uses the same supervisor socket and TERM, grace, KILL lifecycle as a
   single stop. Unknown jobs are reported as `unverified` and never signalled.
   A `starting` job is polled briefly until running; already stopping jobs are
@@ -237,6 +251,9 @@ job completion, overdue history is collected on the next use; there is no separa
 background cleanup service. Active jobs, unverified state and jobs whose supervisors
 cannot be verified absent are preserved. Filesystem errors defer deletion with a
 warning, so protected or failed-cleanup data can exceed the normal history bound.
+While a bulk stop runs, collection of job directories is deferred and `prune --json`
+reports `"deferred": true`; normal retention resumes on the next collection trigger
+after it exits (including after a crash or kill).
 
 Use `proclease prune --dry-run` to preview eligible jobs, or `proclease prune` to
 collect them now. Collection deletes their metadata and logs. Retry keys only
