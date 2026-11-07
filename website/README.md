@@ -57,8 +57,39 @@ from that SVG; edit the SVG first and re-render. Type uses a rem-based fluid
 scale (12px minimum labels, 16px body), so browser text size settings apply.
 Website copy and demo states avoid em dashes; unavailable values read `n/a`.
 The skill and platform choices are native radio groups rather than selects, so
-long labels wrap at narrow widths and enlarged text. Links and buttons do not use
-the `↗` and `↓` arrow glyphs; the demo's `→` and `↺` controls remain.
+long labels wrap at narrow widths and enlarged text.
+
+## Interface icons
+
+Interface icons come from [Tabler Icons v3.50.0](https://github.com/tabler/tabler-icons/releases/tag/v3.50.0)
+(MIT, Copyright (c) 2020-2026 Paweł Kuna). Path data is copied unchanged from the
+tag's `icons/outline` and `icons/filled` static SVGs
+([format](https://docs.tabler.io/icons/static-files/svg)). Only the icons in use
+are bundled, as `<symbol>` elements in a hidden sprite at the top of
+`dist/index.html`; each records its upstream file in `data-source`. There is no
+icon font, CDN or runtime dependency. The upstream license is served unchanged
+at `dist/assets/tabler-icons/LICENSE.txt`.
+
+| Use | Tabler icon |
+| --- | --- |
+| External links (header, release tags, source, installer, skill, footer) | `outline/arrow-up-right` |
+| Install, Get ProcLease and `.tar.gz` download | `outline/download` |
+| Demo terminal title | `outline/terminal` |
+| Release tag and demo status: running, stopping / expired | `filled/point` / `outline/point` |
+| Demo URL and caption note | `outline/corner-down-right` |
+| Demo advance / replay | `outline/arrow-right` / `outline/rotate` |
+| FAQ disclosure (rotates to a cross when open) | `outline/plus` |
+| Copy button; copy succeeded / unavailable | `outline/copy`; `outline/check` / `outline/alert-circle` |
+
+Icons are 1em and inherit `currentColor`. Outline icons use stroke width 2; the
+filled status point retains its upstream fill.
+They are decorative (`aria-hidden="true"`, `focusable="false"`) next to visible
+text, so accessible names come from that text or an existing `aria-label`. Script
+swaps only a `<use>` reference and its label text for demo and copy states.
+Textual punctuation, separators and command syntax (`$`, `/`, `+`, `·`) stay as
+text. `scripts/check-website.py` checks that every symbol is used and every
+reference resolves, that the license notice is present, and that the replaced
+glyphs (`↗ ↓ → ↺ ↳ ● ○ >_`) are absent; geometry against upstream is checked at review.
 
 ## Search and answer-engine decisions
 

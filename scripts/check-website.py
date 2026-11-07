@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check static document references, metadata, assets and the installer mirror."""
 import json
+import re
 import struct
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
@@ -120,4 +121,97 @@ for path in root.rglob("*"):
             assert token.lower() not in text.lower(), (path, token)
 
 assert (root / "install.sh").read_bytes() == (repo / "install.sh").read_bytes()
-print("Links, metadata, structured data, icons, em dash absence and installer mirror passed")
+
+
+class Icons(HTMLParser):
+    """Collect the Tabler sprite, icon uses and the names of icon-bearing controls."""
+
+    def __init__(self):
+        super().__init__()
+        self.comments = []
+        self.sprites = []
+        self.symbols = {}
+        self.uses = []
+        self.icons = []
+        self.controls = []  # [tag, aria-label, text, has_icon]
+        self._stack = []
+        self._symbol = None
+
+    def handle_comment(self, data):
+        self.comments.append(data)
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag in {"a", "button"}:
+            self._stack.append([tag, attrs.get("aria-label", ""), "", False])
+        if tag == "svg" and "icon-sprite" in attrs.get("class", "").split():
+            self.sprites.append(attrs)
+        elif tag == "svg":
+            self.icons.append(attrs)
+            if self._stack:
+                self._stack[-1][3] = True
+        elif tag == "symbol":
+            assert attrs["id"] not in self.symbols, attrs["id"]
+            self._symbol = attrs["id"]
+            self.symbols[self._symbol] = dict(attrs, paths=[])
+        elif tag == "path" and self._symbol:
+            self.symbols[self._symbol]["paths"].append(attrs.get("d", ""))
+        elif tag == "use":
+            self.uses.append(attrs.get("href", ""))
+
+    def handle_endtag(self, tag):
+        if tag == "symbol":
+            self._symbol = None
+        if tag in {"a", "button"} and self._stack and self._stack[-1][0] == tag:
+            self.controls.append(self._stack.pop())
+
+    def handle_data(self, data):
+        for control in self._stack:
+            control[2] += data
+
+
+# Icons: one hidden same-document sprite of Tabler symbols, each used, each use resolved.
+icons = Icons()
+html = (root / "index.html").read_text()
+icons.feed(html)
+assert len(icons.sprites) == 1, icons.sprites
+assert icons.sprites[0].get("aria-hidden") == "true" and icons.sprites[0].get("focusable") == "false"
+assert icons.sprites[0].get("width") == "0" and icons.sprites[0].get("height") == "0"
+for sid, symbol in icons.symbols.items():
+    assert sid.startswith("i-") and symbol.get("viewbox") == "0 0 24 24", sid
+    style = "filled" if sid.endswith("-filled") else "outline"
+    name = sid[2:].removesuffix("-filled")
+    assert symbol.get("data-source") == f"icons/{style}/{name}.svg", sid
+    assert symbol["paths"] and all(symbol["paths"]), sid
+for icon in icons.icons:
+    assert "icon" in icon.get("class", "").split(), icon
+    assert icon.get("aria-hidden") == "true" and icon.get("focusable") == "false", icon
+assert len(icons.uses) == len(icons.icons), "each icon has exactly one <use>"
+used = {href[1:] for href in icons.uses}
+assert all(href.startswith("#i-") for href in icons.uses), icons.uses
+app = (root / "app.js").read_text()
+scripted = {"i-" + n for n in re.findall(
+    r'(?:setIcon\([^,]+,\s*|showState\(|showControl\(|setFeedback\()"([a-z0-9-]+)"', app)}
+assert scripted, "scripted icon names"
+assert used | scripted <= set(icons.symbols), (used | scripted) - set(icons.symbols)
+assert set(icons.symbols) <= used | scripted, set(icons.symbols) - used - scripted
+for tag, label, text, has_icon in icons.controls:
+    if has_icon:
+        assert label.strip() or text.strip(), f"unnamed icon {tag}"
+
+# Tabler attribution: pinned version, exact upstream MIT notice served locally.
+license_path = root / "assets/tabler-icons/LICENSE.txt"
+license_text = license_path.read_text()
+assert license_text.startswith("MIT License\n\nCopyright (c) 2020-2026 Paweł Kuna\n"), license_path
+assert "The above copyright notice and this permission notice shall be included" in license_text
+notice = [c for c in icons.comments if "Tabler Icons v3.50.0" in c]
+assert len(notice) == 1 and "/assets/tabler-icons/LICENSE.txt" in notice[0], icons.comments
+assert local_path("/assets/tabler-icons/LICENSE.txt").is_file()
+assert list((root / "assets/tabler-icons").iterdir()) == [license_path], "bundle only the notice"
+
+# Interface glyphs are replaced by icons; textual punctuation and command syntax stay.
+for path in [root / "index.html", root / "app.js", root / "style.css"]:
+    text = path.read_text()
+    for glyph in ["↗", "↓", "→", "↺", "↳", "●", "○", "&gt;_", "&#8599;", "&#8595;"]:
+        assert glyph not in text, (path, glyph)
+print("Links, metadata, structured data, icons, Tabler sprite and license, em dash absence and installer mirror passed")

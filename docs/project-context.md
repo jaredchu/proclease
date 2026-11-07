@@ -77,7 +77,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    Installer choice labels wrap at 200% text; only requested arrows removed
 |-- DONE    crates.io 0.1.3 and docs.rs overview published; source installation verified
 |-- DONE    v0.1.4 ships the Cargo 1.89 fix through GitHub, crates.io and the website
-`-- FIXED   A later teardown-test observation race, without changing released runtime
+|-- FIXED   A later teardown-test observation race, without changing released runtime
+`-- DONE    Tabler SVG interface icons and restored arrows verified across three browsers
 ```
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
@@ -98,8 +99,10 @@ scale, em-dash-free copy and source-backed search metadata.
 [Website verification](verification.md#website-refresh-2026-11-07) records
 the original responsive checks; the later
 [controls correction](verification.md#registry-and-website-controls-2026-11-07)
-resolves the enlarged-text selector limitation and removes only the requested
-upward-right and downward arrows.
+resolves the enlarged-text selector limitation and records the earlier narrow
+arrow removal. The later [Tabler SVG update](verification.md#tabler-interface-icons-2026-11-07)
+restores those interface arrows as SVGs and standardizes the other UI icons,
+with browser checks and locally bundled source/license provenance.
 [Design and SEO/GEO decisions](../website/README.md#identity-and-type) describe
 the implementation and supporting sources. The refresh is live on proclease.com.
 The [v0.1.4 publication](verification.md#v014-publication-2026-11-07) delivers the

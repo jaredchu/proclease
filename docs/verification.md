@@ -497,6 +497,35 @@ pre-crash identity check still runs. These focused probes ran on macOS; normal
 provides the hosted macOS/Ubuntu check. This test-only correction follows the
 immutable v0.1.4 source archive; no released bytes, tags or runtime behavior changed.
 
+## Tabler interface icons, 2026-11-07
+
+Website source bundles twelve [Tabler Icons v3.50.0](https://github.com/tabler/tabler-icons/releases/tag/v3.50.0)
+as a hidden same-document SVG sprite. It restores external-link and download
+arrows as SVGs and replaces the terminal, status, bent/forward/replay arrows,
+FAQ and copy-feedback icons. Actual command syntax and textual separators stay
+text. The custom brand assets and v0.1.4 installer/pins are unchanged.
+[Icon sources and mapping](../website/README.md#interface-icons) are canonical in
+the website README; the upstream MIT license is bundled in served assets.
+
+All twelve symbol path lists and the license bytes were compared with the pinned
+upstream files. The static checker validates sprite/reference/label/notice
+structure and rejects the replaced UI glyphs. JavaScript and shell syntax,
+formatting, Clippy and all three unit plus thirty-one integration tests passed.
+No runtime Rust, package version or dependency changed.
+
+Ninety-six local browser checks passed across Chromium, Firefox and WebKit:
+visible SVG rendering and inherited color/strokes, accessible control names,
+keyboard demo advance/expiry/replay, copy success/fallback, native FAQ with and
+without JavaScript, install-tab/skill/platform controls, all four v0.1.4 downloads,
+reduced motion and horizontal bounds at 320/390/768/1440px. Enlarged-text checks
+passed at 320/390px with 200% root text. Independent Firefox/WebKit checks
+confirmed nonempty icon geometry, decorative SVG accessibility, dynamic states,
+copy feedback, keyboard FAQ without JavaScript and 320px enlarged-text bounds.
+Representative desktop and terminal screenshots were visually inspected.
+These tests simulate root-font enlargement and clipboard outcomes; actual
+browser text-size settings, clipboard permission prompts and a full assistive-
+technology audit were not exercised.
+
 ## Filesystem compatibility
 
 A Linux rerun using a macOS-to-Linux OrbStack bind mount failed intermittently
