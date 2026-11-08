@@ -838,18 +838,28 @@ real read-only lookup matched the local baseline commit to the current main head
 The workflow still parsed as YAML, every `run` step passed `bash -n`, and
 `git diff --check` passed.
 
-Outside the repository, the `production` environment exists with a main-only
+Outside the repository, the production environment has a main-only
 deployment-branch rule and holds both Cloudflare values as environment secrets,
 with no repository-level copies. The account-owned token is scoped as the README
-describes; its creation and read access to the Worker and zone were confirmed
-with a separate Cloudflare CLI, not by a deployment.
+describes. Its creation and read access were verified before publication;
+the first hosted run also proved its deployment access.
 
 Independent focused follow-up reviews accepted the corrections with no unresolved
-material finding. These checks do not prove the hosted run, the token's sufficiency for deployment
-or GitHub's queue behavior. If GitHub cancels a newer pending run in favor
-of an older one, the older run skips as stale and a manual run on main is needed
-to deploy the head. The first live deployment from main is pending and will be
-recorded once verified.
+material finding. The first automatic
+[website run](https://github.com/jaredchu/proclease/actions/runs/42446121980)
+at source commit 62fbf5a passed both static and deployment jobs. It confirmed
+published v0.1.5 pins and all four downloadable archives, passed the current-main
+check, deployed the existing Worker and matched all twelve live files to that
+commit, including the homepage and installer. A separate anonymous curl check
+also matched every file. The homepage intro and comparison FAQ are now live;
+no release, version pin, binary or crate was changed.
+
+The hosted run verifies the normal current-main path. Queue ordering, stale
+reruns and failed network lookups were checked through source inspection and
+local harnesses, not forced on production. If GitHub replaces a newer pending
+run with an older one, the older run skips as stale and a fresh manual run on
+main may be needed. A green environment record alone is insufficient; the
+deployment and live-check steps must both have run successfully.
 
 ## Filesystem compatibility
 

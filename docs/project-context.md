@@ -90,8 +90,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    Scoped bulk `stop --all` and retention protection released in v0.1.5
 |-- DONE    v0.1.5 four-native/registry/website release and fresh installs verified
 |-- SOURCE  Optional run readiness wait; unreleased, reviewed and locally verified
-|-- SOURCE  Source-backed comparison, homepage intro and FAQ; website not redeployed
-`-- PENDING Website auto-deploy from current main configured; first live run unverified
+|-- DONE    Source-backed comparison and homepage positioning published
+`-- DONE    Website auto-deploy from current main verified against live bytes
 ```
 
 The [v0.1.5 publication](verification.md#v015-publication-2026-11-08) packages bulk
@@ -148,17 +148,17 @@ ownership or health effect. The interface uses loopback-only TCP, literal text, 
 [comparison](comparison.md) with GNU timeout, systemd-run and rentctl and a
 revised homepage intro and FAQ linking it. The readiness wait is source-only and
 absent from v0.1.5. The homepage changes describe released v0.1.5 behavior, so
-they can be published without a new release; the live website does not yet
-include them.
+they were published by the first automatic website deployment without a new
+release.
 [Verification](verification.md#readiness-wait-and-comparison-unreleased-source-2026-11-08)
 records 62 local tests, default Rust 1.89 package installation, independent review
 and browser checks, with their limits.
 
 [Automatic website deployment](verification.md#website-automatic-deployment-2026-11-08)
-is configured in source and locally validated, including a freshness check that
-skips runs whose commit is no longer the head of main. The production environment
-and its scoped Cloudflare secrets are configured. Its first live run, which would
-publish the homepage changes, has not yet been verified.
+is configured and verified by its first hosted main-push run, which published
+the homepage changes and matched all twelve live files to the commit. A freshness
+check skips runs whose commit is no longer the head of main; the production
+environment and scoped environment secrets restrict publication to main.
 
 The recent-job window and resource presentation are implementation choices for
 terminal usability. Resource reads never extend leases.
