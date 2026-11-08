@@ -430,15 +430,16 @@ impl Store {
         Ok(found)
     }
     pub fn observed_record(&self, id: &str) -> Result<Record> {
+        self.observed_record_until(id, std::time::Instant::now() + OBSERVE_CONNECT)
+    }
+    /// `observed_record` with a caller-supplied absolute probe deadline, so a
+    /// bounded caller (such as a readiness wait) can keep its overall budget.
+    pub fn observed_record_until(&self, id: &str, probe: std::time::Instant) -> Result<Record> {
         let mut record = self.record(id)?;
         // Observation only: never signal an OS PID copied from disk.
         // The probe connect is bounded; scans hold the root lock while probing.
         if record.state.active()
-            && crate::platform::connect_unix(
-                &self.job(id)?.join("ctl.sock"),
-                std::time::Instant::now() + OBSERVE_CONNECT,
-            )
-            .is_err()
+            && crate::platform::connect_unix(&self.job(id)?.join("ctl.sock"), probe).is_err()
         {
             if record.state == State::Stopping {
                 if record.guardian_pid.is_some_and(group_is_absent) {

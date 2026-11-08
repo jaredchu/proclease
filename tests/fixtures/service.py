@@ -9,10 +9,53 @@ import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument("mode", choices=["normal", "stubborn", "leader-exits", "flood",
-                                     "shutdown-output", "gated-flood", "resource-child"])
+                                     "shutdown-output", "gated-flood", "resource-child",
+                                     "staged", "accept-once"])
 parser.add_argument("ready")
+parser.add_argument("--port", type=int, default=0)
 args = parser.parse_args()
-signal.alarm(15)
+# Backup cleanup only; the staged readiness wait can legitimately outlast 15s
+# on a slow runner, so it gets a longer alarm.
+signal.alarm(40 if args.mode == "staged" else 15)
+
+
+def await_file(path):
+    while not path.exists():
+        time.sleep(0.01)
+
+
+if args.mode == "accept-once":
+    # Stale-port fixture: accept exactly one connection, close the listener,
+    # and only then print the token, so the port no longer accepts once the
+    # log criterion can match.
+    listener = socket.socket()
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", args.port))
+    listener.listen()
+    connection, _ = listener.accept()
+    connection.close()
+    listener.close()
+    with open(args.ready, "w", encoding="utf-8") as output:
+        json.dump({"port": args.port, "pid": os.getpid(), "child": None}, output)
+    os.write(1, b"PORT-CLOSED-READY\n")
+    while True:
+        time.sleep(0.1)
+
+if args.mode == "staged":
+    # Readiness fixture: listen on --port only after <ready>.release exists,
+    # then print a token straddling the 64 KiB offset only after
+    # <ready>.release2 exists.
+    await_file(Path(args.ready).with_suffix(".release"))
+    listener = socket.socket()
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", args.port))
+    listener.listen()
+    with open(args.ready, "w", encoding="utf-8") as output:
+        json.dump({"port": args.port, "pid": os.getpid(), "child": None}, output)
+    await_file(Path(args.ready).with_suffix(".release2"))
+    os.write(1, b"x" * 65530 + b"READY-TOKEN\n")
+    while True:
+        time.sleep(0.1)
 
 listener = socket.socket()
 listener.bind(("127.0.0.1", 0))

@@ -106,6 +106,69 @@ restrictions. Standard input is closed; interactive programs are not supported.
 `--owner`, `--task`, `--name` and `--url` are declared metadata. A `running` state
 means the program spawned, not that a web endpoint is ready.
 
+<a id="readiness-unreleased-source"></a>
+
+### Readiness wait (unreleased source)
+
+Not in v0.1.5 or any published release; build from a Git checkout of main to use
+it. `run` can optionally wait after launch until the service looks ready:
+
+```sh
+proclease run --task preview --wait-for-port 5173 -- npm run dev
+proclease run --task preview --wait-for-log "ready in" --wait-timeout 1m -- npm run dev
+```
+
+- `--wait-for-port PORT` succeeds once a TCP connection to `127.0.0.1:PORT` or
+  `[::1]:PORT` is accepted. Only literal loopback addresses are used; no name is
+  resolved and no data is sent. A connection cannot prove which process owns the
+  port or that the application is healthy. `--url` remains metadata only.
+- `--wait-for-log TEXT` succeeds once captured output contains TEXT as literal
+  bytes (not a regular expression or shell pattern), including retained output
+  from earlier in the job. TEXT must be 1 to 512 bytes without control
+  characters. Output discarded after the capture cap cannot match.
+- With both flags, both must be satisfied, and the port is probed again after the
+  log text matches, so a listener that has since closed does not count.
+  `--wait-timeout` (default 30s, at most
+  5m) requires at least one criterion and starts when waiting starts, after the
+  supervisor has started. Invalid values are rejected before anything launches.
+  Without these flags, `run` output and behavior are unchanged.
+- Waiting happens in the foreground CLI after the launch lock is released. It
+  never changes, extends or renews the lease, relaunches, persists readiness or
+  kills anything. The lease still dates from launch. The wait stops early when
+  the job exits, fails, starts stopping, expires or its supervision becomes
+  unverified; a job in any of those states is never reported ready, even if its
+  retained output or a reused port matches.
+- Every connection attempt and supervisor probe is bounded by the wait budget;
+  captured-output reads are bounded to 1 MiB per poll and 16 MiB in total, and
+  the budget is rechecked between 64 KiB chunks. The budget is checked again
+  before success, so work that crosses the deadline reports `timed_out`. A
+  capture path that is not a regular file (for example a FIFO) reports
+  `observation_failed` instead of blocking.
+- Keep `--wait-timeout` below your agent host's command timeout. JSON mode prints
+  only at the end, so if the CLI is killed first, find the job with
+  `proclease list --all --json` by matching owner, task, cwd and argv, or retry
+  the same `--key` with the same command and context.
+- Exit status is 0 only when ready. Otherwise it is 1, the job keeps running
+  under its original deadline where applicable, and the output keeps the job ID
+  and current record so you can inspect or stop it. Human output prints the job
+  table and a readiness summary. JSON adds `readiness` (and, when not ready, an
+  `error` string) to the usual `job`/`reused` envelope:
+
+```json
+{"schema_version": 1, "reused": false, "job": {"id": "0123456789ab", "state": "running", "...": "..."},
+ "readiness": {"status": "timed_out", "ready": false, "timeout_ms": 30000, "waited_ms": 30001,
+               "port": {"port": 5173, "satisfied": false, "address": null},
+               "log": {"text": "ready in", "satisfied": true, "logs_truncated": false},
+               "error": null},
+ "error": "readiness not confirmed: timed_out"}
+```
+
+`status` is `ready`, `timed_out`, `lease_expired`, `job_finished`, `job_stopping`,
+`supervision_unavailable` or `observation_failed`; `port` or `log` is `null` when
+not requested. A keyed retry can add, change or drop readiness flags: they are
+invocation-time checks, not part of launch identity, so the retry observes the
+retained job again without creating or renewing it.
+
 ## Resource usage
 
 Human `list` and `watch` show CPU percentage and resident memory (RSS) for the
@@ -299,9 +362,11 @@ new session/process group can escape group cleanup. Docker, PID adoption,
 automatic cross-task reuse, reverse proxying and auto-restart are out of scope.
 An unavailable control endpoint is not permission to kill a PID copied from disk.
 
-Existing tools already cover much of general process management. See
-[architecture and comparison](https://github.com/jaredchu/proclease/blob/main/docs/architecture.md) for ProcLease's narrower
-expiry focus and the evidence needed before making comparative claims.
+Existing tools already cover much of general process management. See the
+[comparison with GNU timeout, systemd-run and rentctl](https://github.com/jaredchu/proclease/blob/main/docs/comparison.md)
+and [architecture](https://github.com/jaredchu/proclease/blob/main/docs/architecture.md)
+for ProcLease's narrower expiry focus and the evidence needed before making
+comparative claims.
 
 ## Development
 

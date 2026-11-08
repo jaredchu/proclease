@@ -168,6 +168,42 @@ permission failure, and the keeper/CLI merge the marker into final/read status.
 This accounts for output emitted after TERM without making the guardian perform
 its final capture snapshot before the grace period.
 
+## Readiness observation (unreleased source)
+
+`run --wait-for-port/--wait-for-log` is a CLI-side observation after launch, not
+lifecycle state. The launch lock is released before waiting. Lifecycle authority
+stays with the job's supervision pair: the guardian owns the control socket,
+deadline and normal stop/expiry escalation, and the keeper retains the guardian
+and enforces cleanup if it fails. The wait reads `record.json` and writes
+nothing; it sends no control request, so it cannot extend, renew, stop or
+relaunch a job. A timeout leaves the job supervised under its original deadline.
+
+One monotonic budget starts when waiting starts. Loopback TCP attempts
+(`127.0.0.1`, then `[::1]`) are capped at 250ms each and at the remaining budget;
+supervisor availability probes use the same bounded Unix-socket connect as
+observation, also capped by the budget, and a probe cut short by the budget is
+reported as a timeout rather than as lost supervision. Captured output is
+scanned incrementally from a byte offset with a carry of the text length minus
+one, so matches split across capture or read chunks are found with bounded
+memory. Reads are at most 1 MiB per poll and 16 MiB per wait, and the budget is
+rechecked before each 64 KiB chunk; an individual local file read is not
+interruptible. The capture file is opened without following a symlink and
+without blocking on a FIFO, and anything other than a regular file ends the wait
+as `observation_failed` without touching the job.
+
+Criteria are evaluated only while the record is `running`, and no criteria work
+starts once the budget is spent. When they are met, the record and supervisor are
+observed again and a requested port is probed again, so an earlier accepted
+connection cannot satisfy a later log match after the listener has gone. The
+budget is checked unconditionally before success: only a still-running, unexpired
+job within the budget is reported ready; work that crosses the deadline reports
+`timed_out` with the latest record and an unchanged lease. Starting jobs are waited on; stopping, finished, unverified or
+expired jobs end the wait unready. Readiness flags are not part of the retry
+fingerprint, so a keyed retry re-observes the retained job. A successful connect
+cannot identify the listening process, and literal log text is not an
+application health check. The run startup budget (keeper start, up to about 5
+seconds) is separate from, and precedes, the wait budget.
+
 ## Resource sampling
 
 List/watch use `sysinfo` process snapshots and read-only process-group checks.
@@ -213,8 +249,17 @@ concurrent retries, private state and launch-context inheritance. Startup
 regressions cover argument/environment fingerprint separation and earlier-format
 records, overdue leases, guardian setup failure and failed keeper spawn.
 
+Readiness regressions (unreleased source) cover delayed TCP success, literal log
+text across chunk boundaries, both criteria, timeout with an unchanged deadline,
+a port that closed before the log matched, no success after an exhausted budget,
+a FIFO at the capture path failing without blocking, early exit and expiry before
+readiness, invalid flags launching nothing, keyed retry without duplication or
+renewal, and the launch lock being free during a wait.
+
 These are local implementation tests, not direct tests inside every Codex or
-Claude permission profile. Real host compatibility, system sleep/wake and a
-pinned-version comparison with alternatives remain separate verification work.
+Claude permission profile. Real host compatibility and system sleep/wake remain
+separate verification work. A documented-behavior
+[comparison with GNU timeout, systemd-run and rentctl](comparison.md) cites
+primary sources; it is not a benchmark.
 Do not claim ProcLease is faster, safer or more reliable than another tool until
 the same relevant scenarios have been measured on both.

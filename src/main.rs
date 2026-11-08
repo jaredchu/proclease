@@ -5,6 +5,7 @@ mod display;
 mod lifecycle;
 mod model;
 mod platform;
+mod readiness;
 mod resources;
 mod store;
 
@@ -76,6 +77,26 @@ enum Commands {
         key: Option<String>,
         #[arg(long, default_value = "2s")]
         grace: String,
+        #[arg(
+            long,
+            value_name = "PORT",
+            help = "After launch, wait until a TCP connection to this loopback port succeeds \
+                    (observation only; not an ownership or health check)"
+        )]
+        wait_for_port: Option<u16>,
+        #[arg(
+            long,
+            value_name = "TEXT",
+            help = "After launch, wait until captured output contains this literal text"
+        )]
+        wait_for_log: Option<String>,
+        #[arg(
+            long,
+            value_name = "DURATION",
+            help = "Readiness wait budget, from when waiting starts (default 30s, max 5m); \
+                    never changes the lease"
+        )]
+        wait_timeout: Option<String>,
         #[arg(
             long,
             default_value_t = 1_048_576,
@@ -226,6 +247,83 @@ fn print_record(
         }
     }
     Ok(())
+}
+
+/// Wait for readiness outside the launch lock and report it with the job.
+/// Exit status 1 unless every criterion was observed while the job ran.
+fn print_readiness(
+    store: &Store,
+    record: Record,
+    reused: bool,
+    spec: &readiness::Spec,
+    json_output: bool,
+    color: display::ColorChoice,
+) -> Result<i32> {
+    let id = record.id.clone();
+    if !json_output {
+        eprintln!(
+            "Waiting up to {} for readiness of job {id}; the lease is unchanged.",
+            humantime::format_duration(spec.timeout)
+        );
+    }
+    let outcome = readiness::wait(store, &id, spec, record);
+    let record = &outcome.record;
+    let ready = outcome.ready();
+    if json_output {
+        let mut value = json!({"schema_version": SCHEMA_VERSION, "job": view(record),
+            "reused": reused, "readiness": outcome.view(spec)});
+        if !ready {
+            value["error"] = json!(format!(
+                "readiness not confirmed: {}",
+                outcome.status.as_str()
+            ));
+        }
+        println!("{value}");
+        return Ok(if ready { 0 } else { 1 });
+    }
+    print_record(record, reused, false, color)?;
+    let waited = format!("{:.1}s", outcome.waited.as_secs_f64());
+    let mut details = Vec::new();
+    if let Some(port) = spec.port {
+        details.push(match outcome.port_address {
+            Some(address) => format!("loopback port {port} accepted a TCP connection ({address})"),
+            None => format!("loopback port {port} did not accept a TCP connection"),
+        });
+    }
+    if spec.log.is_some() {
+        details.push(if outcome.log_seen {
+            "captured output contained the requested text".to_owned()
+        } else if record.logs_truncated {
+            "requested text not seen; capture reached its byte cap".to_owned()
+        } else {
+            "requested text not seen in captured output".to_owned()
+        });
+    }
+    if ready {
+        println!("Ready after {waited}: {}.", details.join("; "));
+        return Ok(0);
+    }
+    eprintln!(
+        "Readiness not confirmed ({}) after {waited}: {}.",
+        outcome.status.as_str(),
+        details.join("; ")
+    );
+    if let Some(error) = &outcome.error {
+        eprintln!("Error: {}", clean(error));
+    }
+    if record.state.active() {
+        eprintln!(
+            "Job {id} is still {} under its original lease until {}. \
+             Inspect it with `proclease logs {id}` or end it with `proclease stop {id}`.",
+            serde_json::to_value(record.state)?
+                .as_str()
+                .unwrap_or("active"),
+            record.expires_at()
+        );
+    } else {
+        eprintln!("Job {id} is not running. Inspect it with `proclease logs {id}`.");
+    }
+    Ok(1)
 }
 
 fn visible_jobs(store: &Store, all: bool) -> Result<(Vec<Record>, Vec<String>)> {
@@ -472,10 +570,19 @@ fn dispatch(cli: &Cli) -> Result<i32> {
             url,
             key,
             grace,
+            wait_for_port,
+            wait_for_log,
+            wait_timeout,
             log_limit,
             command,
         } => {
             let ttl = duration_ms(ttl)?;
+            // Validated before the lock and before anything is launched.
+            let readiness = readiness::spec(
+                *wait_for_port,
+                wait_for_log.as_deref(),
+                wait_timeout.as_deref(),
+            )?;
             let grace = duration_ms(grace)?;
             if grace > lifecycle::MAX_GRACE_MS {
                 bail!("shutdown grace cannot exceed 10s");
@@ -501,59 +608,62 @@ fn dispatch(cli: &Cli) -> Result<i32> {
             let cwd = std::env::current_dir()?.canonicalize()?;
             let env = context_env();
             let fingerprint = fingerprint(command, &cwd, &env);
-            // Held through keeper startup: a failed keeper spawn is finalized
-            // before another same-key run can observe the starting record.
-            let _lock = store.lock()?;
-            let cleanup = store.prune_locked(false, None)?;
-            for warning in cleanup.warnings {
-                eprintln!("History cleanup: {}", clean(&warning));
-            }
-            if let Some(key) = key {
-                if let Some((previous, record)) = store.find_retry(key)? {
-                    if !same_launch_context(&previous, command, &cwd, &env)
-                        || &previous.owner != owner
-                        || &previous.task != task
-                        || &previous.name != name
-                        || &previous.url != url
-                        || previous
-                            .expires_at_ms
-                            .saturating_sub(previous.created_at_ms)
-                            != ttl
-                        || previous.grace_ms != grace
-                        || previous.log_limit_bytes != *log_limit
-                    {
-                        bail!("retry key already belongs to a different launch context");
-                    }
-                    print_record(&record, true, cli.json, cli.color)?;
-                    return Ok(if record.state == State::Failed { 1 } else { 0 });
+            let (record, reused) = 'launch: {
+                // Held through keeper startup: a failed keeper spawn is finalized
+                // before another same-key run can observe the starting record.
+                // Released before any readiness wait.
+                let _lock = store.lock()?;
+                let cleanup = store.prune_locked(false, None)?;
+                for warning in cleanup.warnings {
+                    eprintln!("History cleanup: {}", clean(&warning));
                 }
-            }
-            let id = store.reserve()?;
-            let created = now_ms();
-            let launch = Launch {
-                id: id.clone(),
-                argv: command.clone(),
-                cwd,
-                owner: owner.clone(),
-                task: task.clone(),
-                name: name.clone(),
-                url: url.clone(),
-                key: key.clone(),
-                fingerprint,
-                created_at_ms: created,
-                expires_at_ms: created + ttl,
-                grace_ms: grace,
-                log_limit_bytes: *log_limit,
+                if let Some(key) = key {
+                    if let Some((previous, record)) = store.find_retry(key)? {
+                        if !same_launch_context(&previous, command, &cwd, &env)
+                            || &previous.owner != owner
+                            || &previous.task != task
+                            || &previous.name != name
+                            || &previous.url != url
+                            || previous
+                                .expires_at_ms
+                                .saturating_sub(previous.created_at_ms)
+                                != ttl
+                            || previous.grace_ms != grace
+                            || previous.log_limit_bytes != *log_limit
+                        {
+                            bail!("retry key already belongs to a different launch context");
+                        }
+                        break 'launch (record, true);
+                    }
+                }
+                let id = store.reserve()?;
+                let created = now_ms();
+                let launch = Launch {
+                    id: id.clone(),
+                    argv: command.clone(),
+                    cwd,
+                    owner: owner.clone(),
+                    task: task.clone(),
+                    name: name.clone(),
+                    url: url.clone(),
+                    key: key.clone(),
+                    fingerprint,
+                    created_at_ms: created,
+                    expires_at_ms: created + ttl,
+                    grace_ms: grace,
+                    log_limit_bytes: *log_limit,
+                };
+                debug_assert!(ttl <= MAX_LIFETIME_MS);
+                atomic_json(&store.job(&id)?.join("launch.json"), &launch)?;
+                store.save(&Record::new(&launch))?;
+                lifecycle::start_keeper(&store, &id)?;
+                (store.record(&id)?, false)
             };
-            debug_assert!(ttl <= MAX_LIFETIME_MS);
-            atomic_json(&store.job(&id)?.join("launch.json"), &launch)?;
-            store.save(&Record::new(&launch))?;
-            lifecycle::start_keeper(&store, &id)?;
-            let record = store.record(&id)?;
-            print_record(&record, false, cli.json, cli.color)?;
-            if record.state == State::Failed {
-                return Ok(1);
-            }
+            let Some(spec) = readiness else {
+                print_record(&record, reused, cli.json, cli.color)?;
+                return Ok(if record.state == State::Failed { 1 } else { 0 });
+            };
+            return print_readiness(&store, record, reused, &spec, cli.json, cli.color);
         }
         Commands::Prune { dry_run } => {
             let report = store.prune(*dry_run, None)?;

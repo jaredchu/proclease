@@ -46,6 +46,12 @@ Update those pins together for a future release, and publish its matching
 release assets before deploying the website.
 See [the release procedure](../docs/releasing.md).
 
+The hero intro and the "Why choose ProcLease?" FAQ link to the source-backed
+[comparison](../docs/comparison.md) on main. It describes released behavior and
+does not advertise the unreleased readiness wait; keep any later readiness copy
+marked as source-only until a release ships it. Deploying this FAQ requires its
+own publication scope.
+
 ## Identity and type
 
 The mark in `dist/assets/icon.svg` is a lease ring: an open arc for the

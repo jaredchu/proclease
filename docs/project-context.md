@@ -80,7 +80,9 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- FIXED   A later teardown-test observation race, without changing released runtime
 |-- DONE    Tabler SVG interface icons and restored arrows verified across three browsers
 |-- DONE    Scoped bulk `stop --all` and retention protection released in v0.1.5
-`-- DONE    v0.1.5 four-native/registry/website release and fresh installs verified
+|-- DONE    v0.1.5 four-native/registry/website release and fresh installs verified
+|-- SOURCE  Optional run readiness wait; unreleased, reviewed and locally verified
+`-- SOURCE  Source-backed comparison, homepage intro and FAQ; website not redeployed
 ```
 
 The [v0.1.5 publication](verification.md#v015-publication-2026-11-08) packages bulk
@@ -130,6 +132,17 @@ adds a reviewed process-lifetime retention lock and regressions. All 51 tests,
 formatting, Clippy and optimized builds pass locally and in hosted macOS/Ubuntu
 checks; both default Rust 1.89 package installations pass.
 
+Owner-authorized on 2026-11-08 and unreleased: optional `run --wait-for-port`,
+`--wait-for-log` and `--wait-timeout` readiness observation, with no lease,
+ownership or health effect. The interface uses loopback-only TCP, literal text, a
+30s default and a 5m maximum. The same task added a source-backed
+[comparison](comparison.md) with GNU timeout, systemd-run and rentctl and a
+revised homepage intro and FAQ linking it. Both are in source only; v0.1.5 and
+the live website do not include them.
+[Verification](verification.md#readiness-wait-and-comparison-unreleased-source-2026-11-08)
+records 62 local tests, default Rust 1.89 package installation, independent review
+and browser checks, with their limits.
+
 The recent-job window and resource presentation are implementation choices for
 terminal usability. Resource reads never extend leases.
 See [resource units and limits](../README.md#resource-usage).
@@ -142,6 +155,7 @@ Instruction-discovery evidence and limits are recorded in
 
 - [README and usage](../README.md)
 - [Architecture and lifecycle boundaries](architecture.md)
+- [Comparison with related tools](comparison.md)
 - [Verification and limits](verification.md)
 - [Shared ProcLease skill](../skills/proclease/SKILL.md)
 - [Contributing and attribution](../CONTRIBUTING.md)

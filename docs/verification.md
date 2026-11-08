@@ -701,6 +701,85 @@ The v0.1.4 release assets and both provenance tags remain unchanged. The
 cooperative-retention and existing-keeper upgrade limits remain as described in
 the README.
 
+## Readiness wait and comparison, unreleased source, 2026-11-08
+
+`run --wait-for-port PORT`, `--wait-for-log TEXT` and `--wait-timeout DURATION`
+are implemented in source after v0.1.5 and are not in any published binary, crate,
+installer or website. Behavior and output are described in the
+[README](../README.md#readiness-unreleased-source) and
+[architecture](architecture.md#readiness-observation-unreleased-source).
+
+Five unit tests and six process integration tests were added (fourteen unit plus
+forty-eight integration tests in total), using isolated fixture state only:
+
+- Unit: literal matching across every split point of a two-chunk delivery and
+  byte-at-a-time delivery with a bounded carry; pattern metacharacters stay
+  literal; flag validation (orphan timeout, zero port, empty, multi-line or
+  over-long text, zero, over-limit or unparsable timeout, default and maximum).
+- Unit, exhausted budget: against a running record whose control endpoint accepts
+  immediately and whose output already contains the text, an already-expired
+  internal deadline returns `timed_out` with the record and expiry unchanged and
+  no scan started; the same job with budget left returns `ready`. This replaces
+  a wall-clock race: before the fix, a 1ms wait over a large retained capture
+  could report `ready` after its deadline.
+- Unit, FIFO capture path: a FIFO at `output.log` returns `observation_failed`
+  ("not a regular file") with the running record unchanged, instead of blocking
+  in `open`. The test waits at most 5s and releases a blocked reader on failure.
+- Stale port: a fixture accepts one readiness connection, closes its listener and
+  only then prints the token while still running. A 3s wait for both criteria
+  exits 1 with `timed_out`, log satisfied and port unsatisfied; the job stays
+  `running` under its original lease.
+- Delayed TCP plus log: a staged fixture listens only after a release file and
+  prints its token across the 64 KiB offset only after a second one. The wait
+  stays pending until both criteria hold, then reports `ready` with the loopback
+  address and an expiry unchanged from launch.
+- Both criteria and timeout: with the port open and the token never printed, a
+  3s wait exits 1 with valid JSON, `timed_out`, port satisfied and log unsatisfied.
+  The job stays `running` and reachable under its original 30s lease until the
+  test stops it.
+- Early exit and expiry: a failing command and a 1s lease each end a 60s wait
+  promptly and unready; the records reach `failed` and `expired`. A keyed retry
+  of a finished job whose retained log contains the text reports `job_finished`
+  without creating a job.
+- Invalid flags (zero or out-of-range port, zero, over-limit or unparsable
+  timeout, orphan timeout, empty, multi-line or over-long text) launch nothing;
+  validation errors use the JSON error envelope.
+- Keyed retry: adding `--wait-for-log` to a retained running job's key reports
+  `ready` with `reused: true` and the original expiry. A human-mode retry waiting
+  on an unbound port announces its wait; another launch then completes while it
+  waits, showing the launch lock is free. Stopping the job ends the wait promptly
+  with status 1 and the job ID. A further retry reports the stopped record as
+  unready; exactly two jobs exist.
+
+Locally on macOS arm64 with stable Rust 1.99.1: formatting, Clippy with warnings
+denied, all 62 tests and an optimized build passed, with isolated build output
+and fixture state. After the review corrections the full suite was run again.
+The source package also installed with Rust 1.89 defaults, without profile
+overrides, and its CLI exposes the readiness flags.
+
+Initial independent review found a blocking FIFO open, success after an
+exhausted budget and stale TCP evidence; all three were corrected and accepted
+in one focused follow-up per reviewer, with no unresolved material finding.
+Independent CLI probes confirmed prompt FIFO failure and timeout rather than
+late or stale readiness, with the job and lease preserved. Browser checks pass
+in Chromium, Firefox and WebKit at 320/390/768/1440 pixels, including expanded FAQ
+content, enlarged text at narrow widths, keyboard tabs, selectors, demo/replay,
+clipboard success/fallback and no-JavaScript content. Desktop/mobile screenshots
+were inspected. The website checker, JavaScript syntax and affected local links
+also pass.
+
+No local Linux or real Vite/Next run was performed for this change; hosted
+macOS/Linux and default Rust 1.89 package checks use the existing
+[Rust checks workflow](https://github.com/jaredchu/proclease/actions/workflows/ci.yml).
+Local stable optimized-build stripping was not verified because the toolchain's
+stripping helper failed to load. Fixture ports are chosen free immediately
+before launch and could, rarely, be taken by another process. Regular-file I/O
+depends on filesystem responsiveness; readiness is a sequence of observations,
+not an atomic health guarantee.
+
+The [comparison](comparison.md) cites primary sources retrieved on 2026-11-08
+with their manual labels, tag or commit. It compares documented behavior only.
+
 ## Filesystem compatibility
 
 A Linux rerun using a macOS-to-Linux OrbStack bind mount failed intermittently
@@ -719,8 +798,9 @@ supervisors or restricted Codex/Claude execution-profile test has
 been completed. A service can deliberately escape its process group. These
 remain explicit support/verification boundaries, not passing checks.
 
-There is no pinned-version comparative benchmark against AgentProcs or other
-alternatives. The tests establish this implementation's inspected behaviour;
+There is no comparative benchmark against AgentProcs, GNU timeout, systemd-run,
+rentctl or other alternatives; the [comparison](comparison.md) is documented
+behavior only. The tests establish this implementation's inspected behaviour;
 they do not establish comparative superiority. User-local installation and skill
 discovery are verified, and one ordinary local Codex preview session has been
 observed. That session exposed the corrected registry-selection issue. The revised

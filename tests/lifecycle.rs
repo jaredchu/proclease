@@ -2473,3 +2473,494 @@ fn retention_protection_is_crash_released_and_never_blocks_launches() {
     let job = fixture.call(&["stop", &later])["job"].clone();
     assert_eq!(job["state"], "stopped");
 }
+
+// Readiness observation (`run --wait-for-port/--wait-for-log`).
+
+/// A loopback port with no listener at the time of the call.
+fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
+
+fn service_path() -> String {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/service.py")
+        .to_str()
+        .unwrap()
+        .to_owned()
+}
+
+impl Fixture {
+    fn ready_path(&self) -> PathBuf {
+        self.dir
+            .path()
+            .join(format!("r-{}.json", uuid::Uuid::new_v4().simple()))
+    }
+    /// The same CLI invocation without `--json`.
+    fn human(&self, args: &[&str]) -> Command {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_proclease"));
+        cmd.arg("--state-dir").arg(&self.state).args(args);
+        cmd
+    }
+    fn only_job(&self) -> Value {
+        wait(|| {
+            let jobs = self.call(&["list", "--all"])["jobs"].clone();
+            let jobs = jobs.as_array().unwrap();
+            (jobs.len() == 1 && jobs[0]["state"] == "running").then(|| jobs[0].clone())
+        })
+    }
+    fn no_jobs(&self) -> bool {
+        self.call(&["list", "--all"])["jobs"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+            && fs::read_dir(&self.state)
+                .map(|entries| {
+                    entries
+                        .flatten()
+                        .map(|entry| entry.file_name().to_string_lossy().to_string())
+                        .all(|name| {
+                            !(name.len() == 12 && name.chars().all(|c| c.is_ascii_hexdigit()))
+                        })
+                })
+                .unwrap_or(true)
+    }
+}
+
+fn release(ready: &std::path::Path, suffix: &str) {
+    fs::write(ready.with_extension(suffix), b"").unwrap();
+}
+
+#[test]
+fn readiness_waits_for_delayed_port_and_boundary_log_text() {
+    let fixture = Fixture::new();
+    let port = free_port().to_string();
+    let ready = fixture.ready_path();
+    let service = service_path();
+    let child = fixture
+        .command(&[
+            "run",
+            "--ttl",
+            "30s",
+            "--grace",
+            "100ms",
+            "--wait-for-port",
+            &port,
+            "--wait-for-log",
+            "READY-TOKEN",
+            "--wait-timeout",
+            "12s",
+            "--",
+            "/usr/bin/python3",
+            &service,
+            "staged",
+            ready.to_str().unwrap(),
+            "--port",
+            &port,
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut child = scopeguard_child(child);
+    let job = fixture.only_job();
+    // Nothing listens yet, so the wait cannot have succeeded.
+    assert!(child.0.try_wait().unwrap().is_none());
+    release(&ready, "release");
+    let info = ready_file(&ready);
+    assert!(port_open(&info));
+    // The port alone is insufficient; the log criterion is still pending.
+    assert!(child.0.try_wait().unwrap().is_none());
+    release(&ready, "release2");
+    let output = child.finish();
+    assert!(output.status.success(), "{}", describe(&output));
+    let result = parse(&output);
+    let readiness = &result["readiness"];
+    assert_eq!(readiness["status"], "ready", "{result}");
+    assert_eq!(readiness["ready"], true);
+    assert_eq!(readiness["port"]["satisfied"], true);
+    assert_eq!(readiness["port"]["address"], format!("127.0.0.1:{port}"));
+    assert_eq!(readiness["log"]["satisfied"], true);
+    assert_eq!(readiness["timeout_ms"], 12_000);
+    assert!(result.get("error").is_none());
+    assert_eq!(result["reused"], false);
+    assert_eq!(result["job"]["id"], job["id"]);
+    assert_eq!(result["job"]["state"], "running");
+    // Readiness never changes the lease, which dates from launch.
+    let current = fixture.job(job["id"].as_str().unwrap());
+    assert_eq!(current["expires_at_ms"], job["expires_at_ms"]);
+    assert_eq!(
+        current["expires_at_ms"].as_u64().unwrap() - current["created_at_ms"].as_u64().unwrap(),
+        30_000
+    );
+}
+
+#[test]
+fn readiness_timeout_requires_both_criteria_and_keeps_job_supervised() {
+    let fixture = Fixture::new();
+    let port = free_port().to_string();
+    let ready = fixture.ready_path();
+    release(&ready, "release");
+    let service = service_path();
+    let output = fixture
+        .command(&[
+            "run",
+            "--ttl",
+            "30s",
+            "--grace",
+            "100ms",
+            "--wait-for-port",
+            &port,
+            "--wait-for-log",
+            "READY-TOKEN",
+            "--wait-timeout",
+            "3s",
+            "--",
+            "/usr/bin/python3",
+            &service,
+            "staged",
+            ready.to_str().unwrap(),
+            "--port",
+            &port,
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", describe(&output));
+    let result = parse(&output);
+    let readiness = &result["readiness"];
+    assert_eq!(readiness["status"], "timed_out", "{result}");
+    assert_eq!(readiness["ready"], false);
+    assert_eq!(readiness["port"]["satisfied"], true, "{result}");
+    assert_eq!(readiness["log"]["satisfied"], false);
+    assert!(readiness["waited_ms"].as_u64().unwrap() >= 3_000);
+    assert_eq!(result["error"], "readiness not confirmed: timed_out");
+    let id = result["job"]["id"].as_str().unwrap();
+    assert_eq!(result["job"]["state"], "running");
+    // Still supervised under the original deadline; nothing was killed.
+    let current = fixture.job(id);
+    assert_eq!(current["state"], "running");
+    assert_eq!(current["expires_at_ms"], result["job"]["expires_at_ms"]);
+    assert_eq!(
+        current["expires_at_ms"].as_u64().unwrap() - current["created_at_ms"].as_u64().unwrap(),
+        30_000
+    );
+    assert!(port_open(&ready_file(&ready)));
+    assert_eq!(fixture.call(&["stop", id])["job"]["state"], "stopped");
+}
+
+#[test]
+fn readiness_rechecks_a_port_that_closed_before_the_log_matched() {
+    let fixture = Fixture::new();
+    let port = free_port().to_string();
+    let ready = fixture.ready_path();
+    let service = service_path();
+    // The fixture accepts only the first readiness connection, closes its
+    // listener, then prints the token while still running.
+    let output = fixture
+        .command(&[
+            "run",
+            "--ttl",
+            "30s",
+            "--grace",
+            "100ms",
+            "--wait-for-port",
+            &port,
+            "--wait-for-log",
+            "PORT-CLOSED-READY",
+            "--wait-timeout",
+            "3s",
+            "--",
+            "/usr/bin/python3",
+            &service,
+            "accept-once",
+            ready.to_str().unwrap(),
+            "--port",
+            &port,
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", describe(&output));
+    let result = parse(&output);
+    let readiness = &result["readiness"];
+    assert_eq!(readiness["status"], "timed_out", "{result}");
+    assert_eq!(readiness["ready"], false);
+    assert_eq!(readiness["log"]["satisfied"], true, "{result}");
+    assert_eq!(readiness["port"]["satisfied"], false, "{result}");
+    // The earlier accepted connection really happened, and the job is still
+    // running under its original lease.
+    assert!(!port_open(&ready_file(&ready)));
+    let id = result["job"]["id"].as_str().unwrap();
+    let current = fixture.job(id);
+    assert_eq!(current["state"], "running");
+    assert_eq!(current["expires_at_ms"], result["job"]["expires_at_ms"]);
+    assert_eq!(fixture.call(&["stop", id])["job"]["state"], "stopped");
+}
+
+#[test]
+fn readiness_stops_promptly_for_exit_expiry_and_terminal_retries() {
+    let fixture = Fixture::new();
+    let port = free_port().to_string();
+    // Early exit: the port never opens; the wait ends with the job, not the budget.
+    let started = Instant::now();
+    let output = fixture
+        .command(&[
+            "run",
+            "--grace",
+            "100ms",
+            "--wait-for-port",
+            &port,
+            "--wait-timeout",
+            "60s",
+            "--",
+            "/usr/bin/false",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", describe(&output));
+    assert!(started.elapsed() < Duration::from_secs(20));
+    let result = parse(&output);
+    let status = result["readiness"]["status"].as_str().unwrap();
+    assert!(
+        ["job_stopping", "job_finished"].contains(&status),
+        "{result}"
+    );
+    assert_eq!(result["readiness"]["ready"], false);
+    assert_eq!(result["job"]["reason"], "command_exit");
+    let id = result["job"]["id"].as_str().unwrap();
+    assert_eq!(fixture.terminal(id)["state"], "failed");
+
+    // Expiry before readiness.
+    let started = Instant::now();
+    let output = fixture
+        .command(&[
+            "run",
+            "--ttl",
+            "1s",
+            "--grace",
+            "100ms",
+            "--wait-for-port",
+            &port,
+            "--wait-timeout",
+            "60s",
+            "--",
+            "/bin/sleep",
+            "30",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", describe(&output));
+    assert!(started.elapsed() < Duration::from_secs(20));
+    let result = parse(&output);
+    let status = result["readiness"]["status"].as_str().unwrap();
+    assert!(
+        ["lease_expired", "job_stopping", "job_finished"].contains(&status),
+        "{result}"
+    );
+    let id = result["job"]["id"].as_str().unwrap();
+    assert_eq!(fixture.terminal(id)["state"], "expired");
+
+    // A finished keyed job whose retained log matches is never ready.
+    let echo = [
+        "run",
+        "--grace",
+        "100ms",
+        "--key",
+        "echo-1",
+        "--",
+        "/bin/echo",
+        "hello-ready",
+    ];
+    let first = fixture.call(&echo);
+    let id = first["job"]["id"].as_str().unwrap().to_owned();
+    fixture.terminal(&id);
+    let mut retry = echo.to_vec();
+    retry.splice(1..1, ["--wait-for-log", "hello-ready"]);
+    let output = fixture.command(&retry).output().unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", describe(&output));
+    let result = parse(&output);
+    assert_eq!(result["reused"], true);
+    assert_eq!(result["job"]["id"], id.as_str());
+    assert_eq!(result["readiness"]["status"], "job_finished", "{result}");
+    assert_eq!(result["readiness"]["log"]["satisfied"], false);
+    assert_eq!(
+        fixture.call(&["list", "--all"])["jobs"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+}
+
+#[test]
+fn invalid_readiness_flags_launch_nothing() {
+    let fixture = Fixture::new();
+    let long = "x".repeat(513);
+    for flags in [
+        vec!["--wait-for-port", "0"],
+        vec!["--wait-for-port", "70000"],
+        vec!["--wait-for-port", "3000", "--wait-timeout", "0s"],
+        vec!["--wait-for-port", "3000", "--wait-timeout", "6m"],
+        vec!["--wait-for-port", "3000", "--wait-timeout", "forever"],
+        vec!["--wait-timeout", "5s"],
+        vec!["--wait-for-log", ""],
+        vec!["--wait-for-log", "a\nb"],
+        vec!["--wait-for-log", long.as_str()],
+    ] {
+        let mut args = vec!["run", "--ttl", "30s"];
+        args.extend(&flags);
+        args.extend(["--", "/bin/sleep", "30"]);
+        let output = fixture.command(&args).output().unwrap();
+        assert!(!output.status.success(), "{flags:?}");
+        if flags[1] != "70000" {
+            // Validation errors use the JSON error envelope, without a job.
+            let result = parse(&output);
+            assert!(result["error"].is_string(), "{flags:?}: {result}");
+            assert!(result.get("job").is_none(), "{flags:?}: {result}");
+        }
+        assert!(fixture.no_jobs(), "{flags:?} launched a job");
+    }
+}
+
+#[test]
+fn keyed_readiness_retry_is_observational_and_wait_releases_launch_lock() {
+    use std::io::{BufRead, BufReader};
+    let fixture = Fixture::new();
+    let ready = fixture.ready_path();
+    let service = service_path();
+    let base = [
+        "run",
+        "--ttl",
+        "30s",
+        "--grace",
+        "100ms",
+        "--key",
+        "preview-1",
+        "--",
+        "/usr/bin/python3",
+        service.as_str(),
+        "normal",
+        ready.to_str().unwrap(),
+    ];
+    let first = fixture.call(&base);
+    let id = first["job"]["id"].as_str().unwrap().to_owned();
+    ready_file(&ready);
+
+    // Readiness flags are invocation-time checks, not launch identity.
+    let mut with_log = base.to_vec();
+    with_log.splice(1..1, ["--wait-for-log", "service-ready"]);
+    let result = fixture.call(&with_log);
+    assert_eq!(result["reused"], true);
+    assert_eq!(result["job"]["id"], id.as_str());
+    assert_eq!(
+        result["job"]["expires_at_ms"],
+        first["job"]["expires_at_ms"]
+    );
+    assert_eq!(result["readiness"]["status"], "ready", "{result}");
+
+    // An unreachable port: the human-mode retry announces its wait only
+    // after releasing the launch lock.
+    let unbound = free_port().to_string();
+    let mut with_port = base.to_vec();
+    with_port.splice(1..1, ["--wait-for-port", unbound.as_str()]);
+    let child = fixture
+        .human(&with_port)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut child = scopeguard_child(child);
+    let mut stderr = BufReader::new(child.0.stderr.take().unwrap());
+    let mut line = String::new();
+    stderr.read_line(&mut line).unwrap();
+    assert!(line.starts_with("Waiting up to 30s"), "{line}");
+    assert!(line.contains(&id), "{line}");
+    // Another launch completes while that wait is in progress.
+    let other = fixture.call(&["run", "--grace", "100ms", "--", "/bin/sleep", "30"]);
+    let other_id = other["job"]["id"].as_str().unwrap();
+    assert!(child.0.try_wait().unwrap().is_none());
+    // Stopping the job ends the wait promptly, unready, with the job ID.
+    assert_eq!(fixture.call(&["stop", &id])["job"]["state"], "stopped");
+    let output = child.finish();
+    let mut rest = String::new();
+    std::io::Read::read_to_string(&mut stderr, &mut rest).unwrap();
+    assert_eq!(output.status.code(), Some(1), "{rest}");
+    assert!(
+        rest.contains("Readiness not confirmed (job_stopping)")
+            || rest.contains("Readiness not confirmed (job_finished)"),
+        "{rest}"
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains(&id));
+
+    // A retry against the retained stopped job never reports it ready and
+    // never creates or renews a job.
+    let output = fixture.command(&with_log).output().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let result = parse(&output);
+    assert_eq!(result["reused"], true);
+    assert_eq!(result["job"]["state"], "stopped");
+    assert_eq!(result["readiness"]["status"], "job_finished");
+    let jobs = fixture.call(&["list", "--all"])["jobs"].clone();
+    let mut ids: Vec<_> = jobs
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|job| job["id"].as_str().unwrap().to_owned())
+        .collect();
+    ids.sort();
+    let mut expected = vec![id.clone(), other_id.to_owned()];
+    expected.sort();
+    assert_eq!(ids, expected);
+    fixture.call(&["stop", other_id]);
+}
+
+/// A spawned CLI process that is always reaped, killing it first if a test
+/// assertion fails while it is still waiting.
+struct ReapedChild(std::process::Child);
+
+fn scopeguard_child(child: std::process::Child) -> ReapedChild {
+    ReapedChild(child)
+}
+
+impl ReapedChild {
+    fn finish(&mut self) -> Output {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        if let Some(mut pipe) = self.0.stdout.take() {
+            std::io::Read::read_to_end(&mut pipe, &mut stdout).unwrap();
+        }
+        if let Some(mut pipe) = self.0.stderr.take() {
+            std::io::Read::read_to_end(&mut pipe, &mut stderr).unwrap();
+        }
+        let status = self.0.wait().unwrap();
+        Output {
+            status,
+            stdout,
+            stderr,
+        }
+    }
+}
+
+impl Drop for ReapedChild {
+    fn drop(&mut self) {
+        if self.0.try_wait().ok().flatten().is_none() {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+}
+
+fn describe(output: &Output) -> String {
+    format!(
+        "{} {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+}
+
+#[track_caller]
+fn ready_file(path: &std::path::Path) -> Value {
+    ready(path)
+}
