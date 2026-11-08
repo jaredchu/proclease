@@ -1,14 +1,30 @@
 name: Website checks
 on:
+  # Every main push validates and publishes the current site, even when website
+  # files are unchanged, so a current run is queued whenever the freshness check
+  # skips an older one. Feature branches validate through pull requests.
   push:
-    paths: ['website/**', 'install.sh', 'scripts/check-website.py', '.github/workflows/website.yml']
+    branches: [main]
   pull_request:
     paths: ['website/**', 'install.sh', 'scripts/check-website.py', '.github/workflows/website.yml']
+  # Manual retry. The deploy job runs only when main is selected.
+  workflow_dispatch:
 permissions:
   contents: read
+# Serialize canonical main runs: one at a time, an in-flight run is never
+# cancelled, and a newer pending run replaces an older pending one. GitHub does
+# not guarantee queue order matches push order; the deploy job's freshness check
+# skips any run whose commit is no longer the head of main. Other refs get a
+# unique group.
+concurrency:
+  group: >-
+    website-${{ github.repository == 'jaredchu/proclease' && github.ref == 'refs/heads/main'
+    && 'production' || github.run_id }}
+  cancel-in-progress: false
 jobs:
   static:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,3 +33,141 @@ jobs:
       - run: python3 scripts/check-website.py
       - run: node --check website/dist/app.js
       - run: sh -n install.sh
+
+  deploy:
+    needs: static
+    # Validated pushes to, or manual runs on, main in the canonical repository only.
+    # Pull requests (including same-repository ones), other branches, tags and
+    # forks never reach this job or its secrets. A failed check skips it.
+    if: >-
+      github.repository == 'jaredchu/proclease'
+      && github.ref == 'refs/heads/main'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    environment:
+      name: production
+      url: https://proclease.com/
+    steps:
+      # Expression comparisons ignore case; require the exact canonical ref here.
+      - name: Confirm production ref
+        shell: bash
+        run: |
+          [ "$GITHUB_REPOSITORY" = jaredchu/proclease ] && [ "$GITHUB_REF" = refs/heads/main ] \
+            || { echo "::error::Deploys only from jaredchu/proclease refs/heads/main"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      - name: Check release pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          ua='proclease-website-deploy/1.0 (+https://github.com/jaredchu/proclease)'
+          fail() { echo "::error::$*"; exit 1; }
+          version=$(sed -n 's/^ *version=\(v[0-9][0-9.]*\)$/\1/p' install.sh)
+          [ -n "$version" ] && [ "$(printf '%s\n' "$version" | wc -l)" -eq 1 ] \
+            || fail "install.sh must declare exactly one version=vX.Y.Z"
+          pins=$(grep -ohE 'releases/(download|tag)/v[0-9][0-9.]*|proclease-v[0-9][0-9.]*-' \
+            install.sh website/dist/index.html website/dist/app.js \
+            | sed -E 's#^releases/(download|tag)/##; s#^proclease-##; s#-$##' | sort -u) || pins=
+          [ "$pins" = "$version" ] || fail "release pins disagree with install.sh $version: $(echo $pins)"
+          platforms=$(grep -oE 'name="platform" value="[^"]+"' website/dist/index.html | cut -d'"' -f4) || platforms=
+          [ "$(printf '%s\n' "$platforms" | grep -c .)" -eq 4 ] || fail "expected four platform choices"
+          base=https://github.com/jaredchu/proclease/releases/download/$version
+          sums=$(curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            --max-time 30 --retry 3 --user-agent "$ua" "$base/SHA256SUMS") \
+            || fail "$base/SHA256SUMS is not published"
+          for platform in $platforms; do
+            name=proclease-$version-$platform.tar.gz
+            # Literal filename match; '.' in the name must not act as a wildcard.
+            printf '%s\n' "$sums" | awk -v name="$name" \
+              '$2 == name && length($1) == 64 && $1 !~ /[^0-9a-f]/ { found = 1 } END { exit !found }' \
+              || fail "SHA256SUMS for $version does not list $name"
+            curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+              --max-time 30 --retry 3 --user-agent "$ua" --range 0-0 --output /dev/null "$base/$name" \
+              || fail "$base/$name is not downloadable"
+          done
+          echo "Pins use published $version with four listed, downloadable archives"
+
+      # Concurrency serializes runs but does not order them, and a re-run keeps its
+      # original commit. Immediately before deploying, require this commit to be the
+      # current head of canonical main. A stale commit skips deployment and live
+      # verification; a lookup error fails the job rather than permitting a deploy.
+      - name: Confirm commit is current main
+        id: freshness
+        timeout-minutes: 2
+        shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: '0'
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          remote=https://github.com/jaredchu/proclease.git
+          refs=$(timeout 60 git -c credential.helper= ls-remote --exit-code -- "$remote" refs/heads/main) \
+            || fail "Could not read refs/heads/main from $remote; not deploying"
+          head=$(printf '%s\n' "$refs" | awk -F '\t' '$2 == "refs/heads/main" { print $1 }')
+          [ "$(printf '%s\n' "$head" | grep -c .)" -eq 1 ] && [[ $head =~ ^[0-9a-f]{40}$ ]] \
+            || fail "Unexpected refs/heads/main lookup result; not deploying"
+          checkout=$(git rev-parse HEAD)
+          [ "$checkout" = "$GITHUB_SHA" ] || fail "Checkout $checkout differs from $GITHUB_SHA"
+          if [ "$head" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+            echo "$GITHUB_SHA is the current head of main"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping deployment and live verification: $GITHUB_SHA is no longer the head of main ($head). The run for the newer push deploys it; if none is queued, run this workflow manually on main."
+          fi
+
+      - name: Deploy static Worker
+        if: steps.freshness.outputs.current == 'true'
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.113.0'
+          packageManager: npm
+          command: deploy --config website/wrangler.toml
+
+      # Cloudflare rejects default library signatures; use curl with an identifying agent.
+      # Up to 12 passes over every file (20s per request, 10s between passes), hard
+      # limited to 3 minutes; the shared 15-minute job limit can end it earlier.
+      - name: Verify live files match this commit
+        if: steps.freshness.outputs.current == 'true'
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -euo pipefail
+          ua='proclease-website-deploy/1.0 (+https://github.com/jaredchu/proclease)'
+          body=$RUNNER_TEMP/live-body
+          files=()
+          while IFS= read -r -d '' file; do files+=("$file"); done < <(git ls-files -z -- website/dist)
+          for required in website/dist/index.html website/dist/install.sh; do
+            printf '%s\n' "${files[@]}" | grep -qx "$required" \
+              || { echo "::error::$required is not tracked"; exit 1; }
+          done
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            failed=()
+            for file in "${files[@]}"; do
+              path=${file#website/dist/}
+              if [ "$path" = index.html ]; then url=https://proclease.com/; else url=https://proclease.com/$path; fi
+              if ! curl --fail --silent --show-error --proto '=https' --max-time 20 \
+                  --user-agent "$ua" --header 'Cache-Control: no-cache' --output "$body" "$url" \
+                  || ! cmp -s "$body" "$file"; then
+                failed+=("$url")
+              fi
+            done
+            if [ "${#failed[@]}" -eq 0 ]; then
+              echo "All ${#files[@]} live files match $GITHUB_SHA, including / and /install.sh"
+              exit 0
+            fi
+            echo "Attempt $attempt/12: ${#failed[@]} file(s) failed or differ: ${failed[*]}"
+            [ "$attempt" -lt 12 ] && sleep 10
+          done
+          echo "::error::Live site does not match $GITHUB_SHA after 12 attempts; see the log above"
+          exit 1

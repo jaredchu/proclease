@@ -29,28 +29,89 @@ at 320 and 390 pixels.
 
 ## Publish
 
-Use an authorized Cloudflare login and explicitly select the account that owns
-the domain through `CLOUDFLARE_ACCOUNT_ID`; keep credentials out of this repository.
-After checks and review, deploy the committed static files:
+[`website.yml`](../.github/workflows/website.yml) deploys automatically. Pull
+requests that touch the website, installer, website checker or workflow run the
+static checks; feature branches are validated through those pull requests. Every
+push to `main` in `jaredchu/proclease` runs the checks and, when they pass,
+deploys `dist/` with `wrangler deploy --config website/wrangler.toml`, even when
+the push changes no website files. Merging reviewed changes to main therefore
+publishes the current site to proclease.com. That covers this static Worker
+only. GitHub releases, crates, DNS, new domains and global skill installation
+keep their own scope; see [the release procedure](../docs/releasing.md).
 
-```sh
-wrangler deploy --config website/wrangler.toml
-```
+The deploy job never runs for pull requests (including same-repository ones),
+other branches, tags or forks, and does not run when checks fail. It first
+requires the exact canonical repository and `refs/heads/main`, because workflow
+expression comparisons ignore case. Before deploying, it checks that every
+release pin in `install.sh`, `index.html` and `app.js` names the installer's
+version, and that its published `SHA256SUMS` lists four downloadable archives.
 
-Check the live page, installer bytes and links to published release assets.
+Main runs share one concurrency group: one runs at a time, an in-flight run is
+not cancelled, and a newer pending run replaces an older pending one. GitHub
+does not guarantee that this queue follows push order, and a re-run keeps its
+original commit. After the pin check and before the Wrangler action (which installs the CLI),
+the job reads the current `refs/heads/main` from GitHub. If the run's commit is no longer
+the head of main, it skips deployment and live verification with a notice; the
+run for the newer push deploys it. If no newer run is queued, for example after
+GitHub replaced it while pending, run the workflow manually on `main`. If the
+lookup fails or returns an unexpected result, the job fails without deploying. A push that lands after this check is
+deployed by its own run, which waits for the current one.
+
+A stale skip can still create a green GitHub environment record. To confirm
+publication, check that both "Deploy static Worker" and "Verify live files match
+this commit" ran successfully; the environment badge alone is insufficient.
+
+After deploying, the job fetches every tracked `dist/` file from proclease.com,
+including `/` and `/install.sh`, and requires bytes identical to the commit.
+Each pass requests every file in turn, allowing 20 seconds per request, and
+waits 10 seconds before retrying failed passes, up to 12 passes. The step is
+hard-limited to 3 minutes and fails when that limit or the last pass is reached;
+the deploy job's 15-minute limit, shared with setup, the pin check and the
+deployment, can end it earlier.
+
+The Wrangler action is pinned to a full commit SHA and Wrangler to an exact
+version; update them deliberately.
+
+### Credentials
+
+Deployment uses two secrets of the `production` GitHub environment, referenced
+only by the deploy step:
+
+- `CLOUDFLARE_API_TOKEN`: an account-owned Cloudflare API token limited to the
+  one account that owns the `proclease-site` Worker, with Workers Scripts Write
+  on that account and Workers Routes Write plus Zone Read on the `proclease.com`
+  zone. Grant no other accounts, zones, DNS, billing or unrelated permissions.
+- `CLOUDFLARE_ACCOUNT_ID`: that account's ID.
+
+Create the `production` environment with a deployment-branch rule allowing only
+`main`, and store both values there rather than as repository secrets. That rule
+also keeps a workflow edited on another branch from reaching them. See Cloudflare's
+[GitHub Actions guide](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/).
+Never commit credentials or print them in logs.
+
+To rotate, create the replacement token, update the environment secret, run the
+workflow manually on `main` and then revoke the old token. If a deployment fails
+or must be repeated, fix the cause and run the workflow manually with `main`
+selected; that run uses the current head of main. Re-running an older run
+deploys only if its commit is still the head of main; otherwise it skips. A
+manual run on another branch checks without deploying. A local Wrangler
+deployment is not part of the normal process; it needs its own authorization,
+should deploy only the current main commit and must be followed by the same live
+checks.
+
 Use curl or an identifying application User-Agent for automated HTTP checks;
 Cloudflare's Browser Integrity Check rejects the default Python `urllib` signature.
 See [Cloudflare's explanation](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1010/).
 Release links and the installer are pinned to the published v0.1.5 prerelease.
-Update those pins together for a future release, and publish its matching
-release assets before deploying the website.
-See [the release procedure](../docs/releasing.md).
+Update those pins together for a future release, and merge them to main only
+after its matching release assets are public; the pin check blocks deployment
+otherwise. See [the release procedure](../docs/releasing.md).
 
 The hero intro and the "Why choose ProcLease?" FAQ link to the source-backed
-[comparison](../docs/comparison.md) on main. It describes released behavior and
-does not advertise the unreleased readiness wait; keep any later readiness copy
-marked as source-only until a release ships it. Deploying this FAQ requires its
-own publication scope.
+[comparison](../docs/comparison.md) on main. It describes released v0.1.5
+behavior and does not advertise the unreleased readiness wait, so it can be
+published without a new release. Keep any later readiness copy marked as
+source-only until a release ships it.
 
 ## Identity and type
 

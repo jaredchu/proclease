@@ -33,6 +33,14 @@ verification limits.
   macOS/Linux binaries and checksums, then build and publish `proclease.com` with
   installation, a terminal demo, skill setup and GitHub links. This supersedes the
   earlier deferral of GitHub releases and website deployment.
+- **Owner-requested, 2026-11-08:** deploy the website automatically. Every
+  validated push to main in the canonical repository, or a manual workflow run on
+  current main, publishes proclease.com; this standing rule is recorded in
+  [AGENTS.md](../AGENTS.md). A run whose commit is no longer the head of main
+  skips deployment. Binary releases, crates, domains, DNS and global skill
+  installation keep separate scope. The
+  [website publication procedure](../website/README.md#publish) records the
+  gating, freshness check, credential scope and live checks.
 - **Owner requirement:** improve on existing tools rather than duplicate a generic
   supervisor. Expiry, explicit extension, reliable cleanup and agent usability are
   the focus. Research found substantial overlap with
@@ -82,7 +90,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    Scoped bulk `stop --all` and retention protection released in v0.1.5
 |-- DONE    v0.1.5 four-native/registry/website release and fresh installs verified
 |-- SOURCE  Optional run readiness wait; unreleased, reviewed and locally verified
-`-- SOURCE  Source-backed comparison, homepage intro and FAQ; website not redeployed
+|-- SOURCE  Source-backed comparison, homepage intro and FAQ; website not redeployed
+`-- PENDING Website auto-deploy from current main configured; first live run unverified
 ```
 
 The [v0.1.5 publication](verification.md#v015-publication-2026-11-08) packages bulk
@@ -137,11 +146,19 @@ Owner-authorized on 2026-11-08 and unreleased: optional `run --wait-for-port`,
 ownership or health effect. The interface uses loopback-only TCP, literal text, a
 30s default and a 5m maximum. The same task added a source-backed
 [comparison](comparison.md) with GNU timeout, systemd-run and rentctl and a
-revised homepage intro and FAQ linking it. Both are in source only; v0.1.5 and
-the live website do not include them.
+revised homepage intro and FAQ linking it. The readiness wait is source-only and
+absent from v0.1.5. The homepage changes describe released v0.1.5 behavior, so
+they can be published without a new release; the live website does not yet
+include them.
 [Verification](verification.md#readiness-wait-and-comparison-unreleased-source-2026-11-08)
 records 62 local tests, default Rust 1.89 package installation, independent review
 and browser checks, with their limits.
+
+[Automatic website deployment](verification.md#website-automatic-deployment-2026-11-08)
+is configured in source and locally validated, including a freshness check that
+skips runs whose commit is no longer the head of main. The production environment
+and its scoped Cloudflare secrets are configured. Its first live run, which would
+publish the homepage changes, has not yet been verified.
 
 The recent-job window and resource presentation are implementation choices for
 terminal usability. Resource reads never extend leases.

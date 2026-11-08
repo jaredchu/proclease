@@ -780,6 +780,77 @@ not an atomic health guarantee.
 The [comparison](comparison.md) cites primary sources retrieved on 2026-11-08
 with their manual labels, tag or commit. It compares documented behavior only.
 
+## Website automatic deployment, 2026-11-08
+
+The [website workflow](../.github/workflows/website.yml) runs its static checks
+for website pull requests and every main push and adds a production deploy job,
+described in the
+[website publication procedure](../website/README.md#publish). The job uses
+`cloudflare/wrangler-action` v4.1.3 pinned to commit
+`953926a2e2182532811c01a25e53647d93bf07c0`, Wrangler 4.113.0 and Node 24, with
+`actions/checkout` v7.0.1 (`3d3c42e5aac5ba805825da76410c181273ba90b1`) and
+`actions/setup-node` v7.1.0 (`949feb2413d6458794dcd2491c4babbbce0c15c1`). Each
+SHA was resolved from its upstream tag and its pinned `action.yml` declares
+the `node24` runtime. Wrangler 4.113.0 requires Node 22 or newer.
+
+Local checks before the first live run:
+
+- The workflow parses as YAML. Only the deploy step references secrets; the deploy
+  job has `contents: read`, a 15-minute timeout and the `production` environment.
+- A local evaluator applying GitHub's case-insensitive string comparison and
+  implicit `success()` ran the deploy condition for same-repository and fork
+  pull requests, feature and tag pushes, a fork's main push, a manual run on
+  another branch and a push whose checks failed: none deploy. Main pushes and
+  manual runs on main deploy. A branch named `Main` passes the expression but
+  fails the exact-ref guard before checkout.
+- The pin check passed for the v0.1.5 sources and failed with specific errors
+  for a mismatched `app.js` pin and an unpublished version. After review it
+  restricts release redirects to HTTPS and matches checksum filenames literally;
+  the revised check passed again against the published v0.1.5 assets, and a
+  filename differing only where the version has `.` was rejected.
+- The live-file check, run with fewer retries, passed against the deployed v0.1.5
+  website files (all twelve identical) and failed on the current homepage, the
+  only changed file since that release.
+- The website checker, JavaScript syntax and installer syntax checks passed.
+
+Independent review found that concurrency alone does not order runs and that
+a re-run keeps its original commit, so an old run could restore older files. It
+also found the documented two-minute live-check bound understated. Corrections:
+
+- Every main push now triggers the workflow, including unrelated changes, so
+  those changes also queue a replacement. Pull requests keep the website path filter.
+- After the pin check and before the Wrangler action, the job reads the current
+  `refs/heads/main` over public HTTPS with `git ls-remote`, without credentials.
+  Deployment and live verification require its output `current=true`.
+- The live check is limited to 3 minutes per step; the README describes the
+  per-request limits and pass pattern.
+
+A local harness re-ran the trigger and gate cases with this trigger model. A main
+push without website changes now triggers and deploys; a pull request touching only
+Rust source does not trigger. It then executed the freshness step with a mock
+`git` returning fixed main heads. A current commit set `current=true`. A stale
+re-run and a stale queued push after a non-website main advance set
+`current=false` with a skip notice, and the newer run's commit was current. A
+network error, missing ref, malformed SHA or checkout mismatch failed the step.
+An exact `refs/heads/main` line was selected over a tail-matching decoy ref. With
+`current` false or unset, neither the deploy nor the live-check step runs. One
+real read-only lookup matched the local baseline commit to the current main head.
+The workflow still parsed as YAML, every `run` step passed `bash -n`, and
+`git diff --check` passed.
+
+Outside the repository, the `production` environment exists with a main-only
+deployment-branch rule and holds both Cloudflare values as environment secrets,
+with no repository-level copies. The account-owned token is scoped as the README
+describes; its creation and read access to the Worker and zone were confirmed
+with a separate Cloudflare CLI, not by a deployment.
+
+Independent focused follow-up reviews accepted the corrections with no unresolved
+material finding. These checks do not prove the hosted run, the token's sufficiency for deployment
+or GitHub's queue behavior. If GitHub cancels a newer pending run in favor
+of an older one, the older run skips as stale and a manual run on main is needed
+to deploy the head. The first live deployment from main is pending and will be
+recorded once verified.
+
 ## Filesystem compatibility
 
 A Linux rerun using a macOS-to-Linux OrbStack bind mount failed intermittently

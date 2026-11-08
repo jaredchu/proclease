@@ -10,7 +10,10 @@ any that remain. No cross-compiled binary is
 represented as runtime-tested.
 Tag pushes build and draft a release. Relevant pull requests and manual workflow
 runs validate the archives without publishing; ordinary main pushes use the
-normal Rust and website checks.
+normal Rust and website checks. Every main push also deploys the current website
+automatically; see [website publication](../website/README.md#publish).
+Website-only updates that keep the existing release pins need no binary or crate
+release.
 
 For a new release:
 
@@ -19,7 +22,9 @@ For a new release:
    shared skill and website; preserve the normal contributor attribution.
    These pins name assets that exist only after publication, so keep the
    candidate on its own branch; merge it to main only when the release is public.
-2. Commit and push the reviewed source, then tag that exact commit `vVERSION`.
+   Merging to main deploys the website, and its pin check fails before deployment
+   if the release assets are not yet public.
+2. Commit and push the reviewed candidate branch, then tag that exact commit `vVERSION`.
    Tag builds must all pass before the workflow assembles `SHA256SUMS` and creates
    a **draft prerelease** titled `ProcLease vVERSION experimental preview`, with
    four archives, their checksums and `install.sh`.
@@ -28,8 +33,11 @@ For a new release:
    a successful Cargo build alone does not prove stripping succeeded.
    Test the host-native archive/installer in isolated state. Publish the draft
    only after those checks pass; keep the experimental/prerelease flag.
-4. Publish the matching website from its committed source and verify anonymous
-   HTTPS access to the page, installer and release downloads.
+4. Merge the candidate to main. The website workflow deploys it automatically,
+   then verifies the live files; also confirm anonymous HTTPS access to the
+   page, installer and release downloads. If deployment fails, fix the cause
+   (through main if it is in source) and run the website workflow manually on
+   current main.
 
 Release archives include `proclease`, the portable skill, README and MIT license.
 The packaging checks use Python 3.12 or newer, supplied in CI; users do not need

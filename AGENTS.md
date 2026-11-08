@@ -15,6 +15,7 @@ Read `README.md`, `docs/project-context.md`, and the affected source before chan
   implementation, validation or review with the specified trailers exactly once,
   and do not rewrite published history solely for attribution.
 - Domain, DNS, publishing, package releases and global skill installation require their own task scope. A local commit does not publish the project.
+- Standing exception for this repository's website only: pushing or merging reviewed changes to `main`, or manually dispatching the website workflow on current `main`, automatically deploys proclease.com through [`website.yml`](.github/workflows/website.yml). Do not deploy other refs or other repositories this way. GitHub and binary releases, crates, domains, DNS and global skill installation keep separate scope; see [website publication](website/README.md#publish).
 
 ## Context maintenance
 
