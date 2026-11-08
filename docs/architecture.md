@@ -168,7 +168,7 @@ permission failure, and the keeper/CLI merge the marker into final/read status.
 This accounts for output emitted after TERM without making the guardian perform
 its final capture snapshot before the grace period.
 
-## Readiness observation (unreleased source)
+## Readiness observation (v0.1.6 and later)
 
 `run --wait-for-port/--wait-for-log` is a CLI-side observation after launch, not
 lifecycle state. The launch lock is released before waiting. Lifecycle authority
@@ -249,7 +249,7 @@ concurrent retries, private state and launch-context inheritance. Startup
 regressions cover argument/environment fingerprint separation and earlier-format
 records, overdue leases, guardian setup failure and failed keeper spawn.
 
-Readiness regressions (unreleased source) cover delayed TCP success, literal log
+Readiness regressions cover delayed TCP success, literal log
 text across chunk boundaries, both criteria, timeout with an unchanged deadline,
 a port that closed before the log matched, no success after an exhausted budget,
 a FIFO at the capture path failing without blocking, early exit and expiry before

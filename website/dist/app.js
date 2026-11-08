@@ -1,4 +1,4 @@
-const release = "https://github.com/jaredchu/proclease/releases/download/v0.1.5/";
+const release = "https://github.com/jaredchu/proclease/releases/download/v0.1.6/";
 const command = document.querySelector("#install-command");
 const feedback = document.querySelector("#copy-feedback");
 const download = document.querySelector("#download");
@@ -25,7 +25,7 @@ function updateCommand() {
     (agent === "none" ? "" : " -s -- --skills " + agent);
 }
 function updateDownload() {
-  download.href = release + "proclease-v0.1.5-" + checked("platform") + ".tar.gz";
+  download.href = release + "proclease-v0.1.6-" + checked("platform") + ".tar.gz";
 }
 // Sync with any choice the browser restored before this script ran.
 updateCommand();

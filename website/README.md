@@ -102,16 +102,15 @@ checks.
 Use curl or an identifying application User-Agent for automated HTTP checks;
 Cloudflare's Browser Integrity Check rejects the default Python `urllib` signature.
 See [Cloudflare's explanation](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1010/).
-Release links and the installer are pinned to the published v0.1.5 prerelease.
+Release links and the installer are pinned to the v0.1.6 prerelease.
 Update those pins together for a future release, and merge them to main only
 after its matching release assets are public; the pin check blocks deployment
 otherwise. See [the release procedure](../docs/releasing.md).
 
 The hero intro and the "Why choose ProcLease?" FAQ link to the source-backed
-[comparison](../docs/comparison.md) on main. It describes released v0.1.5
-behavior and does not advertise the unreleased readiness wait, so it can be
-published without a new release. Keep any later readiness copy marked as
-source-only until a release ships it.
+[comparison](../docs/comparison.md) on main. The homepage describes explicit
+expiry and scoped cleanup. Optional bounded readiness checks ship in v0.1.6;
+the README and shared skill document their observation-only limits.
 
 ## Identity and type
 

@@ -89,7 +89,7 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    Tabler SVG interface icons and restored arrows verified across three browsers
 |-- DONE    Scoped bulk `stop --all` and retention protection released in v0.1.5
 |-- DONE    v0.1.5 four-native/registry/website release and fresh installs verified
-|-- SOURCE  Optional run readiness wait; unreleased, reviewed and locally verified
+|-- READY   v0.1.6 candidate includes reviewed bounded readiness checks
 |-- DONE    Source-backed comparison and homepage positioning published
 `-- DONE    Website auto-deploy from current main verified against live bytes
 ```
@@ -141,15 +141,15 @@ adds a reviewed process-lifetime retention lock and regressions. All 51 tests,
 formatting, Clippy and optimized builds pass locally and in hosted macOS/Ubuntu
 checks; both default Rust 1.89 package installations pass.
 
-Owner-authorized on 2026-11-08 and unreleased: optional `run --wait-for-port`,
+Owner-authorized on 2026-11-08 and prepared for v0.1.6: optional `run --wait-for-port`,
 `--wait-for-log` and `--wait-timeout` readiness observation, with no lease,
 ownership or health effect. The interface uses loopback-only TCP, literal text, a
 30s default and a 5m maximum. The same task added a source-backed
 [comparison](comparison.md) with GNU timeout, systemd-run and rentctl and a
-revised homepage intro and FAQ linking it. The readiness wait is source-only and
-absent from v0.1.5. The homepage changes describe released v0.1.5 behavior, so
-they were published by the first automatic website deployment without a new
-release.
+revised homepage intro and FAQ linking it. Readiness is absent from v0.1.5.
+The homepage changes were published by the first automatic website deployment
+without a new release. The v0.1.6 release branch updates installer, downloads
+and skill guidance; publication and installation verification are pending.
 [Verification](verification.md#readiness-wait-and-comparison-unreleased-source-2026-11-08)
 records 62 local tests, default Rust 1.89 package installation, independent review
 and browser checks, with their limits.

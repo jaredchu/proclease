@@ -19,9 +19,10 @@ different scope; check the linked primary sources for the version you run.
   [`a64f6a1`](https://github.com/Michael-Drake/rentctl/tree/a64f6a18733b9b678ffe91c3363a640f5417adb8)
   at retrieval. The rendered GitHub page can lag the raw file.
 - **ProcLease**: this repository's [README](../README.md) and
-  [architecture](architecture.md). The matrix covers released v0.1.5 behavior
-  only; unreleased features, such as the source-only readiness wait, are excluded
-  until they ship.
+  [architecture](architecture.md). The matrix covers v0.1.6 behavior. Optional
+  bounded readiness observation is documented in the
+  [README](../README.md#readiness-wait); it does not renew the lease or prove
+  application health.
 
 ## Matrix
 

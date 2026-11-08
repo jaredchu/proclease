@@ -55,7 +55,7 @@ launching. Never move or copy a live job's state to make it appear elsewhere.
 - Read the returned job ID, state and expiry. `running` means the executable
   started; verify application readiness separately using bounded logs and the
   intended local URL. `--url` is caller-supplied metadata, not a readiness check.
-- Builds newer than 0.1.5 (unreleased source) may offer `--wait-for-port PORT`,
+- ProcLease 0.1.6 and later offers `--wait-for-port PORT`,
   `--wait-for-log TEXT` and `--wait-timeout DURATION` on `run`. Use them only if
   `proclease run --help` lists them. They observe loopback TCP or literal output
   without changing the lease. On a nonzero readiness result, keep the returned
