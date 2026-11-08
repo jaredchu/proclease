@@ -168,6 +168,8 @@ permission failure, and the keeper/CLI merge the marker into final/read status.
 This accounts for output emitted after TERM without making the guardian perform
 its final capture snapshot before the grace period.
 
+<a id="readiness-observation-unreleased-source"></a>
+
 ## Readiness observation (v0.1.6 and later)
 
 `run --wait-for-port/--wait-for-log` is a CLI-side observation after launch, not

@@ -50,10 +50,10 @@ verification limits.
 - **Implementation choice:** use proven Rust/Unix primitives and per-job supervisors
   launched in the caller's execution context. Avoid a login-wide service accepting
   arbitrary execution requests from potentially restricted agents.
-- **Publication:** the experimental [v0.1.5 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.5)
+- **Publication:** the experimental [v0.1.6 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.6)
   provides four native binaries, checksums and a verified installer. The CLI
-  source is also published on [crates.io](https://crates.io/crates/proclease/0.1.5),
-  with a [docs.rs overview](https://docs.rs/crate/proclease/0.1.5). The public
+  source is also published on [crates.io](https://crates.io/crates/proclease/0.1.6),
+  with a [docs.rs overview](https://docs.rs/crate/proclease/0.1.6). The public
   [website](https://proclease.com) serves static assets through a Cloudflare Worker;
   [website source and deployment](../website/README.md) are maintained here.
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
@@ -89,7 +89,7 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    Tabler SVG interface icons and restored arrows verified across three browsers
 |-- DONE    Scoped bulk `stop --all` and retention protection released in v0.1.5
 |-- DONE    v0.1.5 four-native/registry/website release and fresh installs verified
-|-- READY   v0.1.6 candidate includes reviewed bounded readiness checks
+|-- DONE    v0.1.6 bounded readiness checks, four-native/registry release and installs
 |-- DONE    Source-backed comparison and homepage positioning published
 `-- DONE    Website auto-deploy from current main verified against live bytes
 ```
@@ -141,15 +141,18 @@ adds a reviewed process-lifetime retention lock and regressions. All 51 tests,
 formatting, Clippy and optimized builds pass locally and in hosted macOS/Ubuntu
 checks; both default Rust 1.89 package installations pass.
 
-Owner-authorized on 2026-11-08 and prepared for v0.1.6: optional `run --wait-for-port`,
+Owner-authorized and released in v0.1.6 on 2026-11-08: optional `run --wait-for-port`,
 `--wait-for-log` and `--wait-timeout` readiness observation, with no lease,
 ownership or health effect. The interface uses loopback-only TCP, literal text, a
 30s default and a 5m maximum. The same task added a source-backed
 [comparison](comparison.md) with GNU timeout, systemd-run and rentctl and a
 revised homepage intro and FAQ linking it. Readiness is absent from v0.1.5.
 The homepage changes were published by the first automatic website deployment
-without a new release. The v0.1.6 release branch updates installer, downloads
-and skill guidance; publication and installation verification are pending.
+without a new release. The [v0.1.6 publication](verification.md#v016-publication-2026-11-08) ships
+readiness with matching installer, downloads and skill guidance. Four native
+builds passed all 62 tests; fresh binary and default Rust 1.89 registry installs
+passed readiness, keyed-retry/deadline and expiry checks. The main push deployed
+the website automatically and all twelve live files matched the release commit.
 [Verification](verification.md#readiness-wait-and-comparison-unreleased-source-2026-11-08)
 records 62 local tests, default Rust 1.89 package installation, independent review
 and browser checks, with their limits.

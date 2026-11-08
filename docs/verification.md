@@ -861,6 +861,56 @@ run with an older one, the older run skips as stale and a fresh manual run on
 main may be needed. A green environment record alone is insufficient; the
 deployment and live-check steps must both have run successfully.
 
+## v0.1.6 publication, 2026-11-08
+
+The experimental [v0.1.6 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.6)
+ships the reviewed readiness checks at commit `d1a2334`. Release preparation
+changed version pins and documentation; runtime/test source, dependencies and
+the Rust 1.89 minimum match the reviewed main branch. Independent release review
+found no blocker. Both `v0.1.6` and `crates-v0.1.6` identify this commit; the older
+v0.1.5 release and all ten asset identities, sizes and digests remain unchanged.
+
+The [four-native release run](https://github.com/jaredchu/proclease/actions/runs/42447134933)
+passed formatting, Clippy, all 14 unit/48 integration tests, optimized builds,
+archive expiry and installer-corruption checks on macOS ARM64/Intel and Linux
+ARM64/x64. All ten draft assets had expected names, safe archive contents,
+matching README/skill/license/installer bytes and matching individual/combined
+SHA-256 checksums. Anonymous public downloads matched the inspected draft.
+Hosted logs contain no stripping failure; both ELF files report stripped, and
+both Mach-O files have no Rust-mangled symbols and a macOS 15.0 minimum. ARM
+strict ad hoc signature verification passed; Intel is unsigned. Developer ID
+signing/notarization remains deferred for experimental releases and required
+before stable promotion. A local bootstrap-toolchain stripping warning was not
+used as evidence about the shipped binaries.
+
+The clean 17-file source package has SHA-256
+`d63c05d294b065422094c8bd0bb044f7ce5ad7329ac1b15d153879892f4cedbf`
+and VCS provenance at the release commit. Extracted-package tests, default
+Rust 1.89 package installation and publication dry run passed. The published
+[crates.io package](https://crates.io/crates/proclease/0.1.6) matches that checksum
+and provenance. Fresh default Cargo 1.89 registry installation passed without
+profile overrides; the [docs.rs overview](https://docs.rs/crate/proclease/0.1.6)
+serves the readiness README. The
+[main Rust checks](https://github.com/jaredchu/proclease/actions/runs/42447485633)
+passed both hosted platform suites and both default minimum-Rust installs.
+
+Native-archive, published-installer, registry and upgraded-CLI smoke tests
+confirmed loopback plus literal-log readiness, a nonzero timeout that leaves
+the job supervised, keyed retries with the same job/deadline, unchanged JSON
+without readiness flags, expiry and supervisor completion. Fresh installer
+tests also verified both host skill links and exact archive binary/skill bytes.
+No already-running job or watch was restarted by installation.
+
+Main was fast-forwarded only after the assets were public. The automatic
+[website run](https://github.com/jaredchu/proclease/actions/runs/42447485672)
+passed its release-pin and current-main checks, deployed the existing Worker,
+and matched all twelve live files to the release commit. Separate anonymous
+HTTPS checks also matched every file; the live installer fetched the inspected
+native binary. Local Chromium, Firefox and WebKit passed 249 checks of release
+and platform links, copy/skill choices, keyboard/no-JS behavior, expanded FAQs
+and responsive/enlarged text. These are behavior and publication checks, not a
+comparative benchmark.
+
 ## Filesystem compatibility
 
 A Linux rerun using a macOS-to-Linux OrbStack bind mount failed intermittently
