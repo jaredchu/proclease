@@ -56,6 +56,9 @@ verification limits.
   with a [docs.rs overview](https://docs.rs/crate/proclease/0.1.6). The public
   [website](https://proclease.com) serves static assets through a Cloudflare Worker;
   [website source and deployment](../website/README.md) are maintained here.
+- **Website attribution, 2026-11-09:** the creator link points to Jared Chu’s
+  canonical CV; the matching structured author links the CV and GitHub identity.
+  Product copy, project links and Codex/Claude contribution credit are retained.
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
   proxying, auto-restart and hosted dashboards.
 
