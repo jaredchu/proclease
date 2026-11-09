@@ -1,6 +1,6 @@
 # ProcLease project context
 
-Last reviewed: 2026-11-08.
+Last reviewed: 2026-11-09.
 
 ## Purpose and scope
 
@@ -91,7 +91,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    v0.1.5 four-native/registry/website release and fresh installs verified
 |-- DONE    v0.1.6 bounded readiness checks, four-native/registry release and installs
 |-- DONE    Source-backed comparison and homepage positioning published
-`-- DONE    Website auto-deploy from current main verified against live bytes
+|-- DONE    Website auto-deploy from current main verified against live bytes
+`-- DONE    GitHub description, eleven relevant topics and custom social preview
 ```
 
 The [v0.1.5 publication](verification.md#v015-publication-2026-11-08) packages bulk
@@ -171,11 +172,17 @@ Context maintenance is adopted in `AGENTS.md`, reached by `CLAUDE.md` import.
 Instruction-discovery evidence and limits are recorded in
 [verification](verification.md#completed-checks).
 
+The [GitHub discovery metadata](github-discovery.md) records the repository
+description, eleven relevant topics and a custom social preview verified on
+2026-11-09. These GitHub settings are maintained separately from the website;
+no search-ranking or traffic improvement has been measured.
+
 ## Canonical references
 
 - [README and usage](../README.md)
 - [Architecture and lifecycle boundaries](architecture.md)
 - [Comparison with related tools](comparison.md)
+- [GitHub topics, description and social preview](github-discovery.md)
 - [Verification and limits](verification.md)
 - [Shared ProcLease skill](../skills/proclease/SKILL.md)
 - [Contributing and attribution](../CONTRIBUTING.md)

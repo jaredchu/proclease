@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+<title id="title">ProcLease: Development servers. Explicit deadlines.</title>
+<desc id="desc">Rust CLI with Codex and Claude Code skills. TTL expiry, bounded readiness checks and scoped cleanup. proclease.com</desc>
+<defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#202020" stroke-width="1"/></pattern></defs>
+<rect width="1280" height="640" fill="#101010"/><rect x="840" width="440" height="640" fill="url(#grid)"/>
+<path d="M840 0v640" stroke="#303030"/>
+<g transform="translate(64 56) scale(1.5)"><rect width="32" height="32" rx="7" fill="#ececec"/><path d="M16 7.5A8.5 8.5 0 1 1 7.5 16" fill="none" stroke="#121212" stroke-width="3.4"/><path d="M16 3.5v8" stroke="#121212" stroke-width="2.4"/><rect x="13" y="13" width="6" height="6" fill="#121212"/></g>
+<text x="132" y="90" fill="#ededed" font-family="Arial,Helvetica,sans-serif" font-size="31" font-weight="700" letter-spacing="-1">ProcLease</text>
+<text x="64" y="227" fill="#ededed" font-family="Arial,Helvetica,sans-serif" font-size="64" font-weight="700" letter-spacing="-2">Development servers.</text>
+<text x="64" y="303" fill="#9c9c9c" font-family="Arial,Helvetica,sans-serif" font-size="64" font-weight="700" letter-spacing="-2">Explicit deadlines.</text>
+<text x="66" y="371" fill="#b4b4b4" font-family="Arial,Helvetica,sans-serif" font-size="26">Rust CLI · Codex + Claude Code skills</text>
+<g fill="none" stroke="#454545"><rect x="64" y="421" width="151" height="46"/><rect x="227" y="421" width="242" height="46"/><rect x="481" y="421" width="205" height="46"/></g>
+<g fill="#d0d0d0" font-family="Arial,Helvetica,sans-serif" font-size="20"><text x="84" y="451">TTL expiry</text><text x="247" y="451">Readiness checks</text><text x="501" y="451">Scoped cleanup</text></g>
+<path d="M64 525h712" stroke="#303030"/><text x="64" y="577" fill="#b4b4b4" font-family="Arial,Helvetica,sans-serif" font-size="22">proclease.com</text>
+<g transform="translate(918 208) scale(8.5)"><path d="M16 7.5A8.5 8.5 0 1 1 7.5 16" fill="none" stroke="#d0d0d0" stroke-width="3.4"/><path d="M16 3.5v8" stroke="#d0d0d0" stroke-width="2.4"/><rect x="13" y="13" width="6" height="6" fill="#d0d0d0"/></g>
+<text x="888" y="565" fill="#9c9c9c" font-family="Arial,Helvetica,sans-serif" font-size="18" letter-spacing="2">EXPLICIT LIFETIMES</text></svg>
