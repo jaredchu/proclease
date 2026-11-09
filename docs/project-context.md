@@ -59,6 +59,11 @@ verification limits.
 - **Website attribution, 2026-11-09:** the creator link points to Jared Chu’s
   canonical CV; the matching structured author links the CV and GitHub identity.
   Product copy, project links and Codex/Claude contribution credit are retained.
+- **Website canonical address, 2026-11-09:** owner-requested HTTPS and `www`
+  redirects send HTTP apex and HTTP/HTTPS `www` requests to
+  `https://proclease.com` with a permanent 301, preserving paths and query strings.
+  Cloudflare zone rules and redirect-only DNS are maintained separately from
+  asset deployment; see [the website procedure](../website/README.md#canonical-url-and-redirects).
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
   proxying, auto-restart and hosted dashboards.
 
@@ -95,6 +100,7 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    v0.1.6 bounded readiness checks, four-native/registry release and installs
 |-- DONE    Source-backed comparison and homepage positioning published
 |-- DONE    Website auto-deploy from current main verified against live bytes
+|-- DONE    HTTPS and www canonical redirects configured at the Cloudflare edge
 `-- DONE    GitHub description, eleven relevant topics and custom social preview
 ```
 

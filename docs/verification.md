@@ -911,6 +911,30 @@ and platform links, copy/skill choices, keyboard/no-JS behavior, expanded FAQs
 and responsive/enlarged text. These are behavior and publication checks, not a
 comparative benchmark.
 
+## HTTPS and www redirects, 2026-11-09
+
+The owner-requested canonical redirects are configured at the Cloudflare edge.
+Independent review accepted the exact-host filter, fixed HTTPS apex target,
+loop exclusion and redirect-only DNS. Server-side validation passed for the
+final `not ssl` filter, and API readback matched the reviewed rule. The active
+zone uses full DNS setup with Universal SSL enabled; existing DNS records and
+zone rulesets were preserved.
+
+Live checks covered HTTP apex, HTTP/HTTPS `www`, and HTTPS apex, with root,
+asset, installer, nested and encoded paths plus repeated/encoded query values.
+Redirects returned 301 directly to `https://proclease.com` with the same path
+and query; HTTPS apex retained its 200/404 responses without a redirect.
+Following redirects for the root, installer and icon reached HTTP 200 in one
+hop, with TLS certificate verification enabled. Authoritative DNS plus
+Cloudflare and Google public resolvers returned the new proxied `www` record.
+The live matrix used Cloudflare DNS-over-HTTPS because the local OS resolver
+initially cached the earlier missing record. This verifies the new public DNS
+and edge behavior; individual client caches can take longer to refresh.
+
+The [website procedure](../website/README.md#canonical-url-and-redirects)
+records the zone rule and DNS configuration. These are separate from asset
+deployment and require no Worker script or extra CI token permissions.
+
 ## Filesystem compatibility
 
 A Linux rerun using a macOS-to-Linux OrbStack bind mount failed intermittently

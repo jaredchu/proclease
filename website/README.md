@@ -10,6 +10,34 @@ The production target is a static-assets-only Cloudflare Worker named
 `proclease.com`; Cloudflare manages its domain binding and TLS. There is no
 server script, database, tracking or account system.
 
+## Canonical URL and redirects
+
+The canonical address is `https://proclease.com`. A Cloudflare zone Single
+Redirect sends HTTP apex requests and both HTTP/HTTPS `www` requests there with
+status 301, preserving the path and query string in one hop. HTTPS apex requests
+continue to the static Worker.
+
+The zone's `http_request_dynamic_redirect` entry point contains an enabled rule
+with this filter:
+
+```text
+(http.host eq "www.proclease.com") or (http.host eq "proclease.com" and not ssl)
+```
+
+Its dynamic target is `concat("https://proclease.com", http.request.uri.path)`,
+with `preserve_query_string: true`. The redirect-only `www` DNS record is a
+proxied AAAA record with content `100::` and automatic TTL, following
+[Cloudflare's redirect-domain guidance](https://developers.cloudflare.com/fundamentals/manage-domains/redirect-domain/).
+Universal SSL supplies the public certificate. The active zone uses full DNS
+setup; `www` does not need a Worker custom-domain binding.
+
+These DNS and zone rules are managed separately from `wrangler.toml`; the website
+workflow deploys assets and does not recreate them. After changing this setup,
+check HTTP apex, HTTP/HTTPS `www`, and HTTPS apex with an identifying curl
+User-Agent. Include a nested path and query string, confirm exactly one redirect
+to the canonical address, and verify HTTPS without disabling certificate checks.
+Public DNS caches can briefly retain an earlier missing-record response.
+
 ## Check and preview
 
 Keep the installer mirror current after editing the root installer:
