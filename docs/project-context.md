@@ -1,6 +1,6 @@
 # ProcLease project context
 
-Last reviewed: 2026-11-09.
+Last reviewed: 2026-11-11.
 
 ## Purpose and scope
 
@@ -101,7 +101,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    Source-backed comparison and homepage positioning published
 |-- DONE    Website auto-deploy from current main verified against live bytes
 |-- DONE    HTTPS and www canonical redirects configured at the Cloudflare edge
-`-- DONE    GitHub description, eleven relevant topics and custom social preview
+|-- DONE    GitHub description, eleven relevant topics and custom social preview
+`-- FIXED   Interrupted shutdown history ages out of default views after verified absence
 ```
 
 The [v0.1.5 publication](verification.md#v015-publication-2026-11-08) packages bulk
@@ -176,6 +177,12 @@ environment and scoped environment secrets restrict publication to main.
 The recent-job window and resource presentation are implementation choices for
 terminal usability. Resource reads never extend leases.
 See [resource units and limits](../README.md#resource-usage).
+The [interrupted-history correction](verification.md#interrupted-history-default-views-2026-11-11)
+is implemented in unreleased source. Once both keeper and managed group are
+verified absent, a saved shutdown record uses its last lifecycle-write time for
+the default recent-job window. Exact completion time remains unknown; metadata,
+JSON and conservative retention are unchanged. Existing v0.1.6 installations
+do not include this correction.
 
 Context maintenance is adopted in `AGENTS.md`, reached by `CLAUDE.md` import.
 Instruction-discovery evidence and limits are recorded in

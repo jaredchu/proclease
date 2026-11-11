@@ -341,7 +341,7 @@ fn select_visible(jobs: &mut Vec<Record>, all: bool, now: u64) {
     jobs.sort_by_key(|r| {
         let rank = if r.state.active() {
             0
-        } else if r.state == State::Unknown || r.finished_at_ms.is_none() {
+        } else if r.state == State::Unknown || r.recent_history_at_ms().is_none() {
             1
         } else {
             2
@@ -355,7 +355,7 @@ fn select_visible(jobs: &mut Vec<Record>, all: bool, now: u64) {
         .iter()
         .filter(|r| !r.state.active() && r.state != State::Unknown)
         .filter_map(|r| {
-            r.finished_at_ms
+            r.recent_history_at_ms()
                 .filter(|&time| time <= now && now - time < 30_000)
                 .map(|time| (time, r.id.clone()))
         })
@@ -365,7 +365,7 @@ fn select_visible(jobs: &mut Vec<Record>, all: bool, now: u64) {
     jobs.retain(|r| {
         r.state.active()
             || r.state == State::Unknown
-            || r.finished_at_ms.is_none()
+            || r.recent_history_at_ms().is_none()
             || recent.iter().any(|(_, id)| id == &r.id)
     });
 }
@@ -891,6 +891,63 @@ mod tests {
             grace_ms: 0,
             log_limit_bytes: 1,
         }
+    }
+
+    #[test]
+    fn interrupted_history_shares_the_recent_window_and_cap() {
+        let template = Record::new(&launch(&strings(&["true"]), Path::new("/work"), "f".into()));
+        let now = 100_000;
+        let mut jobs = Vec::new();
+        for age in 1..=8 {
+            let mut record = template.clone();
+            record.id = format!("{age:012x}");
+            record.state = State::Interrupted;
+            if age % 2 == 0 {
+                record.finished_at_ms = Some(now - age);
+            } else {
+                record.last_lifecycle_write_ms = Some(now - age);
+            }
+            jobs.push(record);
+        }
+        let mut stale = jobs[0].clone();
+        stale.id = "stale".into();
+        stale.last_lifecycle_write_ms = Some(now - 30_000);
+        jobs.push(stale);
+        for (id, state) in [("unknown", State::Unknown), ("active", State::Running)] {
+            let mut record = jobs[0].clone();
+            record.id = id.into();
+            record.state = state;
+            jobs.push(record);
+        }
+        let mut unverified = template;
+        unverified.id = "unverified".into();
+        unverified.state = State::Interrupted;
+        jobs.push(unverified);
+        let mut all = jobs.clone();
+        select_visible(&mut all, true, now);
+        assert_eq!(all.len(), jobs.len());
+        select_visible(&mut jobs, false, now);
+        let mut ids: Vec<_> = jobs.iter().map(|r| r.id.as_str()).collect();
+        ids.sort_unstable();
+        assert_eq!(
+            ids,
+            [
+                "000000000001",
+                "000000000002",
+                "000000000003",
+                "000000000004",
+                "000000000005",
+                "active",
+                "unknown",
+                "unverified"
+            ]
+        );
+        let derived = jobs.iter().find(|r| r.id == "000000000001").unwrap();
+        let json = serde_json::to_value(derived).unwrap();
+        assert!(json["finished_at_ms"].is_null());
+        assert!(json.get("last_lifecycle_write_ms").is_none());
+        let restored: Record = serde_json::from_value(json).unwrap();
+        assert!(restored.last_lifecycle_write_ms.is_none());
     }
 
     #[test]

@@ -326,7 +326,14 @@ current jobs before retrying an old request. Interrupted deletions are retried
 without exposing partial records as launchable jobs.
 Normal `list` and `watch` show active and unverified jobs, plus up to **five newest
 finished jobs for 30 seconds** after completion. Then they leave the everyday
-view. Records without verified completion timestamps remain visible. Use
+view. If interrupted supervision leaves a saved `stopping` record, the default
+view can still hide it once the keeper and managed group are verified absent:
+the record file's last modification time anchors the same 30-second window and
+five-job cap. This is the last lifecycle write, not an exact completion time;
+`finished_at_ms` remains `null` and no lifecycle metadata is rewritten. These
+records remain protected from history collection. Unverified jobs and other
+records without completion timestamps remain visible. An unavailable or
+future modification time also keeps the interrupted record visible. Use
 `list --all` or `watch --all` for retained history;
 this also applies to JSON output. Agents checking completion should use
 `list --all --json`. Hiding a job does not delete its logs or retry identity.

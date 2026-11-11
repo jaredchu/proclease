@@ -92,6 +92,10 @@ pub struct Record {
     pub command_pid: Option<u32>,
     pub exit_code: Option<i32>,
     pub finished_at_ms: Option<u64>,
+    /// Display-only anchor for interrupted shutdown after the keeper and group
+    /// are absent. The last lifecycle write is not an exact completion time.
+    #[serde(skip)]
+    pub last_lifecycle_write_ms: Option<u64>,
     pub log_limit_bytes: u64,
     pub logs_truncated: bool,
     pub error: Option<String>,
@@ -117,6 +121,7 @@ impl Record {
             command_pid: None,
             exit_code: None,
             finished_at_ms: None,
+            last_lifecycle_write_ms: None,
             log_limit_bytes: launch.log_limit_bytes,
             logs_truncated: false,
             error: None,
@@ -137,6 +142,10 @@ impl Record {
     pub fn expires_at(&self) -> String {
         humantime::format_rfc3339_millis(UNIX_EPOCH + Duration::from_millis(self.expires_at_ms))
             .to_string()
+    }
+
+    pub fn recent_history_at_ms(&self) -> Option<u64> {
+        self.finished_at_ms.or(self.last_lifecycle_write_ms)
     }
 }
 

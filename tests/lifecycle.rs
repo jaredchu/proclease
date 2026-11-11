@@ -897,6 +897,134 @@ fn keeper_failure_is_fail_closed() {
     assert_eq!(fixture.terminal(&id)["state"], "interrupted");
     assert_eq!(fixture.call(&["stop", &id])["job"]["state"], "interrupted");
     assert_port_closed(&info);
+
+    let keeper = job["keeper_pid"].as_u64().unwrap() as i32;
+    wait(|| {
+        (unsafe { libc::kill(keeper, 0) } == -1
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH))
+        .then_some(())
+    });
+    let path = fixture.state.join(&id).join("record.json");
+    let persisted = fs::read(&path).unwrap();
+    for view in [&["list"][..], &["watch", "--once"][..]] {
+        let jobs = fixture.call(view);
+        assert_eq!(jobs["jobs"][0]["state"], "interrupted");
+        assert!(jobs["jobs"][0]["finished_at_ms"].is_null());
+    }
+    fs::File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(SystemTime::now() - Duration::from_secs(31))
+        .unwrap();
+    for view in [&["list"][..], &["watch", "--once"][..]] {
+        assert_eq!(fixture.call(view)["jobs"], serde_json::json!([]));
+    }
+    for view in [&["list", "--all"][..], &["watch", "--once", "--all"][..]] {
+        let jobs = fixture.call(view);
+        assert_eq!(jobs["jobs"][0]["id"], id);
+        assert_eq!(jobs["jobs"][0]["state"], "interrupted");
+        assert!(jobs["jobs"][0]["finished_at_ms"].is_null());
+    }
+    assert_eq!(fs::read(&path).unwrap(), persisted);
+    assert_eq!(fixture.call(&["logs", &id])["id"], id);
+    assert!(fixture.call(&["prune", "--dry-run"])["candidates"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn legacy_interrupted_history_hides_only_after_verified_supervisor_absence() {
+    let fixture = Fixture::new();
+    let (template, launch) = fixture.finished_template();
+    let old = SystemTime::now() - Duration::from_secs(31);
+    for (id, state, keeper, guardian, modified) in [
+        (
+            "000000000001",
+            "stopping",
+            template["keeper_pid"].clone(),
+            template["guardian_pid"].clone(),
+            old,
+        ),
+        (
+            "000000000002",
+            "stopping",
+            serde_json::json!(std::process::id()),
+            template["guardian_pid"].clone(),
+            old,
+        ),
+        (
+            "000000000003",
+            "stopping",
+            template["keeper_pid"].clone(),
+            serde_json::json!(unsafe { libc::getpgrp() }),
+            old,
+        ),
+        (
+            "000000000004",
+            "unknown",
+            template["keeper_pid"].clone(),
+            template["guardian_pid"].clone(),
+            old,
+        ),
+        (
+            "000000000005",
+            "interrupted",
+            template["keeper_pid"].clone(),
+            template["guardian_pid"].clone(),
+            old,
+        ),
+        (
+            "000000000006",
+            "stopping",
+            template["keeper_pid"].clone(),
+            template["guardian_pid"].clone(),
+            SystemTime::now() + Duration::from_secs(60),
+        ),
+    ] {
+        fixture.seed_history(id, &template, &launch, now_ms());
+        let path = fixture.state.join(id).join("record.json");
+        let mut record = template.clone();
+        record["id"] = serde_json::json!(id);
+        record["state"] = serde_json::json!(state);
+        record["reason"] = serde_json::json!("supervision_lost");
+        record["finished_at_ms"] = Value::Null;
+        record["keeper_pid"] = keeper;
+        record["guardian_pid"] = guardian;
+        fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+    }
+    for view in [&["list"][..], &["watch", "--once"][..]] {
+        let shown = fixture.call(view);
+        let jobs = shown["jobs"].as_array().unwrap();
+        assert_eq!(jobs.len(), 5);
+        assert!(!jobs.iter().any(|j| j["id"] == "000000000001"));
+        assert!(jobs
+            .iter()
+            .any(|j| j["id"] == "000000000003" && j["state"] == "stopping"));
+    }
+    assert_eq!(
+        fixture.call(&["list", "--all"])["jobs"]
+            .as_array()
+            .unwrap()
+            .len(),
+        6
+    );
+    assert!(fixture.call(&["prune", "--dry-run"])["candidates"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    // These synthetic records name live test processes only to check absence;
+    // remove them before fixture teardown attempts any job control.
+    for i in 1..=6 {
+        fs::remove_dir_all(fixture.state.join(format!("{i:012x}"))).unwrap();
+    }
 }
 
 #[test]

@@ -98,8 +98,14 @@ directory, including test teardown, must first wait for its supervisors to exit.
 Status reads never renew leases or rewrite active lifecycle state; list/watch may collect
 confirmed finished history under the retention policy.
 Default list/watch views select active jobs, `unknown` jobs whose cleanup is
-unverified, and records without completion timestamps. Up to five newest confirmed
-finished jobs remain visible for 30 seconds. `--all` includes retained terminal
+unverified, and records without a usable recent-history timestamp. Up to five
+newest finished jobs remain visible for 30 seconds. A saved `stopping` record
+whose keeper and managed group are verified absent uses the record file's last
+modification time for this display window, including records from older versions.
+The anchor is observation-only: exact completion time remains unknown, JSON and
+on-disk metadata are unchanged, and retention still protects the record. Missing
+or future modification times and uncertain keeper/group absence keep the record
+visible. `--all` includes retained terminal
 records. This is a display filter;
 retry resolution and direct job control/log access still use complete stored state.
 

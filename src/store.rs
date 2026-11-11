@@ -447,6 +447,20 @@ impl Store {
                     // The keeper died before recording completion; the exact
                     // finish time is unknown, even though absence is observed.
                     record.finished_at_ms = None;
+                    if process_is_absent(record.keeper_pid) {
+                        // No lifecycle writer remains. Reuse the persisted
+                        // shutdown write as a stable display anchor, including
+                        // for records left by older versions. Never rewrite
+                        // lifecycle state or invent an exact completion time.
+                        record.last_lifecycle_write_ms =
+                            fs::symlink_metadata(self.job(id)?.join("record.json"))
+                                .ok()
+                                .filter(|metadata| metadata.is_file())
+                                .and_then(|metadata| metadata.modified().ok())
+                                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                                .and_then(|age| u64::try_from(age.as_millis()).ok())
+                                .filter(|&time| time <= crate::model::now_ms());
+                    }
                 }
             } else if record.state != State::Starting
                 || crate::model::now_ms().saturating_sub(record.created_at_ms) > 5_000

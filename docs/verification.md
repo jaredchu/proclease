@@ -935,6 +935,34 @@ The [website procedure](../website/README.md#canonical-url-and-redirects)
 records the zone rule and DNS configuration. These are separate from asset
 deployment and require no Worker script or extra CI token permissions.
 
+## Interrupted history default views, 2026-11-11
+
+Implemented in unreleased source after v0.1.6. Killing a keeper can leave the
+guardian's final `stopping` record on disk. Observation correctly derives
+`interrupted` once the group is absent, but leaves the exact finish time unknown.
+Previously this missing timestamp kept the job in default list/watch forever.
+
+The display filter now uses the record file's modification time as a stable
+recent-history anchor only after both the keeper and managed group are verified
+absent. The same 30-second window and five-job cap apply; `--all` still shows the
+record. This observation-only field is neither serialized nor persisted, so
+`finished_at_ms` stays `null`, lifecycle ownership is unchanged, and conservative
+retention continues to preserve these records. Active/unknown jobs, live or
+unverifiable keepers/groups, and missing or future modification times remain
+visible. The anchor is the last shutdown write, not the exact command exit time.
+
+The legacy-record regression failed before the fix, showing all six seeded rows
+instead of hiding the eligible old interrupted row. It passes with the fix.
+Local macOS checks pass: formatting, Clippy with warnings denied, and all 64 tests
+(15 unit and 49 lifecycle). Coverage includes a real keeper SIGKILL, recent and
+aged list/watch snapshots, retained `--all`/logs access, unchanged on-disk bytes
+and pruning protection, legacy records, a live keeper/group, unknown state,
+missing completion time, a future modification time, the shared five-job cap,
+and omission of the display anchor from JSON. Tests use isolated state and clean
+up their own children. This correction has no new hosted CI or Linux execution
+result. Wall-clock/file modification times affect the display window; a zombie
+or reused keeper PID conservatively keeps the row visible.
+
 ## Filesystem compatibility
 
 A Linux rerun using a macOS-to-Linux OrbStack bind mount failed intermittently
