@@ -81,7 +81,10 @@ is needed within the user's request. Extensions add time to the current deadline
 expired or finished jobs cannot be revived. Do not use a renewal loop.
 
 Normal `list` and `watch` show active and unverified jobs, plus up to five finished
-jobs for 30 seconds. Use `list --all --json`
+jobs for 30 seconds. From v0.1.7, interrupted shutdown records also age out
+once the keeper and managed group are verified absent, using the last saved
+lifecycle-write time for that display window. Exact completion time stays
+unknown and these records remain protected from collection. Use `list --all --json`
 when checking a job's terminal state or reconciling a previous launch; a finished
 job disappearing from the default view does not mean its history was deleted.
 `watch --all` includes that history in the human view. Finished metadata and logs

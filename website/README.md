@@ -130,7 +130,7 @@ checks.
 Use curl or an identifying application User-Agent for automated HTTP checks;
 Cloudflare's Browser Integrity Check rejects the default Python `urllib` signature.
 See [Cloudflare's explanation](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1010/).
-Release links and the installer are pinned to the v0.1.6 prerelease.
+Release links and the installer are pinned to the v0.1.7 prerelease.
 Update those pins together for a future release, and merge them to main only
 after its matching release assets are public; the pin check blocks deployment
 otherwise. See [the release procedure](../docs/releasing.md).

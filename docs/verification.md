@@ -959,8 +959,9 @@ aged list/watch snapshots, retained `--all`/logs access, unchanged on-disk bytes
 and pruning protection, legacy records, a live keeper/group, unknown state,
 missing completion time, a future modification time, the shared five-job cap,
 and omission of the display anchor from JSON. Tests use isolated state and clean
-up their own children. This correction has no new hosted CI or Linux execution
-result. Wall-clock/file modification times affect the display window; a zombie
+up their own children. The subsequent [main Rust checks](https://github.com/jaredchu/proclease/actions/runs/43051603968)
+passed stable checks/tests/builds and default Rust 1.89 package installation on
+macOS and Ubuntu. Wall-clock/file modification times affect the display window; a zombie
 or reused keeper PID conservatively keeps the row visible.
 
 ## Filesystem compatibility
