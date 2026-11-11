@@ -50,10 +50,10 @@ verification limits.
 - **Implementation choice:** use proven Rust/Unix primitives and per-job supervisors
   launched in the caller's execution context. Avoid a login-wide service accepting
   arbitrary execution requests from potentially restricted agents.
-- **Publication:** the experimental [v0.1.6 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.6)
+- **Publication:** the experimental [v0.1.7 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.7)
   provides four native binaries, checksums and a verified installer. The CLI
-  source is also published on [crates.io](https://crates.io/crates/proclease/0.1.6),
-  with a [docs.rs overview](https://docs.rs/crate/proclease/0.1.6). The public
+  source is also published on [crates.io](https://crates.io/crates/proclease/0.1.7),
+  with a [docs.rs overview](https://docs.rs/crate/proclease/0.1.7). The public
   [website](https://proclease.com) serves static assets through a Cloudflare Worker;
   [website source and deployment](../website/README.md) are maintained here.
 - **Website attribution, 2026-11-09:** the creator link points to Jared Chu’s
@@ -103,7 +103,7 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    HTTPS and www canonical redirects configured at the Cloudflare edge
 |-- DONE    GitHub description, eleven relevant topics and custom social preview
 |-- FIXED   Interrupted shutdown history ages out of default views after verified absence
-`-- READY   v0.1.7 patch release candidate; publication pending
+`-- DONE    v0.1.7 interrupted-history fix, four-native/registry release and website
 ```
 
 The [v0.1.5 publication](verification.md#v015-publication-2026-11-08) packages bulk
@@ -179,11 +179,14 @@ The recent-job window and resource presentation are implementation choices for
 terminal usability. Resource reads never extend leases.
 See [resource units and limits](../README.md#resource-usage).
 The [interrupted-history correction](verification.md#interrupted-history-default-views-2026-11-11)
-is implemented and is the owner-requested v0.1.7 release candidate. Once both
-keeper and managed group are verified absent, a saved shutdown record uses its
-last lifecycle-write time for the default recent-job window. Exact completion time remains unknown; metadata,
-JSON and conservative retention are unchanged. Published v0.1.6 builds
-do not include this correction.
+is released in v0.1.7. Once both keeper and managed group are verified absent,
+a saved shutdown record uses its last lifecycle-write time for the default
+recent-job window. Exact completion time remains unknown; metadata, JSON and
+conservative retention are unchanged. Published v0.1.6 builds do not include
+this correction.
+The [v0.1.7 publication](verification.md#v017-publication-2026-11-11) records
+four native builds, matching package provenance, default Rust 1.89 registry
+installation, the live website and fresh installer verification.
 
 Context maintenance is adopted in `AGENTS.md`, reached by `CLAUDE.md` import.
 Instruction-discovery evidence and limits are recorded in

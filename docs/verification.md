@@ -937,8 +937,8 @@ deployment and require no Worker script or extra CI token permissions.
 
 ## Interrupted history default views, 2026-11-11
 
-Implemented in unreleased source after v0.1.6. Killing a keeper can leave the
-guardian's final `stopping` record on disk. Observation correctly derives
+Released in v0.1.7. Killing a keeper can leave the guardian's final `stopping`
+record on disk. Observation correctly derives
 `interrupted` once the group is absent, but leaves the exact finish time unknown.
 Previously this missing timestamp kept the job in default list/watch forever.
 
@@ -963,6 +963,52 @@ up their own children. The subsequent [main Rust checks](https://github.com/jare
 passed stable checks/tests/builds and default Rust 1.89 package installation on
 macOS and Ubuntu. Wall-clock/file modification times affect the display window; a zombie
 or reused keeper PID conservatively keeps the row visible.
+
+## v0.1.7 publication, 2026-11-11
+
+The experimental [v0.1.7 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.7),
+[crates.io 0.1.7](https://crates.io/crates/proclease/0.1.7) and
+[docs.rs overview](https://docs.rs/crate/proclease/0.1.7) are public.
+Both `v0.1.7` and `crates-v0.1.7` identify reviewed candidate
+`349b2524b47d55e2621aed0be763fa1885eeaadc`. Runtime/test source and dependency
+versions match the interrupted-history fix at `9e8ff1a`; the package version,
+release pins and portable guidance are updated. Independent release review
+found no blocker. v0.1.6 tags and all ten existing asset identities, sizes and
+digests remain unchanged.
+
+The [four-native release run](https://github.com/jaredchu/proclease/actions/runs/43053867734)
+passed all 64 tests, formatting, Clippy, optimized builds and archive/installer
+checks on macOS ARM64/Intel and Ubuntu 22.04 ARM64/x64. All ten draft assets
+matched their combined/individual checksums and GitHub digests; archive members,
+source README/skill/license bytes, executable modes and architectures were
+checked before publication. Anonymous public downloads match the inspected
+draft. Native logs contain no stripping failure; both ELF files report stripped,
+and both Mach-O files contain no Rust-mangled symbol entries and target macOS
+15.0. Strict ARM ad hoc signature verification passed; publisher signing and
+notarization remain deferred for experimental releases.
+
+The clean 17-file source package has SHA-256
+`14e488e7f1c5e210939e3fac4c0d3145475598f1665ea596320a34f62ee586b1`
+and clean candidate VCS provenance. Extracted-package tests under Rust 1.89,
+publication dry run and default Rust 1.89 registry installation passed without
+profile overrides. The registry API and anonymous crate download match the
+inspected checksum, version, minimum Rust and provenance, with no yank.
+The binary-only docs.rs overview contains the released README and guidance.
+
+Isolated native-archive, fresh registry-install and live-installer checks
+reproduced a real keeper interruption and verified aged default list/watch
+filtering, retained `--all`/logs, unknown exact completion time, unchanged saved
+record bytes, pruning protection and keyed retry with the original deadline.
+Archive and registry expiry checks also passed; their fixtures waited for their
+own supervisors before cleanup.
+
+Main was fast-forwarded only after the assets were public. The automatic
+[website run](https://github.com/jaredchu/proclease/actions/runs/43055186781)
+passed actual deployment and live-file verification. Separate anonymous checks
+matched all twelve live files, including the v0.1.7 installer. A fresh isolated
+installation fetched the inspected native binary, matched the portable skill
+and both host links, and passed the interrupted-history checks above. These
+publication-context updates do not change runtime, package or website bytes.
 
 ## Filesystem compatibility
 
