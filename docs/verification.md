@@ -1272,6 +1272,60 @@ The historical real-agent rows above remain measurements of their stated earlier
 binaries and source builds, not packaged v0.1.8 reruns. Both restricted Linux
 profiles remain unsupported, and protected unknown records remain unverified.
 
+## Foreground sessions and file control (unreleased source), 2026-11-12
+
+Source after v0.1.8 adds explicit `run --foreground`; published v0.1.8 artifacts
+do not include it. Detached/socket behavior remains the default. Foreground
+jobs use the same keeper/guardian lifecycle, an invocation-to-keeper liveness
+pipe and file controls, with backward-compatible mode/transport defaults.
+The runtime/test/manifest input-map SHA-256 is
+`f7a756e96f80100190d58ee1f16d7e0f7df45971f2ff91c4378e38a800628596`
+(canonical JSON with sorted keys and compact separators).
+
+Formatting, Clippy with warnings denied, all 96 tests (32 unit, 64 integration)
+and optimized builds passed on macOS arm64 and native Linux x86_64 with unchanged
+runtime inputs. A default Rust/Cargo 1.89 source installation passed and exposed
+the new help flag, without profile overrides. The local Rust 1.99 macOS optimized
+build completed with a stripping-tool warning: the local `rust-objcopy` could
+not load `libLLVM.dylib`. That artifact is not a release/stripping verification.
+The native Linux binary SHA-256 is
+`411b0c4150fe229be680504c086e06698ef21796dcd198d999d777bff899ee1a`.
+
+The earlier 94-test candidate had input-map SHA-256
+`f944dd7e977a297960ea462ce49a68d6742294fe371e405270c32eac30e55cb4`
+and native binary SHA-256
+`e92e25bb461cb534b85cf5b71a4c7e2896e9d90ad7b661f584652984dc49003a`.
+Source review found that blocked stdout/stderr could delay first-signal cleanup.
+The corrected signal path takes no report lock, performs no blocking output and
+exits without flushing; notices are best effort. Two added regressions fill the
+pipe and leave it unread through the exit, final-record, supervisor-absence and
+closed-port checks. They exercise SIGINT with blocked stdout and SIGTERM/SIGHUP
+with blocked stderr, including human output. All checks above name the corrected
+96-test source, whose runtime inputs matched across both platforms.
+
+New regressions cover foreground lifetime, expiry, owned frontend interruption,
+keeper loss, mode-bound keys, immediate reuse, mixed bulk stop, file-endpoint
+locks, unsafe file types, malformed/oversized/stale requests, bounded processing,
+withdrawal/unknown outcomes, abandoned files and cache-pressure replay. A
+coordinator reproducer exposed eviction of still-valid request IDs; the corrected
+cache retains each ID through its whole validity window and refuses excess work
+instead of evicting replayable IDs. Future-stamp and backward-clock regressions
+cover conservative stale refusal. Eight concurrent clients applied exactly eight
+explicit extensions, then stop finalized. The queue admission check remains per
+client, not an atomic global ceiling; private same-user state is the trust boundary.
+
+The [real-client results](agent-compatibility.md#session-scoped-foreground-mode-unreleased-source-2026-11-12)
+record two isolated runs, including the corrected binary: cross-call foreground/file
+control, logs, explicit extension/reuse, mode rejection, stop and expiry passed
+under the unchanged restricted Linux policies.
+Strict Claude retained Unix-socket denial and private localhost: launch-call
+readiness worked, later HTTP access did not. Each run exercised three early client exits that lost
+progress/finalization and produced protected `unknown` observations; Claude's
+normal-finish invocation expired before CLI exit, so early normal exit was not
+exercised. Direct host scans found no matching test processes with complete
+own-user visibility, without claiming supervisor finalization. Existing registries,
+installed binaries/skills and running jobs/watch were outside these isolated checks.
+
 ## Limits
 
 No direct system sleep/wake, clock-change or simultaneous destruction of both

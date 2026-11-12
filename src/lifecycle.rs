@@ -1,5 +1,7 @@
 use crate::{
-    model::{extend_deadline, now_ms, Control, Launch, Reason, Record, Reply, State},
+    model::{
+        extend_deadline, now_ms, Control, Launch, Mode, Reason, Record, Reply, State, Transport,
+    },
     store::{RetentionGuard, Store},
 };
 use anyhow::{bail, Context, Result};
@@ -87,14 +89,92 @@ fn internal(store: &Store, kind: &str, id: &str) -> Result<Command> {
     Ok(command)
 }
 
+/// The `run --foreground` side of a foreground job. The keeper is this
+/// process's child and reads a liveness pipe from it: when this process exits
+/// or ends the session, the keeper sees end-of-file and stops the job through
+/// its normal anchored group cleanup. The keeper stays the only lifecycle
+/// owner; this process never signals the job itself.
+pub struct ForegroundSession {
+    keeper: Child,
+    liveness: Option<std::process::ChildStdin>,
+    grace_ms: u64,
+    finished: bool,
+}
+
+impl ForegroundSession {
+    /// Whether the keeper has exited (and is now reaped). The keeper exits
+    /// only after its final lifecycle write.
+    pub fn keeper_exited(&mut self) -> Result<bool> {
+        if self.finished {
+            return Ok(true);
+        }
+        let exited = self.keeper.try_wait()?.is_some();
+        if exited {
+            self.finished = true;
+            self.liveness = None;
+        }
+        Ok(exited)
+    }
+
+    /// Bound for a requested end: the job's stop bound, the keeper's absence
+    /// observation and slack for its final write.
+    pub fn end_bound(&self) -> Duration {
+        stop_bound(self.grace_ms) + Duration::from_secs(3)
+    }
+
+    /// Close the liveness pipe and wait, within `bound`, for the keeper to
+    /// finish the job. Returns whether the keeper exited in time.
+    pub fn end(&mut self, bound: Duration) -> bool {
+        self.liveness = None;
+        let deadline = Instant::now() + bound;
+        loop {
+            match self.keeper_exited() {
+                Ok(true) => return true,
+                Ok(false) if Instant::now() < deadline => thread::sleep(TICK),
+                _ => return false,
+            }
+        }
+    }
+}
+
+impl Drop for ForegroundSession {
+    fn drop(&mut self) {
+        if !self.finished {
+            let bound = self.end_bound();
+            if !self.end(bound) {
+                eprintln!(
+                    "proclease: foreground supervisor did not finish within {}; \
+                     inspect `proclease list` before retrying",
+                    humantime::format_duration(bound)
+                );
+            }
+        }
+    }
+}
+
+enum Keeper {
+    Detached(Child),
+    Foreground(ForegroundSession),
+}
+
 /// Called with the root launch lock held, after launch metadata is committed.
-pub fn start_keeper(store: &Store, id: &str) -> Result<()> {
+/// A foreground launch returns the session that holds the keeper's liveness
+/// pipe; if startup fails, dropping that session ends the job (bounded).
+pub fn start_keeper(
+    store: &Store,
+    id: &str,
+    foreground: bool,
+) -> Result<Option<ForegroundSession>> {
     let spawned = internal(store, "__keeper", id).and_then(|mut command| {
-        command.stdin(Stdio::null());
+        command.stdin(if foreground {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
         detach(&mut command);
         command.spawn().context("cannot start supervisor")
     });
-    let mut keeper = match spawned {
+    let keeper = match spawned {
         Ok(keeper) => keeper,
         Err(error) => {
             // No keeper process exists, so neither a guardian nor the command
@@ -115,20 +195,45 @@ pub fn start_keeper(store: &Store, id: &str) -> Result<()> {
                 store.save(&record)
             })();
             return match finalized {
-                Ok(()) => Ok(()),
+                Ok(()) => Ok(None),
                 Err(save) => {
                     Err(error.context(format!("failed launch was not recorded: {save:#}")))
                 }
             };
         }
     };
+    let mut keeper = if foreground {
+        let mut keeper = keeper;
+        let liveness = keeper.stdin.take();
+        let grace_ms = store
+            .launch(id)
+            .map(|launch| launch.grace_ms.min(MAX_GRACE_MS))
+            .unwrap_or(MAX_GRACE_MS);
+        Keeper::Foreground(ForegroundSession {
+            keeper,
+            liveness,
+            grace_ms,
+            finished: false,
+        })
+    } else {
+        Keeper::Detached(keeper)
+    };
     let started = Instant::now();
     loop {
         let record = store.record(id)?;
         if record.state != State::Starting {
-            return Ok(());
+            return Ok(match keeper {
+                Keeper::Foreground(session) => Some(session),
+                Keeper::Detached(_) => None,
+            });
         }
-        if let Some(status) = keeper.try_wait()? {
+        let exited = match &mut keeper {
+            Keeper::Foreground(session) => session
+                .keeper_exited()?
+                .then(|| "exit status unavailable".to_owned()),
+            Keeper::Detached(child) => child.try_wait()?.map(|status| status.to_string()),
+        };
+        if let Some(status) = exited {
             bail!("supervisor exited during startup: {status}");
         }
         if started.elapsed() > Duration::from_secs(5) {
@@ -210,6 +315,26 @@ pub fn keeper(store: &Store, id: &str) -> Result<()> {
     // belong to their own PID space. The guardian is this keeper's child.
     record.pid_context = crate::platform::pid_context().map(str::to_owned);
     store.save(&record)?;
+    // A foreground keeper's stdin is the `run --foreground` liveness pipe.
+    // End-of-file means that session ended, however it ended.
+    let foreground = launch.mode == Mode::Foreground;
+    let frontend_gone = Arc::new(AtomicBool::new(false));
+    if foreground {
+        let flag = frontend_gone.clone();
+        thread::spawn(move || {
+            let mut byte = [0u8; 1];
+            loop {
+                match std::io::stdin().read(&mut byte) {
+                    Ok(1..) => continue,
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                    _ => {
+                        flag.store(true, Ordering::Relaxed);
+                        return;
+                    }
+                }
+            }
+        });
+    }
     let mut command = internal(store, "__guard", id)?;
     command.stdin(Stdio::piped());
     detach(&mut command);
@@ -226,13 +351,28 @@ pub fn keeper(store: &Store, id: &str) -> Result<()> {
     let mut cleanup = CleanupOnDrop::new(guardian.id(), launch.grace_ms);
     // The pipe stays open for this scope. If the keeper is killed, EOF tells
     // the guardian to shut down; it never waits indefinitely for a dead parent.
-    let _liveness = guardian
-        .stdin
-        .take()
-        .context("missing guardian liveness pipe")?;
+    let mut liveness = Some(
+        guardian
+            .stdin
+            .take()
+            .context("missing guardian liveness pipe")?,
+    );
+    // After the foreground session ends, closing the guardian's pipe starts
+    // its ordinary TERM -> grace -> KILL shutdown. If the guardian has not
+    // exited within the stop bound, its group (anchored by this unreaped
+    // child) is killed here.
+    let mut force_at: Option<Instant> = None;
     loop {
         if child_exited_without_reaping(&guardian)? {
             break;
+        }
+        if frontend_gone.load(Ordering::Relaxed) {
+            if liveness.take().is_some() {
+                force_at = Some(Instant::now() + stop_bound(launch.grace_ms));
+            } else if force_at.is_some_and(|at| Instant::now() >= at) {
+                force_at = None;
+                signal_group(guardian.id(), libc::SIGKILL)?;
+            }
         }
         thread::sleep(TICK);
     }
@@ -252,12 +392,25 @@ pub fn keeper(store: &Store, id: &str) -> Result<()> {
     cleanup.disarm();
     guardian.wait()?;
     record.logs_truncated |= store.capture_truncated(id)?;
+    if foreground
+        && frontend_gone.load(Ordering::Relaxed)
+        && record.reason == Some(Reason::SupervisionLost)
+        && record.error.is_none()
+    {
+        record.error = Some(
+            "foreground session ended before the job finished; group cleanup enforced by keeper"
+                .into(),
+        );
+    }
     if record.state.active() {
         record.finish();
     }
+    drop(liveness);
     // The endpoint is removed before the final write, so no finalized record
-    // is ever paired with a socket this job still owns.
-    let _ = std::fs::remove_file(store.job(id)?.join("ctl.sock"));
+    // is ever paired with a socket or control lock this job still owns.
+    let dir = store.job(id)?;
+    let _ = std::fs::remove_file(dir.join("ctl.sock"));
+    crate::filectl::remove(&dir);
     // The group was killed and its leader reaped above, so no lifecycle writer
     // other than this keeper remains. That alone does not prove the group is
     // gone: a descendant in uninterruptible sleep can outlive the leader with
@@ -383,6 +536,55 @@ fn write_reply(stream: &mut UnixStream, reply: &Reply, deadline: Instant) {
     }
 }
 
+/// Apply one control action as the guardian, the only writer while running.
+/// The same rules serve both transports.
+fn apply_control(record: &mut Record, store: &Store, request: Control) -> Result<Reply> {
+    let result: Result<()> = match request {
+        Control::Stop if record.state == State::Running => {
+            record.state = State::Stopping;
+            record.reason = Some(Reason::Requested);
+            Ok(())
+        }
+        Control::Stop => Err(anyhow::anyhow!("job is already stopping")),
+        Control::Extend { by_ms } => extend_deadline(record, by_ms),
+    };
+    if result.is_ok() {
+        store.save(record)?;
+    }
+    Ok(Reply {
+        record: record.clone(),
+        error: result.err().map(|error| error.to_string()),
+    })
+}
+
+/// Serve one bounded batch of file requests. Every claimed request is
+/// answered; after a stop, later ones are refused by the ordinary rules.
+fn serve_file_control(
+    endpoint: &mut crate::filectl::Endpoint,
+    record: &mut Record,
+    store: &Store,
+) -> Result<()> {
+    if now_ms() >= record.expires_at_ms {
+        return Ok(());
+    }
+    for (request_id, request) in endpoint.take() {
+        let reply = match request {
+            Ok(control) => apply_control(record, store, control)?,
+            Err(error) => Reply {
+                record: record.clone(),
+                error: Some(error),
+            },
+        };
+        endpoint.reply(&request_id, &reply);
+    }
+    Ok(())
+}
+
+enum Endpoint {
+    Socket(UnixListener),
+    File(crate::filectl::Endpoint),
+}
+
 fn serve_control(listener: &UnixListener, record: &mut Record, store: &Store) -> Result<()> {
     // Both the entire batch and each connection have absolute budgets. Byte
     // trickling or a client that stops reading cannot reset those budgets.
@@ -405,22 +607,7 @@ fn serve_control(listener: &UnixListener, record: &mut Record, store: &Store) ->
             Ok(Some(request)) => request,
             Ok(None) | Err(_) => continue,
         };
-        let result: Result<()> = match request {
-            Control::Stop if record.state == State::Running => {
-                record.state = State::Stopping;
-                record.reason = Some(Reason::Requested);
-                Ok(())
-            }
-            Control::Stop => Err(anyhow::anyhow!("job is already stopping")),
-            Control::Extend { by_ms } => extend_deadline(record, by_ms),
-        };
-        if result.is_ok() {
-            store.save(record)?;
-        }
-        let reply = Reply {
-            record: record.clone(),
-            error: result.err().map(|error| error.to_string()),
-        };
+        let reply = apply_control(record, store, request)?;
         // Persistence may consume the read batch budget. Give an accepted
         // operation a fresh, still absolute reply budget so it is not silently
         // committed without an acknowledgement during ordinary disk latency.
@@ -436,7 +623,7 @@ fn serve_control(listener: &UnixListener, record: &mut Record, store: &Store) ->
 struct GuardSetup {
     interrupted: Arc<AtomicBool>,
     parent_gone: Arc<AtomicBool>,
-    listener: UnixListener,
+    endpoint: Endpoint,
     sink: Arc<Mutex<LogSink>>,
     capture_marker: Arc<File>,
 }
@@ -472,16 +659,27 @@ fn prepare_guard(
         }
     });
 
-    let listener = UnixListener::bind(dir.join("ctl.sock")).map_err(|error| {
-        let hint = if crate::platform::is_denial(&error) {
-            "; access was denied, for example by a host sandbox policy or directory \
-             permissions, and ProcLease requires a Unix-domain control socket for every job"
-        } else {
-            ""
-        };
-        anyhow::Error::new(error).context(format!("cannot bind control socket{hint}"))
-    })?;
-    listener.set_nonblocking(true)?;
+    // Each mode has exactly one transport; neither falls back to the other.
+    if launch.transport != launch.mode.transport() {
+        bail!("launch metadata pairs an unsupported mode and control transport");
+    }
+    let endpoint = match launch.transport {
+        Transport::Socket => {
+            let listener = UnixListener::bind(dir.join("ctl.sock")).map_err(|error| {
+                let hint = if crate::platform::is_denial(&error) {
+                    "; access was denied, for example by a host sandbox policy or directory \
+                     permissions, and a default (detached) job requires a Unix-domain control \
+                     socket"
+                } else {
+                    ""
+                };
+                anyhow::Error::new(error).context(format!("cannot bind control socket{hint}"))
+            })?;
+            listener.set_nonblocking(true)?;
+            Endpoint::Socket(listener)
+        }
+        Transport::File => Endpoint::File(crate::filectl::Endpoint::create(dir, &launch.id)?),
+    };
     let log = OpenOptions::new()
         .create_new(true)
         .write(true)
@@ -504,7 +702,7 @@ fn prepare_guard(
     Ok(GuardSetup {
         interrupted,
         parent_gone,
-        listener,
+        endpoint,
         sink,
         capture_marker: Arc::new(capture_marker),
     })
@@ -517,7 +715,7 @@ pub fn guard(store: &Store, id: &str) -> Result<()> {
     let GuardSetup {
         interrupted,
         parent_gone,
-        listener,
+        mut endpoint,
         sink,
         capture_marker,
     } = match prepare_guard(store, &dir, &launch, &mut record) {
@@ -621,7 +819,10 @@ pub fn guard(store: &Store, id: &str) -> Result<()> {
             record.exit_code = status.code();
             break;
         }
-        serve_control(&listener, &mut record, store)?;
+        match &mut endpoint {
+            Endpoint::Socket(listener) => serve_control(listener, &mut record, store)?,
+            Endpoint::File(files) => serve_file_control(files, &mut record, store)?,
+        }
         if record.state == State::Stopping {
             break;
         }
@@ -655,8 +856,25 @@ pub(crate) fn stop_bound(grace_ms: u64) -> Duration {
     Duration::from_millis(grace_ms.min(MAX_GRACE_MS) + 2_000)
 }
 
-fn exchange_control(store: &Store, id: &str, action: &Control) -> Result<Reply> {
+/// One bounded exchange over the job's own persisted transport. Neither
+/// transport is ever tried in place of the other.
+fn exchange_control(
+    store: &Store,
+    id: &str,
+    transport: Transport,
+    action: &Control,
+) -> Result<Reply> {
     let deadline = Instant::now() + CONTROL_EXCHANGE;
+    if transport == Transport::File {
+        return crate::filectl::exchange(
+            &store.job(id)?,
+            id,
+            action,
+            deadline,
+            CONTROL_REPLY_LIMIT as u64,
+        )
+        .context("file control exchange did not complete");
+    }
     let mut stream = crate::platform::connect_unix(&store.job(id)?.join("ctl.sock"), deadline)
         .context("supervisor unavailable; refusing to signal a PID from disk")?;
     let mut request = serde_json::to_vec(action)?;
@@ -839,7 +1057,7 @@ fn dispatch_stop(store: &Store, selected: &Record) -> Dispatched {
             );
         }
         attempts += 1;
-        match exchange_control(store, id, &Control::Stop) {
+        match exchange_control(store, id, record.transport, &Control::Stop) {
             // An "already stopping" reply also means shutdown is under way.
             Ok(_) => return Dispatched::Wait(wait_until()),
             Err(error) => last_error = format!("{error:#}"),
@@ -964,7 +1182,7 @@ pub fn control(store: &Store, id: &str, action: Control) -> Result<Record> {
     if let Some(record) = existing_control_state(store, id, &action, &record)? {
         return Ok(record);
     }
-    let reply = match exchange_control(store, id, &action) {
+    let reply = match exchange_control(store, id, record.transport, &action) {
         Ok(reply) => reply,
         Err(error) => {
             // Shutdown can begin after the initial observation. Reconcile that
@@ -1022,6 +1240,8 @@ mod tests {
             expires_at_ms: now + 60_000,
             grace_ms: 100,
             log_limit_bytes: 1024,
+            mode: Mode::Detached,
+            transport: Transport::Socket,
         };
         std::fs::DirBuilder::new()
             .mode(0o700)

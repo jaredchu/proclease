@@ -3943,3 +3943,559 @@ fn describe(output: &Output) -> String {
 fn ready_file(path: &std::path::Path) -> Value {
     ready(path)
 }
+
+// Foreground sessions (`run --foreground`) with file-based control.
+
+/// A `run --foreground --json` invocation owned by the test. Its stdout lines
+/// are collected as they arrive. If a test fails while it still runs, it gets
+/// SIGTERM (the ordinary bounded cleanup) and is killed only after that; it is
+/// always reaped, so its PID is never reused while this value lives.
+struct Session {
+    child: std::process::Child,
+    lines: std::sync::mpsc::Receiver<String>,
+    stderr: PathBuf,
+}
+
+impl Session {
+    fn start(fixture: &Fixture, options: &[&str], command: &[&str]) -> Self {
+        use std::io::BufRead;
+        let mut args = vec!["run", "--foreground", "--grace", "100ms", "--owner", "test"];
+        args.extend_from_slice(options);
+        args.push("--");
+        args.extend_from_slice(command);
+        let stderr = fixture
+            .dir
+            .path()
+            .join(format!("fg-{}.err", uuid::Uuid::new_v4().simple()));
+        let mut child = fixture
+            .command(&args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(fs::File::create(&stderr).unwrap())
+            .spawn()
+            .unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let (sender, lines) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            for line in std::io::BufReader::new(stdout).lines() {
+                let Ok(line) = line else { return };
+                if sender.send(line).is_err() {
+                    return;
+                }
+            }
+        });
+        Self {
+            child,
+            lines,
+            stderr,
+        }
+    }
+    #[track_caller]
+    fn startup(&self) -> Value {
+        let line = self
+            .lines
+            .recv_timeout(Duration::from_secs(20))
+            .unwrap_or_else(|_| panic!("no startup report; stderr: {}", self.diagnostics()));
+        serde_json::from_str(&line).unwrap()
+    }
+    fn diagnostics(&self) -> String {
+        String::from_utf8_lossy(&fs::read(&self.stderr).unwrap_or_default()).into_owned()
+    }
+    fn running(&mut self) -> bool {
+        self.child.try_wait().unwrap().is_none()
+    }
+    #[track_caller]
+    fn exit_within(&mut self, timeout: Duration) -> std::process::ExitStatus {
+        let status = wait_for(timeout, || self.child.try_wait().unwrap());
+        // Nothing follows the single startup report on stdout.
+        assert!(
+            matches!(
+                self.lines.recv_timeout(Duration::from_secs(5)),
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected)
+            ),
+            "unexpected extra stdout"
+        );
+        status
+    }
+    /// Signal the unreaped child this test spawned.
+    fn signal(&self, signal: i32) {
+        assert_eq!(unsafe { libc::kill(self.child.id() as i32, signal) }, 0);
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        if self.child.try_wait().ok().flatten().is_some() {
+            return;
+        }
+        let _ = unsafe { libc::kill(self.child.id() as i32, libc::SIGTERM) };
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline && self.child.try_wait().ok().flatten().is_none() {
+            thread::sleep(Duration::from_millis(35));
+        }
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+fn service_command<'a>(service: &'a str, mode: &'a str, ready: &'a str) -> [&'a str; 4] {
+    ["/usr/bin/python3", service, mode, ready]
+}
+
+#[test]
+fn foreground_holds_the_session_until_exit_and_never_uses_a_socket() {
+    let fixture = Fixture::new();
+    let mut session = Session::start(
+        &fixture,
+        &["--ttl", "1m", "--wait-for-log", "phase-one"],
+        &["/bin/sh", "-c", "echo phase-one; sleep 1; echo phase-two"],
+    );
+    let started = session.startup();
+    assert_eq!(started["readiness"]["ready"], true, "{started}");
+    let job = &started["job"];
+    assert_eq!(job["mode"], "foreground");
+    assert_eq!(job["transport"], "file");
+    let id = job["id"].as_str().unwrap().to_owned();
+    let dir = fixture.state.join(&id);
+    // The invocation is held after startup; the job is controlled by files.
+    assert!(session.running(), "returned right after startup");
+    assert!(dir.join("ctl.lock").exists());
+    assert!(!dir.join("ctl.sock").exists());
+    assert!(fs::read_dir(&fixture.state)
+        .unwrap()
+        .flatten()
+        .all(|entry| !entry.file_name().to_string_lossy().starts_with(".probe-")));
+    let status = session.exit_within(Duration::from_secs(15));
+    assert_eq!(status.code(), Some(0), "{}", session.diagnostics());
+    let record = fixture.terminal(&id);
+    assert_eq!(record["state"], "exited");
+    assert_eq!(record["finalized_by_keeper"], true);
+    assert!(!dir.join("ctl.lock").exists() && !dir.join("ctl.d").exists());
+    let logs = fixture.call(&["logs", &id]);
+    assert_eq!(logs["lines"], serde_json::json!(["phase-one", "phase-two"]));
+
+    // A failing command ends the session with a failure status.
+    let mut failing = Session::start(&fixture, &["--ttl", "1m"], &["/bin/sh", "-c", "exit 3"]);
+    let id = failing.startup()["job"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(failing.exit_within(Duration::from_secs(15)).code(), Some(1));
+    let record = fixture.terminal(&id);
+    assert_eq!(
+        (record["state"].clone(), record["exit_code"].clone()),
+        ("failed".into(), 3.into())
+    );
+}
+
+#[test]
+fn foreground_controls_from_other_invocations_never_renew_the_lease() {
+    let fixture = Fixture::new();
+    let service = service_path();
+    let ready = fixture.ready_path();
+    let mut session = Session::start(
+        &fixture,
+        &["--ttl", "1m", "--log-limit", "2000"],
+        &service_command(&service, "flood", ready.to_str().unwrap()),
+    );
+    let id = session.startup()["job"]["id"].as_str().unwrap().to_owned();
+    let info = ready_file(&ready);
+    let first = fixture.job(&id);
+    assert_eq!(first["state"], "running");
+    // Observation, logs and list never renew the lease.
+    thread::sleep(Duration::from_millis(100));
+    fixture.call(&["logs", &id]);
+    assert_eq!(fixture.job(&id)["expires_at_ms"], first["expires_at_ms"]);
+    // Capture stays bounded while the session holds the job.
+    wait(|| (fixture.job(&id)["logs_truncated"] == true).then_some(()));
+    // An explicit extension from a separate invocation is applied once.
+    let extended = fixture.call(&["extend", &id, "--by", "1m"]);
+    assert_eq!(
+        extended["job"]["expires_at_ms"].as_u64().unwrap(),
+        first["expires_at_ms"].as_u64().unwrap() + 60_000
+    );
+    assert_eq!(
+        fixture.job(&id)["expires_at_ms"],
+        extended["job"]["expires_at_ms"]
+    );
+    let over = fixture
+        .command(&["extend", &id, "--by", "24h"])
+        .output()
+        .unwrap();
+    assert!(!over.status.success());
+    assert!(describe(&over).contains("24h"), "{}", describe(&over));
+    let stopped = fixture.call(&["stop", &id]);
+    assert_eq!(stopped["job"]["state"], "stopped");
+    assert_eq!(stopped["job"]["logs_truncated"], true);
+    assert_eq!(
+        session.exit_within(Duration::from_secs(15)).code(),
+        Some(0),
+        "{}",
+        session.diagnostics()
+    );
+    assert_port_closed(&info);
+    let output = fixture.command(&["stop", &id]).output().unwrap();
+    assert!(output.status.success(), "{}", describe(&output));
+    let error = fixture
+        .command(&["extend", &id, "--by", "1m"])
+        .output()
+        .unwrap();
+    assert!(!error.status.success());
+}
+
+#[test]
+fn foreground_expiry_and_frontend_signals_clean_the_owned_group() {
+    let fixture = Fixture::new();
+    let service = service_path();
+
+    // Expiry ends the session; a TERM-resistant child is still killed.
+    let ready = fixture.ready_path();
+    let mut session = Session::start(
+        &fixture,
+        &["--ttl", "2s"],
+        &service_command(&service, "stubborn", ready.to_str().unwrap()),
+    );
+    let id = session.startup()["job"]["id"].as_str().unwrap().to_owned();
+    let info = ready_file(&ready);
+    assert_eq!(session.exit_within(Duration::from_secs(15)).code(), Some(0));
+    assert_eq!(fixture.terminal(&id)["state"], "expired");
+    assert_port_closed(&info);
+
+    // An ordinary interrupt stops the job with bounded cleanup before exit.
+    let ready = fixture.ready_path();
+    let mut session = Session::start(
+        &fixture,
+        &["--ttl", "1m"],
+        &service_command(&service, "stubborn", ready.to_str().unwrap()),
+    );
+    let id = session.startup()["job"]["id"].as_str().unwrap().to_owned();
+    let info = ready_file(&ready);
+    session.signal(libc::SIGINT);
+    let status = session.exit_within(Duration::from_secs(15));
+    assert_eq!(status.code(), Some(130), "{}", session.diagnostics());
+    // The frontend returned only after the keeper's final record.
+    let record: Value =
+        serde_json::from_slice(&fs::read(fixture.state.join(&id).join("record.json")).unwrap())
+            .unwrap();
+    assert_eq!(record["state"], "interrupted", "{record}");
+    assert_eq!(record["reason"], "supervision_lost");
+    assert!(record["error"]
+        .as_str()
+        .unwrap()
+        .contains("foreground session ended"));
+    assert_port_closed(&info);
+
+    // Abrupt loss of the frontend still closes the keeper's liveness pipe.
+    let ready = fixture.ready_path();
+    let mut session = Session::start(
+        &fixture,
+        &["--ttl", "1m"],
+        &service_command(&service, "stubborn", ready.to_str().unwrap()),
+    );
+    let id = session.startup()["job"]["id"].as_str().unwrap().to_owned();
+    let info = ready_file(&ready);
+    session.signal(libc::SIGKILL);
+    session.exit_within(Duration::from_secs(5));
+    assert_eq!(fixture.terminal(&id)["state"], "interrupted");
+    assert_port_closed(&info);
+}
+
+/// A pipe whose buffer is already full and which the test does not read, so
+/// any write the CLI makes to it blocks.
+struct FullPipe {
+    reader: std::io::PipeReader,
+    prefilled: usize,
+}
+
+impl FullPipe {
+    /// The pipe and its write end, filled while non-blocking and then made
+    /// blocking again before it is handed to the CLI.
+    fn new() -> (Self, std::io::PipeWriter) {
+        use std::{io::Write, os::fd::AsRawFd};
+        let (reader, mut writer) = std::io::pipe().unwrap();
+        let fd = writer.as_raw_fd();
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        assert!(flags >= 0);
+        assert_eq!(
+            unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) },
+            0
+        );
+        let mut prefilled = 0;
+        for chunk in [65_536, 4_096, 512, 1] {
+            let bytes = vec![b'x'; chunk];
+            loop {
+                match writer.write(&bytes) {
+                    Ok(written) => prefilled += written,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                    Err(error) => panic!("{error}"),
+                }
+            }
+        }
+        assert_eq!(unsafe { libc::fcntl(fd, libc::F_SETFL, flags) }, 0);
+        let pipe = Self { reader, prefilled };
+        assert_eq!(pipe.unread(), prefilled);
+        (pipe, writer)
+    }
+    /// Bytes buffered in the pipe and not yet read.
+    fn unread(&self) -> usize {
+        use std::os::fd::AsRawFd;
+        let mut count: libc::c_int = 0;
+        assert_eq!(
+            unsafe { libc::ioctl(self.reader.as_raw_fd(), libc::FIONREAD, &mut count) },
+            0
+        );
+        count as usize
+    }
+    /// Everything written after the prefill. Only call once the writer exited.
+    fn drain(mut self) -> String {
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut self.reader, &mut bytes).unwrap();
+        String::from_utf8_lossy(&bytes[self.prefilled..]).into_owned()
+    }
+}
+
+/// Lines from a pipe that the test does drain, sent as they arrive.
+fn drained_lines(pipe: impl std::io::Read + Send + 'static) -> std::sync::mpsc::Receiver<String> {
+    use std::io::BufRead;
+    let (sender, lines) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        for line in std::io::BufReader::new(pipe).lines() {
+            let Ok(line) = line else { return };
+            if sender.send(line).is_err() {
+                return;
+            }
+        }
+    });
+    lines
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Blocked {
+    Stdout,
+    Stderr,
+}
+
+/// One ordinary signal must end a foreground session within its documented
+/// bound while stdout or stderr is a full pipe that nobody reads. The blocked
+/// pipe is not read until the exit, the job's final record, the supervisors'
+/// absence and the closed service port have all been verified.
+fn first_signal_ends_session_despite_blocked_output(blocked: Blocked, json: bool, signal: i32) {
+    let fixture = Fixture::new();
+    let service = service_path();
+    let ready = fixture.ready_path();
+    let (full, writer) = FullPipe::new();
+    let mut args = vec!["--state-dir", fixture.state.to_str().unwrap()];
+    if json {
+        args.push("--json");
+    }
+    args.extend([
+        "run",
+        "--foreground",
+        "--ttl",
+        "2m",
+        "--grace",
+        "100ms",
+        "--owner",
+        "test",
+        "--",
+    ]);
+    args.extend(service_command(
+        &service,
+        "stubborn",
+        ready.to_str().unwrap(),
+    ));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_proclease"));
+    command.args(&args).stdin(std::process::Stdio::null());
+    match blocked {
+        Blocked::Stdout => command
+            .stdout(std::process::Stdio::from(writer))
+            .stderr(std::process::Stdio::piped()),
+        Blocked::Stderr => command
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::from(writer)),
+    };
+    let mut child = scopeguard_child(command.spawn().unwrap());
+    // Close this process's copies of the write ends, so the drained pipe
+    // reaches end-of-file exactly when the CLI exits.
+    drop(command);
+    let drained = match blocked {
+        Blocked::Stdout => drained_lines(child.0.stderr.take().unwrap()),
+        Blocked::Stderr => drained_lines(child.0.stdout.take().unwrap()),
+    };
+    let id = fixture.only_job()["id"].as_str().unwrap().to_owned();
+    let info = ready_file(&ready);
+    if blocked == Blocked::Stderr && json {
+        // The single startup object was written; nothing else goes to stdout.
+        let line = drained
+            .recv_timeout(Duration::from_secs(20))
+            .expect("startup report");
+        let started: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(started["job"]["id"], id.as_str(), "{started}");
+    }
+    // Let the CLI reach its blocking write; the pipe stays full throughout.
+    thread::sleep(Duration::from_millis(500));
+    assert!(
+        child.0.try_wait().unwrap().is_none(),
+        "the session returned early"
+    );
+    assert_eq!(
+        full.unread(),
+        full.prefilled,
+        "the CLI wrote to a full pipe"
+    );
+
+    // Exactly one ordinary signal.
+    let signalled = Instant::now();
+    assert_eq!(unsafe { libc::kill(child.0.id() as i32, signal) }, 0);
+    // The documented bound is the stop bound (100 ms grace + 2 s) plus 3 s.
+    let status = wait_for(Duration::from_secs(10), || child.0.try_wait().unwrap());
+    let elapsed = signalled.elapsed();
+    assert_eq!(status.code(), Some(128 + signal), "{blocked:?} json={json}");
+    assert!(elapsed < Duration::from_millis(6_500), "{elapsed:?}");
+
+    // Still undrained: the keeper finished the job before the CLI exited.
+    assert_eq!(full.unread(), full.prefilled);
+    let record: Value =
+        serde_json::from_slice(&fs::read(fixture.state.join(&id).join("record.json")).unwrap())
+            .unwrap();
+    assert_eq!(record["state"], "interrupted", "{record}");
+    assert_eq!(record["reason"], "supervision_lost", "{record}");
+    assert!(
+        record["error"]
+            .as_str()
+            .unwrap()
+            .contains("foreground session ended"),
+        "{record}"
+    );
+    assert!(fixture.supervisors().is_empty());
+    assert_port_closed(&info);
+
+    // Only now read the blocked pipe. A signal after the startup report was
+    // claimed never adds a second stdout object.
+    let late: Vec<String> = drained.iter().collect();
+    let rest = full.drain();
+    match blocked {
+        Blocked::Stdout => assert!(!rest.contains("received before startup"), "{rest}"),
+        Blocked::Stderr if json => assert!(late.is_empty(), "{late:?}"),
+        Blocked::Stderr => {}
+    }
+}
+
+#[test]
+fn foreground_first_signal_cleanup_never_waits_for_blocked_stdout() {
+    first_signal_ends_session_despite_blocked_output(Blocked::Stdout, true, libc::SIGINT);
+}
+
+#[test]
+fn foreground_first_signal_cleanup_never_waits_for_blocked_stderr() {
+    // JSON mode: only the signal path writes to stderr.
+    first_signal_ends_session_despite_blocked_output(Blocked::Stderr, true, libc::SIGTERM);
+    // Human mode: the holding notice itself blocks the main thread on stderr.
+    first_signal_ends_session_despite_blocked_output(Blocked::Stderr, false, libc::SIGHUP);
+}
+
+#[test]
+fn foreground_keeper_loss_is_reported_and_never_finalized() {
+    let fixture = Fixture::new();
+    let service = service_path();
+    let ready = fixture.ready_path();
+    let mut session = Session::start(
+        &fixture,
+        &["--ttl", "1m"],
+        &service_command(&service, "stubborn", ready.to_str().unwrap()),
+    );
+    let started = session.startup();
+    let id = started["job"]["id"].as_str().unwrap().to_owned();
+    let info = ready_file(&ready);
+    let keeper = fixture.job(&id)["keeper_pid"].as_u64().unwrap() as u32;
+    // Signal only a live keeper of this fixture, identified by its argv.
+    assert!(fixture.supervisors().contains(&keeper));
+    assert_eq!(unsafe { libc::kill(keeper as i32, libc::SIGKILL) }, 0);
+    let status = session.exit_within(Duration::from_secs(15));
+    assert_eq!(status.code(), Some(1), "{}", session.diagnostics());
+    assert_port_closed(&info);
+    let record = fixture.job(&id);
+    assert_ne!(record["finalized_by_keeper"], true, "{record}");
+    assert!(
+        matches!(
+            record["state"].as_str().unwrap(),
+            "interrupted" | "unknown" | "stopping"
+        ),
+        "{record}"
+    );
+}
+
+#[test]
+fn foreground_keys_are_mode_bound_and_reuse_never_attaches() {
+    let fixture = Fixture::new();
+    let service = service_path();
+    let ready = fixture.ready_path();
+    let command = service_command(&service, "normal", ready.to_str().unwrap());
+    let options = ["--ttl", "1m", "--key", "fg-key"];
+    let mut session = Session::start(&fixture, &options, &command);
+    let id = session.startup()["job"]["id"].as_str().unwrap().to_owned();
+    ready_file(&ready);
+    let run = |extra: &[&str]| {
+        let mut args = vec!["run"];
+        args.extend_from_slice(extra);
+        args.extend_from_slice(&["--grace", "100ms", "--owner", "test"]);
+        args.extend_from_slice(&options);
+        args.push("--");
+        args.extend_from_slice(&command);
+        let started = Instant::now();
+        let output = fixture.command(&args).output().unwrap();
+        assert!(started.elapsed() < Duration::from_secs(10), "attached");
+        output
+    };
+    // The same key cannot switch a foreground job to detached mode.
+    for extra in [&[][..], &["--reuse"][..]] {
+        let output = run(extra);
+        assert!(!output.status.success());
+        assert!(
+            describe(&output).contains("differs: mode"),
+            "{}",
+            describe(&output)
+        );
+    }
+    // Matching foreground retries return the job immediately.
+    for extra in [&["--foreground"][..], &["--foreground", "--reuse"][..]] {
+        let output = run(extra);
+        assert!(output.status.success(), "{}", describe(&output));
+        let value = parse(&output);
+        assert_eq!(
+            (value["job"]["id"].as_str(), value["reused"].as_bool()),
+            (Some(id.as_str()), Some(true))
+        );
+    }
+    assert_eq!(job_count(&fixture), 1);
+    assert!(session.running());
+    fixture.call(&["stop", &id]);
+    assert_eq!(session.exit_within(Duration::from_secs(15)).code(), Some(0));
+}
+
+#[test]
+fn bulk_stop_covers_mixed_socket_and_file_jobs() {
+    let fixture = Fixture::new();
+    let service = service_path();
+    let (detached, detached_ready) = fixture.start("normal", "1m");
+    let ready = fixture.ready_path();
+    let mut session = Session::start(
+        &fixture,
+        &["--ttl", "1m"],
+        &service_command(&service, "stubborn", ready.to_str().unwrap()),
+    );
+    let foreground = session.startup()["job"]["id"].as_str().unwrap().to_owned();
+    let infos = [ready_file(&detached_ready), ready_file(&ready)];
+    assert_eq!(fixture.job(&detached)["transport"], "socket");
+    let result = fixture.call(&["stop", "--all"]);
+    assert_eq!(result["complete"], true, "{result}");
+    let mut ids = result_ids(&result);
+    ids.sort();
+    let mut expected = vec![detached.clone(), foreground.clone()];
+    expected.sort();
+    assert_eq!(ids, expected);
+    for entry in result["results"].as_array().unwrap() {
+        assert_eq!(entry["job"]["state"], "stopped", "{entry}");
+    }
+    assert_eq!(session.exit_within(Duration::from_secs(15)).code(), Some(0));
+    for info in &infos {
+        assert_port_closed(info);
+    }
+}

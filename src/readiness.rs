@@ -471,6 +471,8 @@ mod tests {
             expires_at_ms: now + 60_000,
             grace_ms: 100,
             log_limit_bytes: 1024,
+            mode: Default::default(),
+            transport: Default::default(),
         };
         let mut record = Record::new(&launch);
         record.state = State::Running;

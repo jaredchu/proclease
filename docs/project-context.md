@@ -89,13 +89,23 @@ verification limits.
   [PID context](architecture.md#pid-context-unreleased). The PID context stops
   saved PIDs from another or unverifiable context being probed, used to infer
   shutdown or collect history, or used for metrics. Legacy Linux records fail
-  closed the same way. A foreground mode, an out-of-sandbox helper, a network
-  control channel and PID translation were rejected. After review, a
+  closed the same way. A foreground mode was deferred from that defensive
+  release; an out-of-sandbox helper, network control channel and PID translation
+  remain excluded. The later foreground decision below has a narrower lifetime.
+  After review, a
   keeper-finalized marker, set only after the keeper observes the managed group
   absent, lets finished history be collected without PID checks, so it stays
   bounded across reboots; a foreign-context `stopping` job
   keeps that state for a bounded finalization window instead of reading
   `unknown` before its final record.
+- **Owner-authorized, 2026-11-12:** implement explicit session-scoped
+  `run --foreground` with file controls, preserving the existing sandbox
+  policies and detached/socket default. A native execution session or background
+  Bash task retains the foreground invocation. It ends with the session or
+  lease; it does not promise supervision after client/sandbox exit. File
+  controls do not expose application ports across private network namespaces.
+  See [the architecture](architecture.md#foreground-sessions-unreleased-source)
+  and [the scoped client results](agent-compatibility.md#session-scoped-foreground-mode-unreleased-source-2026-11-12).
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
   proxying, auto-restart and hosted dashboards.
 
@@ -103,10 +113,19 @@ verification limits.
 
 The owner-requested v0.1.8 release is published on GitHub and crates.io, with a
 docs.rs overview, four verified native archives and matching live website pins.
-The runtime and test sources match reviewed `ef77123`; no host sandbox restriction
-is relaxed. Fresh binary and default Rust 1.89 registry installations passed
+The published runtime and tests match reviewed `ef77123`; no host sandbox restriction
+was relaxed. Fresh binary and default Rust 1.89 registry installations passed
 explicit reuse and expiry checks. See [publication evidence](verification.md#v018-publication-2026-11-12)
 and [the release notes](releases/v0.1.8.md).
+
+Subsequent **unreleased source** implements `run --foreground` with file controls.
+Published v0.1.8 binaries/crate do not contain it; the source still reports 0.1.8,
+so check `run --help`. All 96 tests pass on macOS and native Linux, and a default
+Rust 1.89 source installation passes. Both tested restricted Linux clients passed
+cross-call file controls, explicit extension/reuse, stop and expiry with native
+execution tasks. Early client exits can still leave `unknown` records; strict
+Claude's private localhost still prevents cross-call HTTP access. See
+[verification](verification.md#foreground-sessions-and-file-control-unreleased-source-2026-11-12).
 
 ```text
 Goal: a usable ProcLease CLI, shared skill and public first release
@@ -153,7 +172,10 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- FIXED   Review corrections: stopping window, finalized retention, procfs bounds
 |-- TESTED  Corrected source: 81 tests on macOS/Linux; diagnostic recheck fails closed
 |-- DONE    v0.1.8 four-native/registry/website release and isolated installs verified
-`-- BLOCKED Restricted Linux profiles need host persistence; Codex cleanup unverified
+|-- IMPLEMENTED Unreleased session-scoped foreground mode and bounded file controls
+|-- TESTED  96 tests on macOS/native Linux; default Rust 1.89 source installation
+|-- TESTED  Native Codex/strict-Claude foreground controls, reuse, stop and expiry
+`-- LIMITED Early client exit can lose finalization; strict-Claude localhost stays private
 ```
 
 The [v0.1.5 publication](verification.md#v015-publication-2026-11-08) packages bulk
@@ -281,23 +303,19 @@ no search-ranking or traffic improvement has been measured.
 
 ## Open questions
 
-- The implemented Linux remediation is defensive only: the socket preflight and
-  PID-context checks report the restrictions instead of guessing. The host
-  blockers remain: in the tested Codex `workspace-write` profile, processes
-  stopped when the launching tool call ended, and strict Claude denied
-  Unix-socket creation. Those profiles need a
-  host-documented persistent execution context, and strict Claude also needs
-  socket permission, before they can be claimed to work; that requirement is
-  not a demonstrated workaround. Four isolated Codex test records (two
-  original, one from each diagnostic run) remain `unknown` with
-  control-protocol cleanup unverified. The
-  [compatibility matrix](agent-compatibility.md) separates the default-Claude
-  Linux pass, blocked restricted profiles, historical macOS failures and fixed
-  macOS workflow. Untested profiles still need direct testing.
-- The authorized v0.1.8 candidate includes `run --reuse`, the socket preflight
-  and PID-context checks. Publication remains pending under the
-  [release procedure](releasing.md). Same-user local control is not
-  authenticated agent identity.
+- Default detached/socket launches remain unsupported in the tested restricted
+  Linux profiles. The new explicit foreground/file mode works within retained
+  native execution tasks, without adding socket permission. It does not fix
+  private localhost or guarantee finalization after whole-client teardown.
+  Four older isolated Codex records remain `unknown`; six additional
+  foreground test records are also unverified and retained. The
+  [matrix](agent-compatibility.md) preserves the historical rows and separates
+  this session-scoped result from full application/client-exit compatibility.
+  Untested profiles still need direct testing.
+- Version 0.1.8 is published; foreground/file control remains unreleased under
+  the [release procedure](releasing.md). Same-user local control is not
+  authenticated agent identity. The file queue's admission check is per client,
+  not an atomic global cap; the protocol relies on private same-user state.
 - macOS Developer ID signing/notarization is deferred for experimental releases
   and required before promotion to stable. See the
   [release procedure](releasing.md) for binary and registry delivery.

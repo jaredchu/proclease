@@ -13,6 +13,8 @@ commit; their results are [recorded below](#native-linux-results-2026-11-12).
 The implementation changes described here are included in the published v0.1.8 release.
 The rows below remain measurements of the stated earlier binaries and source
 builds; preparing or publishing v0.1.8 does not rerun those agent workflows.
+The later [foreground/file-control measurements](#session-scoped-foreground-mode-unreleased-source-2026-11-12)
+exercise a separate unreleased implementation, absent from published v0.1.8.
 
 ## macOS/Linux matrix
 
@@ -231,6 +233,61 @@ host-documented persistent execution context is a requirement, not a
 demonstrated workaround. The default-Claude Vite/Next.js pass above, like the
 macOS real-client Vite/Next.js checks, is from the `e51ccd2` build, before this
 defensive change, and was not rerun with the remediation source.
+
+## Session-scoped foreground mode (unreleased source), 2026-11-12
+
+Later native Linux tests exercised explicit `run --foreground` with file controls
+in source after v0.1.8. The manifest still reports 0.1.8; the published binaries
+and crate lack the flag. These tests use bounded Python HTTP/heartbeat fixtures,
+not new Vite/Next.js workflow runs. Earlier rows above remain unchanged.
+The table records the first foreground candidate; its corrected-source repeat
+is described below.
+
+Clients and host match the earlier native Linux versions. Codex retained a
+native execution session with a short yield; strict Claude used native Bash
+`run_in_background: true`. The existing `workspace-write`/network-enabled Codex
+policy and strict Claude sandbox settings were retained, with the same shape of
+task-workspace write grant. Outside-workspace writes were denied in both, and
+strict Claude still denied Unix sockets with EPERM. Registries were explicitly
+isolated from normal development state.
+
+| Client / profile | Cross-call file control and lifecycle | Application reachability | Client-exit observation |
+| --- | --- | --- | --- |
+| Codex CLI 0.167.2 / workspace-write | Status/logs, +3 s explicit extension, mode-matching read-only reuse, wrong-mode rejection, stop and expiry passed | Separate calls served HTTP 200 with the literal fixture marker | Normal CLI exit with 43.3 s left and SIGINT with 49.4 s left stopped heartbeat progress without a final record; later state was `unknown` |
+| Claude Code 2.1.322 / strict Bash sandbox | Same file-control/lifecycle checks passed; no Unix-socket exception | Startup readiness passed inside the launch call; later HTTP calls were refused despite heartbeat progress because localhost remained private | Normal invocation stayed alive until expiry, then exited about 4.3 s later: early normal exit was not exercised. SIGINT with 52.1 s left stopped progress without a final record; later state was `unknown` |
+
+Expiry included the explicit 3 s extension to the original 30 s lease; matching
+reuse left the ID, extended deadline and application environment unchanged.
+Stop and expiry had keeper finalization proof. Foreground jobs retained file
+control while observers were in different PID namespaces, with unavailable
+resource metrics instead of interpreting saved PIDs. File control does not
+forward ports or join a service's network namespace, so strict Claude still has
+no cross-call HTTP/Vite/Next.js compatibility claim.
+
+After the three exercised early exits, independent host samples passed the
+original deadlines with unchanged heartbeat counters. Later CLI reads showed
+`unknown`, and dry-run collection offered none of those records. A complete
+own-user host scan found no matching test workers/supervisors and no unreadable
+own-user proc entries. That is observed absence, not control-protocol
+finalization; the records remain protected. No saved PID was signalled and no
+record was rewritten to manufacture completion. Earlier test histories were
+untouched. These results establish session-scoped control only, with the
+[documented lifetime and trust limits](architecture.md#foreground-sessions-unreleased-source).
+
+After the blocked-output signal correction, a second run used the
+[corrected 96-test source and native binary](verification.md#foreground-sessions-and-file-control-unreleased-source-2026-11-12)
+in new isolated registries under the same policies. Both clients repeated the
+control, logs, +3 s extension, immediate reuse, wrong-mode rejection, stop and
+expiry passes, including keeper proof for stop/expiry. The denied writes and
+strict-Claude Unix-socket/private-localhost limits remained the same.
+Codex normal exit with 43.9 s left and SIGINT with 45.6 s left, plus Claude SIGINT
+with 51.8 s left, again lost progress/finalization and later read as `unknown`.
+Claude's normal invocation again exited after expiry, about 5.4 s later; early
+normal exit remains unexercised. The three new unverified records are protected
+alongside the first three. Complete own-user scans again found no matching
+workers/supervisors or unreadable entries, establishing observed absence only.
+These whole-client outcomes are distinct from the direct ProcLease signal tests,
+which verify bounded keeper cleanup even when stdout/stderr is blocked.
 
 ## Observed failures and limits
 

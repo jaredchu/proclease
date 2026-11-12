@@ -24,6 +24,40 @@ pub fn duration_ms(value: &str) -> Result<u64> {
     Ok(millis)
 }
 
+/// How a job's lifetime relates to the `run` invocation that launched it.
+/// Records written before this field existed are detached.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    /// `run` returns after startup; the supervisor continues on its own.
+    #[default]
+    Detached,
+    /// `run --foreground` holds the session until the job finishes.
+    Foreground,
+}
+
+/// The supervisor control endpoint used by stop/extend and observation.
+/// Records written before this field existed use a Unix-domain socket.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Transport {
+    #[default]
+    Socket,
+    /// Bounded request/reply files in the private job directory, with a
+    /// process-lifetime lock proving that the serving guardian is alive.
+    File,
+}
+
+impl Mode {
+    /// The only transport each mode uses; there is no fallback between them.
+    pub fn transport(self) -> Transport {
+        match self {
+            Self::Detached => Transport::Socket,
+            Self::Foreground => Transport::File,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Launch {
     pub id: String,
@@ -39,6 +73,10 @@ pub struct Launch {
     pub expires_at_ms: u64,
     pub grace_ms: u64,
     pub log_limit_bytes: u64,
+    #[serde(default)]
+    pub mode: Mode,
+    #[serde(default)]
+    pub transport: Transport,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -116,6 +154,10 @@ pub struct Record {
     pub log_limit_bytes: u64,
     pub logs_truncated: bool,
     pub error: Option<String>,
+    #[serde(default)]
+    pub mode: Mode,
+    #[serde(default)]
+    pub transport: Transport,
 }
 
 impl Record {
@@ -144,6 +186,8 @@ impl Record {
             log_limit_bytes: launch.log_limit_bytes,
             logs_truncated: false,
             error: None,
+            mode: launch.mode,
+            transport: launch.transport,
         }
     }
 
@@ -168,14 +212,14 @@ impl Record {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum Control {
     Stop,
     Extend { by_ms: u64 },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Reply {
     pub record: Record,
     pub error: Option<String>,
@@ -209,5 +253,29 @@ mod tests {
         assert!(duration_ms("0s").is_err());
         assert!(duration_ms("25h").is_err());
         assert!(duration_ms("forever").is_err());
+    }
+
+    #[test]
+    fn records_without_mode_remain_detached_socket_jobs() {
+        let launch: Launch = serde_json::from_value(serde_json::json!({
+            "id": "000000000001", "argv": ["/usr/bin/true"], "cwd": "/",
+            "owner": "user", "task": null, "name": null, "url": null, "key": null,
+            "fingerprint": "f", "created_at_ms": 0, "expires_at_ms": 1,
+            "grace_ms": 0, "log_limit_bytes": 1
+        }))
+        .unwrap();
+        assert_eq!(
+            (launch.mode, launch.transport),
+            (Mode::Detached, Transport::Socket)
+        );
+        let mut value = serde_json::to_value(Record::new(&launch)).unwrap();
+        value.as_object_mut().unwrap().remove("mode");
+        value.as_object_mut().unwrap().remove("transport");
+        let record: Record = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            (record.mode, record.transport),
+            (Mode::Detached, Transport::Socket)
+        );
+        assert_eq!(Mode::Foreground.transport(), Transport::File);
     }
 }

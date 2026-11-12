@@ -1,4 +1,4 @@
-use crate::model::{Launch, Reason, Record, State};
+use crate::model::{Launch, Reason, Record, State, Transport};
 use anyhow::{bail, Context, Result};
 use fs2::FileExt;
 use serde::{de::DeserializeOwned, Serialize};
@@ -486,7 +486,15 @@ impl Store {
         }
         // Observation only: never signal an OS PID copied from disk.
         // The probe connect is bounded; scans hold the root lock while probing.
-        if let Err(error) = crate::platform::connect_unix(&self.job(id)?.join("ctl.sock"), probe) {
+        // A file endpoint is live only while its guardian holds the control
+        // lock; that check never blocks. Each job uses only its own transport.
+        let endpoint = match record.transport {
+            Transport::Socket => {
+                crate::platform::connect_unix(&self.job(id)?.join("ctl.sock"), probe).map(drop)
+            }
+            Transport::File => crate::filectl::endpoint_live(&self.job(id)?),
+        };
+        if let Err(error) = endpoint {
             // Saved PIDs are probed only from the PID space they were saved in.
             let comparable = crate::platform::pid_numbers_comparable(record.pid_context.as_deref());
             let unavailable = || {

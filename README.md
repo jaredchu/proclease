@@ -393,6 +393,92 @@ skill. Invoke `$proclease` in Codex or `/proclease` in Claude Code. Host permiss
 still apply. A skill guides use; it does not intercept every command or grant
 local execution to a chat that does not already have it.
 
+<a id="foreground-sessions-unreleased-source"></a>
+
+## Foreground sessions (unreleased source)
+
+`run --foreground` exists only in source after v0.1.8; the published v0.1.8
+binaries and crate do not include it, even though the source manifest still
+reads 0.1.8. Check `proclease run --help` for `--foreground` before using it.
+The default `run` is unchanged: it returns after startup, the job keeps running
+on its own, and control uses the job's Unix-domain socket.
+
+Some agent sandboxes end every process a tool call started when that call
+returns, or deny Unix-domain sockets. A foreground session is for hosts that can
+keep one command running for the life of a native session, such as a Codex
+execution session or a Claude Code background Bash task:
+
+```sh
+proclease --json run --foreground --ttl 45m --owner codex --task preview \
+  --wait-for-port 5173 -- npm run dev -- --host 127.0.0.1
+```
+
+- The invocation holds the session until the job finishes. With `--json` it
+  writes exactly one startup object (with `readiness` when requested) and
+  flushes it before waiting; nothing else is written to stdout, and application
+  output goes only to the job's log. Read the final state with `list`.
+- Exit status after the job finishes: `0` when the command exited 0, was
+  stopped or expired; `1` when it failed, readiness was not confirmed,
+  supervision was lost or the outcome is unverified; `128 + n` after an
+  ordinary signal `n` (SIGINT, SIGTERM, SIGHUP).
+- Ending the invocation ends the job. The same keeper/guardian pair still owns
+  expiry and TERM, grace, KILL cleanup of the process group. On SIGINT, SIGTERM
+  or SIGHUP the invocation asks the keeper to stop the job and waits a bounded
+  time for its final record; an unread stdout/stderr pipe or a blocked startup
+  report cannot delay that cleanup or the exit, and the signal notices are best
+  effort. If the invocation is killed, the keeper sees its
+  pipe close and stops the job, unobserved. If the host destroys the whole
+  sandbox or client at once, the job and its supervisors can be killed before
+  any final record is written; `list` then shows it as interrupted or
+  `unknown`, never as verified cleanup.
+- A foreground job lasts at most as long as its session and its lease. There
+  is no promise that it keeps running after the client or session exits.
+  Cleanup on exit is best effort: ProcLease stops the job when it can observe
+  the exit, and a host that tears down the whole sandbox can end everything
+  first, leaving cleanup unverified.
+- `stop`, `extend`, `list`, `logs` and `stop --all` work from other
+  invocations, exactly as for default jobs. Status, log and readiness reads
+  never renew the lease; only an explicit `extend` changes the deadline.
+  Registries may mix default and foreground jobs.
+- Foreground jobs never create or probe a Unix socket. Control uses small
+  request and reply files in the private job directory; a live guardian is
+  proven only by the process-lifetime lock it holds, not by any timestamp.
+  Only `stop` and `extend` exist. A request that was never taken is withdrawn
+  and reported as not applied; one that was taken without a reply is reported
+  as unknown and is never resent, so inspect `list` before retrying an
+  extension. Extensions are never replayed automatically.
+- Each request has a random ID and a creation time, and is valid only from
+  1 second before that time until 2 seconds after it. The guardian remembers
+  an applied ID until that window closes, so a copy of the same request is
+  never applied twice; afterwards the copy is refused as stale. If too many
+  recent requests are still inside their windows, new ones are refused with
+  an error and not applied, rather than forgetting an ID early. A client also
+  sends nothing when the control directory already holds 64 entries; clients
+  checking at the same moment can each add one more, so that is a per-client
+  check, not an exact global cap.
+- This file control is private same-user state, like the rest of the state
+  directory. It does not identify or authenticate an agent. Deduplication
+  protects cooperating clients from applying one request twice; it is not a
+  defence against a hostile process running as the same user, which can write
+  an entirely new request.
+- File control carries only `stop` and `extend`. It does not forward
+  application ports or join another call's network namespace. Where each tool
+  call gets its own private localhost, as in the strict Linux Claude Code
+  sandbox, an HTTP or `--wait-for-port` check from a later call can fail while
+  file control and log reads from that call still work. Foreground sessions do
+  not make Vite, Next.js or any port reachable across such calls.
+- The mode is part of a key's launch policy and must match. A keyed retry
+  whose mode differs is rejected with `differs: mode`, even with `--reuse`. A
+  matching retry or `--reuse` (for a foreground job, that means passing
+  `--foreground` again) returns the retained job immediately and never
+  attaches to, blocks on, launches or renews it. `--reuse` still keeps the
+  original launch environment; ordinary retries still compare it exactly.
+- The host must still allow the same things as before: running the binary,
+  writing the state directory and starting the command. Foreground mode needs
+  no extra sandbox permission, and you should not widen one for it. It does
+  not make a host keep a session open, and there is no automatic fallback
+  from default mode to foreground mode.
+
 ## Next.js in agent sandboxes
 
 In the tested macOS Codex CLI and Claude Code sandbox profiles, Next.js 16.4.5
@@ -454,6 +540,9 @@ PID context, such as a per-call PID namespace, are never probed, used for
 metrics or used to infer shutdown. See [PID context](https://github.com/jaredchu/proclease/blob/main/docs/architecture.md#pid-context-unreleased).
 Native Linux checks of the initial remediation build in both profiles reported
 these fail-closed results; they are diagnostics, not compatibility passes.
+Unreleased source adds [foreground sessions](#foreground-sessions-unreleased-source)
+with file-based control for hosts that can keep one command running; they
+last only as long as that session, and default mode still needs the socket.
 There is no privileged or login-wide execution daemon. Jobs are supervised only
 after being launched through ProcLease. A descendant that deliberately creates a
 new session/process group can escape group cleanup. Docker, PID adoption,

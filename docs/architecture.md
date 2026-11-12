@@ -113,6 +113,117 @@ socket in the state directory. It does this after any retained-key lookup, so
 records no job, so the retry key stays unused. A denial names the step and says
 that ProcLease requires a Unix-domain control socket. The guardian's own bind
 failure adds the same note. Neither message suggests widening a sandbox.
+Foreground jobs skip this probe; see below.
+
+<a id="foreground-sessions-unreleased-source"></a>
+
+### Foreground sessions (unreleased source)
+
+`run --foreground` is in source after v0.1.8 and not in the published v0.1.8
+release. Launch and record files persist `mode` (`detached` or `foreground`)
+and `transport` (`socket` or `file`). Missing fields, as in every earlier
+record, mean `detached` and `socket`. Each mode has exactly one transport. A
+guardian refuses a launch whose pair is inconsistent, and no path falls back
+from one transport or mode to the other.
+
+```text
+run --foreground --pipe--> keeper -> guardian -> foreground service
+   (held until the            |          +-- holds ctl.lock for its lifetime
+    keeper exits)             |          +-- serves ctl.d request files
+                              +-- retains guardian until group cleanup
+```
+
+The `run` invocation spawns the same keeper, now as its own child, with a
+liveness pipe on the keeper's stdin. It reports startup (and readiness) once,
+then waits for the keeper to exit. The keeper exits only after its final
+lifecycle write. When the pipe closes, the keeper closes the guardian's pipe.
+The guardian then performs its ordinary TERM, grace, KILL shutdown with reason
+`supervision_lost`, and the keeper records that the foreground session ended.
+If the guardian has not exited within the stop bound, the keeper kills the
+group that its unreaped guardian still anchors. The pipe closes however `run`
+ends, including SIGKILL. On SIGINT, SIGTERM or SIGHUP, `run` closes the pipe
+itself and waits up to the stop bound plus 3 seconds before exiting with
+128 + the signal number. That path takes no report lock and writes nothing
+itself: its notices (and, before any startup report, the `--json` error
+object) come from a detached thread that it waits for at most 250 ms, and it
+exits without flushing, so an unread stdout/stderr pipe or a startup report
+blocked mid-write cannot delay cleanup or exit. Stdout still carries at most
+one object. A repeated signal exits at once. `run` never signals
+the job. Keeper and guardian keep their own sessions, so a terminal interrupt
+reaches only `run`. Destroying the whole sandbox or client at once is outside
+these guarantees: the job can end without a final record and is then shown as
+interrupted or `unknown`, and retention keeps it until absence is verified.
+A foreground job is bounded by its session and its lease; nothing promises
+that it continues after the client or session exits, and cleanup at that
+point is best effort.
+
+File control replaces only the socket transport. The guardian creates the
+private directory `ctl.d` (0700, which must not already exist) and the file
+`ctl.lock` (0600, created new), then keeps an exclusive `flock` on the lock for
+its lifetime. The descriptor is close-on-exec, so the service does not inherit
+it. An observer treats the endpoint as live only if a non-blocking shared lock
+attempt fails because of that lock. A missing, replaced, symlinked or
+non-regular lock file, or one that it can lock, is unavailable, and the
+existing `unknown`, finalization-window and foreign-PID-context rules apply
+unchanged. Heartbeats and timestamps are never used as proof of liveness.
+
+A client first requires a live lock and a private `ctl.d`. It refuses to add
+a request when 64 or more entries are already present. That count is each
+client's own check, not an atomic global admission: clients that count at the
+same moment can each add one request beyond it. The guardian's per-tick limits
+below bound its work regardless. Each request has a
+random 32-digit ID and is at most 4096 bytes. It names the job ID, the request
+ID, its creation time and one `stop` or `extend` action, and is published by
+an atomic rename as `req-<id>`. On each 25 ms tick, the guardian examines at
+most 128 entries and claims at most 8 requests. Before applying a request, the
+guardian opens it with no-follow and non-blocking flags, then unlinks it to
+claim it. It accepts only a private regular file owned by the user, with one
+link, within the size limit, with the expected fields, the matching job and
+request IDs, and a creation time inside the request's validity window: no more
+than 1 second ahead of the guardian's clock and no older than the 2-second
+exchange budget. Refused requests are answered with an error and are not
+applied.
+
+The guardian remembers each applied request ID, with at most 256 IDs, until
+that request's own window has closed (its creation time plus 2 seconds, so up
+to 3 seconds after it was applied when it was stamped 1 second ahead). Any
+request file named with a remembered ID is dropped before it is read, without
+an answer, so neither an identical nor an altered copy is applied again or
+replaces the original reply. After the window closes the ID is forgotten and a
+copy is refused as stale. The guardian also keeps the latest window end it has
+forgotten and refuses requests whose window ends no later, so a backward
+wall-clock step cannot reopen a forgotten window; after such a step, fresh
+requests are refused as stale until the clock passes that point. When all 256
+remembered IDs are still inside their windows, a new valid request is refused
+with an error and not applied; no remembered ID is evicted early. This
+deduplication is per guardian and assumes cooperating clients. It is not
+authentication or anti-replay against a same-user process, which can write an
+entirely new request with a new ID and creation time.
+
+The guardian applies requests with the same rules
+as the socket transport and publishes `rep-<id>` atomically. The client accepts
+a reply only after the same checks (with a limit of 1 MiB) and a matching
+correlation. If no reply arrives within 2 seconds, the client unlinks its own
+request. Success means the request was never taken and was not applied.
+`ENOENT` means the guardian took it, so the outcome is unknown and it is not
+resent. Unclaimed replies and partial writes older than 10 seconds are
+removed, and so are names outside this grammar. Removing an entry never
+follows it. The keeper removes `ctl.d` and `ctl.lock` after group cleanup and
+before its final write.
+
+This is the same private same-user trust boundary as the rest of the state
+directory. Any process running as the same user can write these files or hold
+the lock, as it already can for other state. File control does not identify an
+agent or caller.
+
+File control carries only `stop` and `extend` between the files of one job
+directory. It does not forward application ports, proxy traffic or join
+another process's network namespace. On hosts that give each tool call a
+private localhost, such as the strict Linux Claude Code sandbox, HTTP requests
+and readiness port checks made from a later call can fail even while that
+call's file control and log reads succeed. Foreground sessions therefore do
+not establish cross-call port reachability for Vite, Next.js or any other
+service.
 
 ## Consistency and retry semantics
 
@@ -129,7 +240,12 @@ arguments, paths and environment entries cannot contain NUL.
 While history is retained, they return the original record, including terminal
 records, without renewal. Purging history ends that key's deduplication window.
 Changing a context while reusing a key is an error. There is no automatic
-command-text deduplication or cross-task ownership transfer.
+command-text deduplication or cross-task ownership transfer. In unreleased
+source, the launch mode is part of that policy: a key never switches between a
+detached and a foreground job, and the rejection names `mode`. The mode is
+compared even with `--reuse`, which relaxes only the environment comparison. A
+matching retry or `--reuse` of a foreground job, which must itself pass
+`--foreground`, returns immediately without attaching, blocking or renewing.
 The key must be assigned before the initial launch. Under the launch lock,
 provably empty reservations, or those containing only private generated atomic-write
 temporary files, are skipped without deletion. Existing launch metadata
