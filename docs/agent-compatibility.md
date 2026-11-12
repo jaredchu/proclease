@@ -10,6 +10,10 @@ and application; a runtime test on an OS does not establish that an agent can
 launch there. Later that day, native Linux sessions exercised the same source
 commit; their results are [recorded below](#native-linux-results-2026-11-12).
 
+The implementation changes described here are included in the v0.1.8 candidate.
+The rows below remain measurements of the stated earlier binaries and source
+builds; preparing or publishing v0.1.8 does not rerun those agent workflows.
+
 ## macOS/Linux matrix
 
 The macOS host was **27.2.1 arm64**, using native APFS state, **Node 24.18.0**,

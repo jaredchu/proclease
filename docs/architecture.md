@@ -64,10 +64,12 @@ a PID read from persistent state. When control is unavailable, list may derive a
 terminal result for an already-stopping, now-absent group; otherwise it reports
 unverified state. Such observation never signals or adopts a process.
 
-### PID context (unreleased)
+<a id="pid-context-unreleased"></a>
 
-Saved PID numbers are meaningful only in the PID space that saved them. In
-unreleased source, a Linux keeper also saves an opaque `pid_context` token with
+### PID context (v0.1.8)
+
+Saved PID numbers are meaningful only in the PID space that saved them. From
+v0.1.8, a Linux keeper also saves an opaque `pid_context` token with
 its first PID. The token is a digest of the boot ID, the keeper's PID-namespace
 link and the start time of that namespace's PID 1, in clock ticks since boot
 (zero is valid). The namespace inode alone is not used: follow-up native Linux
@@ -85,6 +87,11 @@ repeated or malformed value, produces no context. This check is required.
 `/proc/self/status` is read up to 1 MiB, because a long `Groups:` line precedes
 `NSpid`. It does not read PID 1's namespace link, which ordinary users may not
 be permitted to read.
+On hosts with restricted procfs access, including some `hidepid` mount
+configurations, `/proc/1/stat` can be unreadable. No context is established:
+PID-derived absence and resource attribution are unavailable, while reachable
+protocol controls, expiry and verified keeper-finalized retention still work.
+See the [procfs mount options](https://man7.org/linux/man-pages/man5/procfs.5.html).
 
 Observers probe saved PIDs only when their own complete context matches. A
 mismatch, an unreadable context, or a Linux record written before this field
@@ -156,7 +163,7 @@ History retention keeps confirmed finished jobs for at most 24 hours and caps
 them at the newest 100. Launches, list/watch, job completion and explicit `prune`
 perform opportunistic collection under the root launch lock. No idle background
 service is added. Active/unknown records and missing completion timestamps are
-protected. In unreleased source, only the keeper's final write can set
+protected. From v0.1.8, only the keeper's final write can set
 `finalized_by_keeper`. That write happens after the keeper has killed the
 guardian's group, reaped the guardian, accounted for capture and removed the
 socket, so no lifecycle writer remains. The final write alone does not prove

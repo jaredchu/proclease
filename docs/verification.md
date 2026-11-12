@@ -1227,6 +1227,16 @@ remain unsupported; a host-documented persistent execution context is a
 requirement, not a demonstrated workaround. This source is unreleased; shipping
 needs separate release scope.
 
+## v0.1.8 publication, 2026-11-12
+
+The v0.1.8 candidate packages the reviewed `ef77123` runtime and test sources
+without changing them or dependency versions. Release metadata, installer and
+website pins, portable README links and release notes are prepared on a separate
+branch. Native archive builds, artifact inspection and GitHub/crates.io
+publication remain pending. The historical real-agent rows above are not new
+measurements of packaged v0.1.8 binaries. Both restricted Linux profiles remain
+unsupported.
+
 ## Limits
 
 No direct system sleep/wake, clock-change or simultaneous destruction of both

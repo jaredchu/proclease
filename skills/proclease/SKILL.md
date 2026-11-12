@@ -56,7 +56,8 @@ launching. Never move or copy a live job's state to make it appear elsewhere.
   Use a new key only for a deliberately new run after reconciling the previous one.
 - Agent hosts can change environment variables between tool calls, such as a
   per-call ID or sandbox proxy settings, so an exact same-key retry can be
-  rejected with `differs: environment`. If `proclease run --help` lists
+  rejected with `differs: environment`. `--reuse` requires v0.1.8 or later.
+  If `proclease run --help` lists
   `--reuse`, repeat the identical command with `--reuse` added to observe the
   original job; it keeps the job's original launch environment and never starts
   anything. If it reports no retained job, reconcile with `list --all --json`
@@ -113,7 +114,10 @@ job disappearing from the default view does not mean its history was deleted.
 remain available by ID until collection. Confirmed finished history is collected
 after 24 hours or beyond the newest 100 jobs, whichever comes first, during normal
 CLI use and job completion. Active and unverified jobs are preserved. On Linux,
-older finished records whose saved PIDs cannot be checked from the current PID
+jobs active or stopping at reboot can remain `unknown`. Restricted procfs
+access can disable PID-derived absence checks and metrics. Do not delete such
+records to hide them; report the unverified state for operator reconciliation.
+Older finished records whose saved PIDs cannot be checked from the current PID
 context, for example after a reboot, are also preserved with their retry keys.
 A purged key can create a new job: reconcile current task jobs before retrying an
 old request.

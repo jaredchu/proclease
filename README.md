@@ -8,7 +8,7 @@ tool calls; explicitly extend it or let it expire. Reading logs never renews it.
 
 **Status:** experimental, MIT-licensed open source. Runtime tests cover macOS
 arm64, Linux aarch64 in a non-root container, and native Linux x86_64. Real-agent
-results depend on the [execution profile](docs/agent-compatibility.md). Install a
+results depend on the [execution profile](https://github.com/jaredchu/proclease/blob/main/docs/agent-compatibility.md). Install a
 prebuilt binary, or build the CLI with Cargo; see [Build](#build).
 Domain: `proclease.com`; no hosted service is required.
 
@@ -17,7 +17,7 @@ Website: [proclease.com](https://proclease.com).
 
 ## Install
 
-Download and review [the v0.1.7 installer](https://github.com/jaredchu/proclease/releases/download/v0.1.7/install.sh), then run:
+Download and review [the v0.1.8 installer](https://github.com/jaredchu/proclease/releases/download/v0.1.8/install.sh), then run:
 
 ```sh
 sh install.sh --skills both
@@ -32,10 +32,10 @@ unrelated skill folders and symlinks are preserved. Restart the agent session
 to discover a new skill.
 
 For manual installation, download an archive from the
-[experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.7),
+[experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.8),
 verify it against `SHA256SUMS`, extract it and place `proclease` on PATH. Each
 archive includes the skill, README and MIT license. See the
-[release notes](https://github.com/jaredchu/proclease/blob/v0.1.7/docs/releases/v0.1.7.md)
+[release notes](https://github.com/jaredchu/proclease/blob/v0.1.8/docs/releases/v0.1.8.md)
 for tested platforms and signing limits.
 
 ## Build
@@ -45,7 +45,7 @@ recommended. The prebuilt installer above does not need Rust. To build the CLI
 from the crates.io registry:
 
 ```sh
-cargo install proclease --version 0.1.7 --locked
+cargo install proclease --version 0.1.8 --locked
 proclease --version
 ```
 
@@ -90,7 +90,7 @@ details and preview URLs. It switches to a stacked layout in narrow terminals. C
 for terminals; `NO_COLOR`, `TERM=dumb` or `--color never` disables them, and
 `--color always` forces them. Redirected output and JSON stay uncolored by default.
 
-![ProcLease terminal table showing example jobs](https://raw.githubusercontent.com/jaredchu/proclease/v0.1.7/docs/assets/terminal-preview.png)
+![ProcLease terminal table showing example jobs](https://raw.githubusercontent.com/jaredchu/proclease/v0.1.8/docs/assets/terminal-preview.png)
 
 A real disposable worker and synthetic history rows shown with
 `proclease watch --all`; the default view briefly shows recently finished jobs
@@ -210,7 +210,7 @@ unavailable values are `null`. An unavailable group has `resources: null`.
   exits nonzero. Empty interrupted-launch reservations and those containing
   only private generated atomic-write temporary files are ignored without deleting
   state; unreadable/ambiguous launch metadata still fails closed.
-- Unreleased source, not in v0.1.7: a rejected keyed retry names the differing
+- From v0.1.8: a rejected keyed retry names the differing
   fields (`command`, `directory`, `owner`, `task`, `name`, `url`, `ttl`, `grace`,
   `log limit` or `environment`), never their values. Some agent hosts change
   per-call environment variables between tool calls, so an exact retry can differ
@@ -227,7 +227,7 @@ unavailable values are `null`. An unavailable group has `resources: null`.
   environment, that is a new request, not a retry. `--reuse` without `--key` is
   a parser error. Real Codex CLI and Claude Code sessions in the tested macOS
   sandbox profiles passed this retry with a local source build; see the
-  [compatibility matrix](docs/agent-compatibility.md#fixed-workflow-results).
+  [compatibility matrix](https://github.com/jaredchu/proclease/blob/main/docs/agent-compatibility.md#fixed-workflow-results).
 - Stop during shutdown returns lifecycle state; extension of a stopping job is
   rejected. If a response is lost, inspect `list` before retrying an operation.
 
@@ -332,16 +332,24 @@ or beyond the **100 newest finished jobs**, whichever comes first. Collection ru
 on `run`, `list`, each `watch` refresh and job completion. Without CLI activity or
 job completion, overdue history is collected on the next use; there is no separate
 background cleanup service. Active jobs, unverified state and jobs whose supervisors
-cannot be verified absent are preserved. In unreleased source, a job whose own
+cannot be verified absent are preserved. From v0.1.8, a job whose own
 keeper observed the managed process group absent before writing its final record
 is collected under these limits without checking saved PIDs, so new history
 stays bounded after a reboot or PID-namespace change. On Linux, finished records
 without that keeper marker (from earlier versions, or whose keeper did not
 complete its final write or could not observe its group absent) stay, with their
 retry keys, when their
-saved PIDs come from another or unverifiable [PID context](docs/architecture.md#pid-context-unreleased),
+saved PIDs come from another or unverifiable [PID context](https://github.com/jaredchu/proclease/blob/main/docs/architecture.md#pid-context-unreleased),
 including after a reboot, until you remove them. Filesystem errors defer deletion with a
 warning, so protected or failed-cleanup data can exceed the normal history bound.
+On Linux, jobs active or stopping at reboot can remain `unknown` afterwards.
+Unreadable procfs (for example, a restrictive `hidepid` mount) also prevents
+PID-derived absence checks and makes resource metrics unavailable. Protocol
+controls and expiry still work when their supervisors remain reachable.
+There is no forced-history deletion command. Retain unverified records until an
+operator independently establishes that no supervisor or managed group can use
+them. Removing a job directory discards its logs and retry key as well; agents
+must not remove unverified history merely to hide a row.
 While a bulk stop runs, collection of job directories is deferred and `prune --json`
 reports `"deferred": true`; normal retention resumes on the next collection trigger
 after it exits (including after a crash or kill).
@@ -370,7 +378,7 @@ running inside a Linux VM or container.
 
 ## Install the skill
 
-The same [skill folder](https://github.com/jaredchu/proclease/blob/v0.1.7/skills/proclease/SKILL.md) works as an instruction-only
+The same [skill folder](https://github.com/jaredchu/proclease/blob/v0.1.8/skills/proclease/SKILL.md) works as an instruction-only
 skill in both hosts. With `proclease` on the executor's PATH, link the folder into
 each host you use:
 
@@ -422,7 +430,7 @@ In one probe, Turbopack polling alone ended in a Watchpack `EMFILE` error
 without serving a page. Polling does not repair native FSEvents. The tested
 logs still showed nonfatal watch diagnostics for missing optional paths. Check HTTP content, not just the port.
 Other Next.js versions, applications and hosts are untested; see the
-[compatibility matrix](docs/agent-compatibility.md#fixed-workflow-results).
+[compatibility matrix](https://github.com/jaredchu/proclease/blob/main/docs/agent-compatibility.md#fixed-workflow-results).
 
 ## Boundaries
 
@@ -430,20 +438,20 @@ The targets are macOS and Linux foreground Node/Vite/Next-style servers. Runtime
 tests have run on macOS arm64, a non-root Linux aarch64 container and native
 Linux x86_64; agent-profile limits are recorded below.
 Hosted macOS and Ubuntu checks run in [GitHub Actions](https://github.com/jaredchu/proclease/actions/workflows/ci.yml).
-The [real-agent compatibility matrix](docs/agent-compatibility.md) records the
+The [real-agent compatibility matrix](https://github.com/jaredchu/proclease/blob/main/docs/agent-compatibility.md) records the
 macOS Codex/Claude profiles tested with v0.1.7 and their retry and default
-Next.js failures. It also records passes for the same profiles with unreleased
+Next.js failures. It also records passes for the same profiles with pre-v0.1.8 source builds of
 `run --reuse` and the [Next.js polling opt-in](#nextjs-in-agent-sandboxes).
 Native Linux testing passed the default-Claude workflow and found blockers in
 the tested Codex workspace sandbox and strict Claude sandbox; see the matrix
 for profile versions, retained `unknown` state and cleanup limits.
 Those two profiles are unsupported. ProcLease needs a Unix-domain control socket
 and supervisors that outlive the launching tool call, which requires a
-host-documented persistent execution context. Unreleased source adds fail-closed
+host-documented persistent execution context. Version 0.1.8 adds fail-closed
 diagnostics but does not make these profiles work. `run` now launches nothing
 when it cannot create a control socket. Saved PIDs from another or unverifiable
 PID context, such as a per-call PID namespace, are never probed, used for
-metrics or used to infer shutdown. See [PID context](docs/architecture.md#pid-context-unreleased).
+metrics or used to infer shutdown. See [PID context](https://github.com/jaredchu/proclease/blob/main/docs/architecture.md#pid-context-unreleased).
 Native Linux checks of the initial remediation build in both profiles reported
 these fail-closed results; they are diagnostics, not compatibility passes.
 There is no privileged or login-wide execution daemon. Jobs are supervised only
@@ -489,4 +497,4 @@ Codex led the initial implementation and documentation. Claude, through Claude
 Code, contributed independent review and validation. See the
 [contribution and attribution policy](https://github.com/jaredchu/proclease/blob/main/CONTRIBUTING.md#commit-attribution).
 
-Released under the [MIT license](https://github.com/jaredchu/proclease/blob/v0.1.7/LICENSE).
+Released under the [MIT license](https://github.com/jaredchu/proclease/blob/v0.1.8/LICENSE).

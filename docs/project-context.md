@@ -101,6 +101,12 @@ verification limits.
 
 ## Current state and progress
 
+The owner requested v0.1.8 on 2026-11-12. Release metadata and notes are being
+prepared on a candidate branch; native release builds, asset inspection,
+GitHub/crates.io publication and main/website promotion remain pending. The
+runtime and test sources match reviewed `ef77123`; no host sandbox restriction
+is relaxed. See [the release notes](releases/v0.1.8.md).
+
 ```text
 Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    New repository and context maintenance entry points
@@ -137,11 +143,11 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- FIXED   Interrupted shutdown history ages out of default views after verified absence
 |-- DONE    v0.1.7 interrupted-history fix, four-native/registry release and website
 |-- TESTED  macOS real-agent Vite lifecycle; v0.1.7 retry/Next failures recorded
-|-- FIXED   Unreleased `run --reuse`; 68 tests and both macOS real clients pass
+|-- FIXED   `run --reuse` in v0.1.8 candidate; 68-test build and macOS clients passed
 |-- FIXED   Next.js polling opt-in served initial/edited pages in both macOS clients
 |-- TESTED  Native Linux default-Claude Vite/Next workflow and 68 Rust tests
 |-- BLOCKED Tested Linux Codex/strict-Claude sandbox workflows; limits recorded
-|-- DONE    Unreleased fail-closed socket preflight and Linux PID-context checks
+|-- READY   v0.1.8 candidate includes socket preflight and Linux PID-context checks
 |-- TESTED  Initial candidate: 76 tests; restricted-profile checks fail closed
 |-- FIXED   Review corrections: stopping window, finalized retention, procfs bounds
 |-- TESTED  Corrected source: 81 tests on macOS/Linux; diagnostic recheck fails closed
@@ -284,9 +290,10 @@ no search-ranking or traffic improvement has been measured.
   [compatibility matrix](agent-compatibility.md) separates the default-Claude
   Linux pass, blocked restricted profiles, historical macOS failures and fixed
   macOS workflow. Untested profiles still need direct testing.
-- `run --reuse`, the socket preflight and PID-context checks are not in any
-  release; shipping needs separate release scope. Same-user local control is not authenticated
-  agent identity.
+- The authorized v0.1.8 candidate includes `run --reuse`, the socket preflight
+  and PID-context checks. Publication remains pending under the
+  [release procedure](releasing.md). Same-user local control is not
+  authenticated agent identity.
 - macOS Developer ID signing/notarization is deferred for experimental releases
   and required before promotion to stable. See the
   [release procedure](releasing.md) for binary and registry delivery.
