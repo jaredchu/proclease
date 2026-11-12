@@ -1,6 +1,6 @@
 # ProcLease project context
 
-Last reviewed: 2026-11-11.
+Last reviewed: 2026-11-12.
 
 ## Purpose and scope
 
@@ -64,6 +64,19 @@ verification limits.
   `https://proclease.com` with a permanent 301, preserving paths and query strings.
   Cloudflare zone rules and redirect-only DNS are maintained separately from
   asset deployment; see [the website procedure](../website/README.md#canonical-url-and-redirects).
+- **Owner-requested, 2026-11-12:** resolve macOS Codex/Claude retry-context
+  mismatches without weakening launch identity or disclosing environment values.
+  The selected direction is an explicit `run --reuse` that requires `--key`,
+  verifies command, directory and launch policy, keeps the retained job's
+  original environment and never launches. Ordinary keyed retries still reject
+  environment changes, and proxy variables are not ignored. See
+  [the compatibility diagnosis](agent-compatibility.md#observed-failures-and-limits).
+- **Owner-prioritized, 2026-11-12:** fix the macOS retry-context and Next.js
+  sandbox issues first; native Linux agent testing is deferred and is not a
+  prerequisite. The selected Next.js workflow is an application opt-in to
+  polling for both Turbopack and Watchpack, keeping Turbopack and the host
+  sandbox; ProcLease does not mutate application config. See the
+  [recipe](../README.md#nextjs-in-agent-sandboxes).
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
   proxying, auto-restart and hosted dashboards.
 
@@ -103,7 +116,11 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    HTTPS and www canonical redirects configured at the Cloudflare edge
 |-- DONE    GitHub description, eleven relevant topics and custom social preview
 |-- FIXED   Interrupted shutdown history ages out of default views after verified absence
-`-- DONE    v0.1.7 interrupted-history fix, four-native/registry release and website
+|-- DONE    v0.1.7 interrupted-history fix, four-native/registry release and website
+|-- TESTED  macOS real-agent Vite lifecycle; v0.1.7 retry/Next failures recorded
+|-- FIXED   Unreleased `run --reuse`; 68 tests and both macOS real clients pass
+|-- FIXED   Next.js polling opt-in served initial/edited pages in both macOS clients
+`-- OPEN    Native Linux agent runs, deferred by owner until after the macOS fixes
 ```
 
 The [v0.1.5 publication](verification.md#v015-publication-2026-11-08) packages bulk
@@ -113,9 +130,13 @@ Rust 1.89 registry installations passed scoped bulk-stop and expiry checks.
 
 The initial implementation is public. Hosted macOS and Ubuntu checks pass;
 [verification](verification.md) records evidence and limits, including a real
-Codex preview session and the corrected registry-selection guidance. Restricted
-agent host profiles remain untested. A comparative benchmark is needed before claiming
-measured superiority over another supervisor. The v0.1.3
+Codex preview session and the corrected registry-selection guidance. The
+[agent compatibility matrix](agent-compatibility.md) records scoped macOS
+Codex/Claude sandbox results: v0.1.7 Vite lifecycle passes with retry/Next.js
+failures, then passes of the unreleased `run --reuse` and Next.js polling
+workflow in the same profiles, with a recorded Claude observer protocol
+deviation. Native Linux agent workflows remain untested and deferred. A comparative benchmark
+is needed before claiming measured superiority over another supervisor. The v0.1.3
 [startup and retry corrections](verification.md#startup-and-retry-corrections-2026-11-07)
 record their regressions and current verification limits. A test-teardown race
 that left partial fixture directories is
@@ -204,13 +225,18 @@ no search-ranking or traffic improvement has been measured.
 - [Comparison with related tools](comparison.md)
 - [GitHub topics, description and social preview](github-discovery.md)
 - [Verification and limits](verification.md)
+- [Real-agent macOS/Linux compatibility matrix](agent-compatibility.md)
 - [Shared ProcLease skill](../skills/proclease/SKILL.md)
 - [Contributing and attribution](../CONTRIBUTING.md)
 
 ## Open questions
 
-- Exact compatibility under each agent host's restricted execution profile needs
-  direct host testing. Same-user local control is not authenticated agent identity.
+- Native Linux agent profiles (deferred) and untested macOS profiles need
+  direct testing. The [compatibility matrix](agent-compatibility.md) records the
+  v0.1.7 cross-tool-call retry and default Turbopack watcher failures in the
+  tested macOS sandboxes, and the passing fixed workflow. `run --reuse` is not
+  in any release; shipping it needs separate release scope.
+  Same-user local control is not authenticated agent identity.
 - macOS Developer ID signing/notarization is deferred for experimental releases
   and required before promotion to stable. See the
   [release procedure](releasing.md) for binary and registry delivery.

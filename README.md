@@ -209,6 +209,24 @@ unavailable values are `null`. An unavailable group has `resources: null`.
   exits nonzero. Empty interrupted-launch reservations and those containing
   only private generated atomic-write temporary files are ignored without deleting
   state; unreadable/ambiguous launch metadata still fails closed.
+- Unreleased source, not in v0.1.7: a rejected keyed retry names the differing
+  fields (`command`, `directory`, `owner`, `task`, `name`, `url`, `ttl`, `grace`,
+  `log limit` or `environment`), never their values. Some agent hosts change
+  per-call environment variables between tool calls, so an exact retry can differ
+  only in `environment`. `run --reuse --key REQUEST_ID` is an explicit
+  observation-only retry for that case. It returns the retained job with
+  `reused: true` only when the command, canonical directory and every other launch
+  option above match. It does not compare the new environment; the job keeps its
+  original launch environment. It never reserves, launches, renews or resurrects:
+  an absent, collected or incomplete key fails with nothing started, and a
+  stopped, expired or failed job is returned as recorded (a failed record exits
+  nonzero). Readiness flags remain observational. Ordinary keyed retries still
+  reject any environment change; use `--reuse` only when keeping the original
+  environment is intended. If you want the application to run with a changed
+  environment, that is a new request, not a retry. `--reuse` without `--key` is
+  a parser error. Real Codex CLI and Claude Code sessions in the tested macOS
+  sandbox profiles passed this retry with a local source build; see the
+  [compatibility matrix](docs/agent-compatibility.md#fixed-workflow-results).
 - Stop during shutdown returns lifecycle state; extension of a stopping job is
   rejected. If a response is lost, inspect `list` before retrying an operation.
 
@@ -358,11 +376,55 @@ skill. Invoke `$proclease` in Codex or `/proclease` in Claude Code. Host permiss
 still apply. A skill guides use; it does not intercept every command or grant
 local execution to a chat that does not already have it.
 
+## Next.js in agent sandboxes
+
+In the tested macOS Codex CLI and Claude Code sandbox profiles, Next.js 16.4.5
+with default Turbopack failed with `unable to start FSEvent stream`. Opting the
+application into polling for **both** of its watcher layers kept Turbopack and
+the host sandbox unchanged, and served both the initial and the edited page.
+ProcLease does not change application config, packages or bundlers itself.
+
+1. Merge a top-level `watchOptions` entry into your existing `next.config.mjs`.
+   Next.js passes it to Turbopack's watcher
+   ([source](https://github.com/vercel/next.js/blob/v16.4.5/packages/next/src/server/dev/hot-reloader-turbopack.ts)):
+
+   ```js
+   const nextConfig = {
+     // ...your existing options
+     watchOptions: { pollIntervalMs: 250 },
+   };
+   export default nextConfig;
+   ```
+
+2. Set `WATCHPACK_POLLING` for Next.js's Watchpack layer
+   ([source](https://github.com/webpack/watchpack/blob/v2.4.4/lib/DirectoryWatcher.js))
+   with an explicit command prefix on the **first** launch. The environment is
+   part of launch identity, so adding it later is a new request:
+
+   ```sh
+   env WATCHPACK_POLLING=250 proclease run --task preview --key preview-next-1 \
+     --wait-for-port 3000 -- npm run dev -- --hostname 127.0.0.1 --port 3000
+   ```
+
+   With a build that supports `--reuse`, retry with the same prefix and command
+   plus `--reuse`. Host permission rules may need to allow that exact prefix.
+
+In one probe, Turbopack polling alone ended in a Watchpack `EMFILE` error
+without serving a page. Polling does not repair native FSEvents. The tested
+logs still showed nonfatal watch diagnostics for missing optional paths. Check HTTP content, not just the port.
+Other Next.js versions, applications and hosts are untested; see the
+[compatibility matrix](docs/agent-compatibility.md#fixed-workflow-results).
+
 ## Boundaries
 
 The targets are macOS and Linux foreground Node/Vite/Next-style servers. Tests
 have run locally on macOS arm64 and in a non-root Linux aarch64 container.
 Hosted macOS and Ubuntu checks run in [GitHub Actions](https://github.com/jaredchu/proclease/actions/workflows/ci.yml).
+The [real-agent compatibility matrix](docs/agent-compatibility.md) records the
+macOS Codex/Claude profiles tested with v0.1.7 and their retry and default
+Next.js failures. It also records passes for the same profiles with unreleased
+`run --reuse` and the [Next.js polling opt-in](#nextjs-in-agent-sandboxes).
+Native Linux agent workflows are untested; that testing is deferred.
 There is no privileged or login-wide execution daemon. Jobs are supervised only
 after being launched through ProcLease. A descendant that deliberately creates a
 new session/process group can escape group cleanup. Docker, PID adoption,

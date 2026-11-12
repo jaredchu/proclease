@@ -52,6 +52,26 @@ launching. Never move or copy a live job's state to make it appear elsewhere.
   that task's jobs before relaunching. A context/key mismatch is not permission to
   switch keys, duplicate the service, delete state or take over another task's job.
   Use a new key only for a deliberately new run after reconciling the previous one.
+- Agent hosts can change environment variables between tool calls, such as a
+  per-call ID or sandbox proxy settings, so an exact same-key retry can be
+  rejected with `differs: environment`. If `proclease run --help` lists
+  `--reuse`, repeat the identical command with `--reuse` added to observe the
+  original job; it keeps the job's original launch environment and never starts
+  anything. If it reports no retained job, reconcile with `list --all --json`
+  instead of relaunching under a new key. Do not strip, rewrite or unset
+  environment variables, or change sandbox settings, to make a retry match. Any
+  other differing field means a different request. Keep any explicit command
+  prefix, such as `env NAME=value`, identical on the retry. If the application
+  should run with a changed environment, that is a new request, not a reuse.
+- If a Next.js dev server in a sandboxed agent host fails with a native watcher
+  error such as `unable to start FSEvent stream`, do not relax the sandbox or
+  switch bundlers. With the user's agreement to change project config, opt in to
+  polling for both watcher layers before the first launch: merge
+  `watchOptions: { pollIntervalMs: 250 }` at the top level of the existing
+  `next.config` and launch with
+  `env WATCHPACK_POLLING=250 proclease run ... -- npm run dev`. ProcLease does not
+  apply this itself. It was tested with Next.js 16.4.5 only; confirm both the
+  initial and an edited page over HTTP, and report remaining watch diagnostics.
 - Read the returned job ID, state and expiry. `running` means the executable
   started; verify application readiness separately using bounded logs and the
   intended local URL. `--url` is caller-supplied metadata, not a readiness check.

@@ -1142,6 +1142,390 @@ fn explicit_retry_is_idempotent_without_renewal_or_resurrection() {
     );
 }
 
+/// Keyed service launch with every lease-policy option set, so `--reuse`
+/// checks can vary one option at a time.
+fn reuse_args<'a>(service: &'a str, ready: &'a str, overrides: &[(&str, &'a str)]) -> Vec<&'a str> {
+    let mut options = vec![
+        ("--ttl", "30s"),
+        ("--grace", "100ms"),
+        ("--owner", "test"),
+        ("--task", "reuse-task"),
+        ("--name", "web"),
+        ("--url", "http://127.0.0.1:9/"),
+        ("--log-limit", "65536"),
+        ("--key", "reuse-1"),
+    ];
+    for (flag, value) in overrides {
+        options.iter_mut().find(|(f, _)| f == flag).unwrap().1 = value;
+    }
+    let mut args = vec!["run"];
+    for (flag, value) in options {
+        args.extend([flag, value]);
+    }
+    args.extend(["--", "/usr/bin/python3", service, "normal", ready]);
+    args
+}
+
+fn with_reuse(args: &[&str]) -> Vec<String> {
+    let mut args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
+    args.insert(1, "--reuse".into());
+    args
+}
+
+/// Job directory names in the state root, including bare reservations.
+fn job_dirs(fixture: &Fixture) -> Vec<String> {
+    let mut names: Vec<_> = fs::read_dir(&fixture.state)
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .filter(|name| name.len() == 12 && name.chars().all(|c| c.is_ascii_hexdigit()))
+        .collect();
+    names.sort();
+    names
+}
+
+fn job_count(fixture: &Fixture) -> usize {
+    fixture.call(&["list", "--all"])["jobs"]
+        .as_array()
+        .unwrap()
+        .len()
+}
+
+#[test]
+fn explicit_reuse_keeps_the_original_environment_without_weakening_ordinary_retries() {
+    let fixture = Fixture::new();
+    let ready = fixture.ready_path();
+    let service = service_path();
+    let base = reuse_args(&service, ready.to_str().unwrap(), &[]);
+    let first = parse(
+        &fixture
+            .command(&base)
+            .env("PL_MARKER", "original-launch")
+            .output()
+            .unwrap(),
+    );
+    let id = first["job"]["id"].as_str().unwrap().to_owned();
+    let info = ready_file(&ready);
+    assert_eq!(info["marker"], "original-launch");
+    let running = fixture.only_job();
+
+    // Ordinary keyed retries still reject any changed environment, including
+    // proxy variables a sandbox may add, and only suggest --reuse.
+    for (key, value) in [
+        ("PL_MARKER", "changed-application-env"),
+        ("HTTPS_PROXY", "http://127.0.0.1:9"),
+    ] {
+        let output = fixture
+            .command(&base)
+            .env("PL_MARKER", "original-launch")
+            .env(key, value)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1), "{}", describe(&output));
+        let error = parse(&output)["error"].as_str().unwrap().to_owned();
+        assert!(error.contains("differs: environment"), "{error}");
+        assert!(error.contains("--reuse"), "{error}");
+        assert!(!error.contains(value), "{error}");
+    }
+
+    // Explicit reuse from a different tool-call environment returns the same
+    // job, deadline and process; the service keeps its original environment.
+    let reuse = with_reuse(&base);
+    let reuse: Vec<&str> = reuse.iter().map(String::as_str).collect();
+    let output = fixture
+        .command(&reuse)
+        .env("PL_MARKER", "changed-application-env")
+        .env("HTTPS_PROXY", "http://127.0.0.1:9")
+        .env("CODEX_TOOL_CALL_ID", "another-call")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", describe(&output));
+    let reused = parse(&output);
+    assert_eq!(reused["reused"], true);
+    assert_eq!(reused["job"]["id"], id.as_str());
+    assert_eq!(
+        reused["job"]["expires_at_ms"],
+        first["job"]["expires_at_ms"]
+    );
+    assert_eq!(reused["job"]["command_pid"], running["command_pid"]);
+    assert_eq!(ready_file(&ready), info, "service must not be restarted");
+
+    // Readiness on reuse is observational and never renews the lease.
+    let mut with_log = reuse.clone();
+    with_log.splice(1..1, ["--wait-for-log", "service-ready"]);
+    let observed = fixture.call(&with_log);
+    assert_eq!(observed["readiness"]["status"], "ready", "{observed}");
+    assert_eq!(observed["job"]["id"], id.as_str());
+    assert_eq!(
+        observed["job"]["expires_at_ms"],
+        first["job"]["expires_at_ms"]
+    );
+
+    // Command, directory and every lease-policy option must still match.
+    let ready_text = ready.to_str().unwrap();
+    let other_ready = format!("{ready_text}.other");
+    let changed_command = reuse_args(&service, &other_ready, &[]);
+    let mut cases = vec![(with_reuse(&changed_command), "command")];
+    for (flag, value, field) in [
+        ("--ttl", "31s", "ttl"),
+        ("--grace", "200ms", "grace"),
+        ("--owner", "other", "owner"),
+        ("--task", "other-task", "task"),
+        ("--name", "other", "name"),
+        ("--url", "http://127.0.0.1:10/", "url"),
+        ("--log-limit", "65537", "log limit"),
+    ] {
+        cases.push((
+            with_reuse(&reuse_args(&service, ready_text, &[(flag, value)])),
+            field,
+        ));
+    }
+    for (args, field) in cases {
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let output = fixture.command(&args).output().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "{field}: {}",
+            describe(&output)
+        );
+        let error = parse(&output)["error"].as_str().unwrap().to_owned();
+        assert!(error.contains(&format!("differs: {field}")), "{error}");
+        assert!(!error.contains("--reuse"), "{error}");
+    }
+    let output = fixture
+        .command(&reuse)
+        .current_dir(fixture.dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", describe(&output));
+    assert!(parse(&output)["error"]
+        .as_str()
+        .unwrap()
+        .contains("differs: directory"));
+    assert_eq!(job_count(&fixture), 1);
+
+    // A stopped job is returned as retained history, never resurrected.
+    fixture.call(&["stop", &id]);
+    let stopped = fixture.call(&reuse);
+    assert_eq!(stopped["reused"], true);
+    assert_eq!(stopped["job"]["state"], "stopped");
+    let output = fixture.command(&with_log).output().unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", describe(&output));
+    assert_eq!(parse(&output)["readiness"]["status"], "job_finished");
+    assert_eq!(job_count(&fixture), 1);
+    assert_eq!(ready_file(&ready), info);
+}
+
+#[test]
+fn reuse_never_launches_without_a_complete_retained_job() {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new();
+    // --reuse is meaningless without an explicit key.
+    let output = fixture
+        .command(&["run", "--reuse", "--", "/bin/sleep", "30"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "{}", describe(&output));
+    assert!(fixture.no_jobs());
+
+    // An absent key fails closed without reserving anything.
+    let output = fixture
+        .command(&[
+            "run",
+            "--reuse",
+            "--key",
+            "absent",
+            "--",
+            "/bin/sleep",
+            "30",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", describe(&output));
+    let result = parse(&output);
+    assert!(result.get("job").is_none(), "{result}");
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("no retained job"));
+    assert!(fixture.no_jobs());
+
+    // An incomplete reservation is not a retained job.
+    let empty = fixture.state.join("0123456789ab");
+    fs::create_dir(&empty).unwrap();
+    fs::set_permissions(&empty, fs::Permissions::from_mode(0o700)).unwrap();
+    let output = fixture
+        .command(&[
+            "run",
+            "--reuse",
+            "--key",
+            "absent",
+            "--",
+            "/bin/sleep",
+            "30",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", describe(&output));
+    assert_eq!(job_count(&fixture), 0);
+    assert_eq!(job_dirs(&fixture), ["0123456789ab"]);
+    fs::remove_dir(&empty).unwrap();
+
+    // Committed launch metadata without its record fails closed, unlaunched.
+    let (_, mut partial) = fixture.template(&[
+        "run",
+        "--grace",
+        "100ms",
+        "--key",
+        "half-written",
+        "--",
+        "/usr/bin/true",
+    ]);
+    partial["id"] = serde_json::json!("0123456789ab");
+    fixture.seed_files(
+        "0123456789ab",
+        &[("launch.json", serde_json::to_vec(&partial).unwrap())],
+    );
+    let output = fixture
+        .command(&[
+            "run",
+            "--reuse",
+            "--grace",
+            "100ms",
+            "--key",
+            "half-written",
+            "--",
+            "/usr/bin/true",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", describe(&output));
+    assert!(parse(&output).get("job").is_none());
+    assert_eq!(job_dirs(&fixture), ["0123456789ab"]);
+    assert!(!fixture.state.join("0123456789ab/record.json").exists());
+    fs::remove_dir_all(fixture.state.join("0123456789ab")).unwrap();
+
+    // A key whose history retention collects is gone, not relaunched.
+    let purged = [
+        "run",
+        "--grace",
+        "100ms",
+        "--key",
+        "purged",
+        "--",
+        "/usr/bin/true",
+    ];
+    let id = fixture.call(&purged)["job"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let done = fixture.terminal(&id);
+    let keeper = done["keeper_pid"].as_u64().unwrap() as i32;
+    wait(|| (unsafe { libc::kill(keeper, 0) } == -1).then_some(()));
+    let dir = fixture.state.join(&id);
+    let mut stale: Value =
+        serde_json::from_slice(&fs::read(dir.join("record.json")).unwrap()).unwrap();
+    stale["finished_at_ms"] = serde_json::json!(1);
+    fs::write(dir.join("record.json"), serde_json::to_vec(&stale).unwrap()).unwrap();
+    let purged_reuse = with_reuse(&purged);
+    let purged_reuse: Vec<&str> = purged_reuse.iter().map(String::as_str).collect();
+    let output = fixture.command(&purged_reuse).output().unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", describe(&output));
+    assert!(parse(&output)["error"]
+        .as_str()
+        .unwrap()
+        .contains("no retained job"));
+    assert!(!dir.exists());
+    assert!(fixture.no_jobs());
+}
+
+#[test]
+fn reuse_returns_retained_terminal_records_and_never_starts_the_command() {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new();
+    let reused = |args: &[&str]| {
+        let args = with_reuse(args);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        fixture.command(&args).output().unwrap()
+    };
+
+    // A failed launch stays failed with the failed-record exit status.
+    let failed = [
+        "run",
+        "--grace",
+        "100ms",
+        "--key",
+        "failed-1",
+        "--",
+        "/proclease-does-not-exist",
+    ];
+    let output = fixture.command(&failed).output().unwrap();
+    assert_eq!(parse(&output)["job"]["state"], "failed");
+    let output = reused(&failed);
+    assert_eq!(output.status.code(), Some(1), "{}", describe(&output));
+    let result = parse(&output);
+    assert_eq!(result["reused"], true);
+    assert_eq!(result["job"]["state"], "failed");
+
+    // An expired lease is returned unchanged, not renewed.
+    let expiring = [
+        "run",
+        "--ttl",
+        "1s",
+        "--grace",
+        "100ms",
+        "--key",
+        "expired-1",
+        "--",
+        "/bin/sleep",
+        "30",
+    ];
+    let first = fixture.call(&expiring);
+    let id = first["job"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(fixture.terminal(&id)["state"], "expired");
+    let output = reused(&expiring);
+    assert!(output.status.success(), "{}", describe(&output));
+    let result = parse(&output);
+    assert_eq!(result["job"]["id"], id.as_str());
+    assert_eq!(result["job"]["state"], "expired");
+    assert_eq!(
+        result["job"]["expires_at_ms"],
+        first["job"]["expires_at_ms"]
+    );
+
+    // A running job is returned even when its command can no longer execute.
+    let script = fixture.dir.path().join("serve.sh");
+    fs::write(&script, "#!/bin/sh\nexec /bin/sleep 30\n").unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+    let script = script.to_str().unwrap();
+    let running = [
+        "run",
+        "--ttl",
+        "30s",
+        "--grace",
+        "100ms",
+        "--key",
+        "running-1",
+        "--",
+        script,
+    ];
+    let started = fixture.call(&running);
+    let running_id = started["job"]["id"].as_str().unwrap().to_owned();
+    fs::remove_file(script).unwrap();
+    let output = reused(&running);
+    assert!(output.status.success(), "{}", describe(&output));
+    let result = parse(&output);
+    assert_eq!(result["job"]["id"], running_id.as_str());
+    assert_eq!(result["job"]["state"], "running");
+    assert_eq!(
+        result["job"]["expires_at_ms"],
+        started["job"]["expires_at_ms"]
+    );
+    assert_eq!(job_count(&fixture), 3);
+    fixture.call(&["stop", &running_id]);
+}
+
 #[test]
 fn concurrent_retries_create_one_job() {
     let fixture = Fixture::new();

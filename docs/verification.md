@@ -1021,19 +1021,84 @@ Use native storage for state in Linux VMs/containers; the observed shared-mount
 semantics are unsupported. No workaround that guesses missing lifecycle state
 was added.
 
+## Real-agent compatibility, 2026-11-12
+
+The [macOS/Linux agent matrix](agent-compatibility.md) records real model-driven
+Codex CLI and Claude Code sessions using ProcLease 0.1.7. Configured macOS
+sandbox profiles passed Vite HTTP readiness, persistence after foreground-client
+SIGINT, fresh-session observation/stop, and independent 45-second expiry, with
+unchanged deadlines and closed ports after stop/expiry. An ungranted Codex
+registry baseline was denied. Both configured clients encountered cross-tool-call
+retry-context mismatches and Next.js Turbopack FSEvent failures; those checks are
+failed, not compatibility passes. Native Linux agent testing remains unavailable.
+The matrix preserves the exact client/application versions, profile conditions,
+control comparison, protocol deviations and verification limits. The later
+fixed workflow is recorded [below](#real-client-fixed-workflow-unreleased-source-2026-11-12);
+it does not change these v0.1.7 results.
+
+## Explicit reuse retry (unreleased source), 2026-11-12
+
+`run --reuse` (requires `--key`) returns a retained job without comparing the
+new environment and never launches. Mismatch errors now name differing fields,
+not values. New regressions cover:
+
+- ordinary keyed retries with a changed application or proxy variable are
+  still rejected, and only an environment-only mismatch suggests `--reuse`;
+- reuse with changed application, proxy and tool-call variables returns the same
+  ID, deadline and service PID, and the service keeps its original environment;
+- changed command, directory, TTL, grace, owner, task, name, URL or log limit
+  is rejected under `--reuse`;
+- `--reuse` without `--key` is a parser error; an absent, collected or
+  incomplete key, or launch metadata without a record, launches nothing;
+- stopped, expired and failed records are returned without renewal or
+  resurrection, and a running job is returned after its command file is removed;
+- readiness on reuse stays observational.
+
+Locally on macOS arm64, `cargo fmt --check`,
+`cargo clippy --locked --all-targets -- -D warnings` and `cargo test --locked`
+pass: all 68 tests (16 unit, 52 integration), with isolated build output and a
+short isolated fixture root. The runtime source was not changed after these
+checks. This is unreleased source: no published binary, crate, installer or
+release pin includes `--reuse`.
+
+## Real-client fixed workflow (unreleased source), 2026-11-12
+
+The [compatibility matrix](agent-compatibility.md#fixed-workflow-results)
+records Codex CLI 0.167.0-alpha.4.1 and Claude Code 2.1.322 sessions using that
+local build (which still reports package version 0.1.7) in the unchanged macOS
+sandbox profiles. The Next.js fixture used the
+[polling opt-in](../README.md#nextjs-in-agent-sandboxes). Both clients passed
+Vite and Next.js HTTP readiness, separate-tool-call `run --reuse` with the same
+IDs and deadlines and no duplicates, an edited Next.js page over HTTP,
+survival of foreground-client SIGINT, fresh-session observation and stop,
+new 60-second lease expiry, and `--reuse` of expired keys without renewal or
+resurrection, with ports closed after stop and expiry. Independent controller
+checks corroborate these lifecycle and content outcomes and confirm every
+fixed job terminal afterwards.
+
+Claude's observer deviated from protocol after three denied preflight commands,
+so its results are functional passes rather than a clean matched-protocol pass.
+Both clients' Next.js logs retained three nonfatal watch diagnostics. Earlier
+failed and protocol-incomplete polling probes remain in the matrix. Native Linux
+agent testing is deferred. No sleep/wake, clock-change, general-host or
+comparative claim follows from these runs.
+
 ## Limits
 
-No direct system sleep/wake, clock-change, simultaneous destruction of both
-supervisors or restricted Codex/Claude execution-profile test has
-been completed. A service can deliberately escape its process group. These
-remain explicit support/verification boundaries, not passing checks.
+No direct system sleep/wake, clock-change or simultaneous destruction of both
+supervisors test has been completed. A service can deliberately escape its
+process group. These remain explicit support/verification boundaries, not
+passing checks.
 
 There is no comparative benchmark against AgentProcs, GNU timeout, systemd-run,
 rentctl or other alternatives; the [comparison](comparison.md) is documented
 behavior only. The tests establish this implementation's inspected behaviour;
 they do not establish comparative superiority. User-local installation and skill
-discovery are verified, and one ordinary local Codex preview session has been
-observed. That session exposed the corrected registry-selection issue. The revised
-guidance has not been independently tested in a fresh model-driven session;
-Claude's launch workflow and each host's restricted execution profile remain
-untested.
+discovery are verified, and one earlier ordinary local Codex preview session
+exposed the corrected registry-selection issue. The later
+[real-agent tests](agent-compatibility.md) used an explicitly isolated shared
+registry consistently. They cover the listed macOS profiles only: the v0.1.7
+retry and default Next.js failures, and the unreleased-source fixed workflow
+with its recorded deviation and diagnostics. They do not prove ordinary-registry
+integration for every client, automatic skill invocation, or native Linux agent
+compatibility.

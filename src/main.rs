@@ -72,9 +72,18 @@ enum Commands {
         url: Option<String>,
         #[arg(
             long,
-            help = "Explicit retry key; mismatched launch contexts are rejected"
+            help = "Explicit retry key; a retry must match the original command, directory, \
+                    environment and lease policy, or it is rejected (see --reuse)"
         )]
         key: Option<String>,
+        #[arg(
+            long,
+            requires = "key",
+            help = "With --key: return the retained job for this key and never launch. \
+                    Command, directory and lease policy must still match; the job keeps \
+                    its original launch environment, which is not compared"
+        )]
+        reuse: bool,
         #[arg(long, default_value = "2s")]
         grace: String,
         #[arg(
@@ -451,6 +460,47 @@ fn same_launch_context(previous: &Launch, argv: &[String], cwd: &Path, env: &Con
         && previous.fingerprint == legacy_fingerprint(argv, cwd, env)
 }
 
+/// Launch identity requested by a keyed `run`, apart from its environment.
+struct Requested<'a> {
+    argv: &'a [String],
+    cwd: &'a Path,
+    owner: &'a str,
+    task: Option<&'a str>,
+    name: Option<&'a str>,
+    url: Option<&'a str>,
+    ttl_ms: u64,
+    grace_ms: u64,
+    log_limit_bytes: u64,
+}
+
+/// Names of the non-environment launch fields in which a retained launch
+/// differs from a request. Reports names only, never values.
+fn launch_differences(previous: &Launch, requested: &Requested) -> Vec<&'static str> {
+    [
+        ("command", previous.argv != requested.argv),
+        ("directory", previous.cwd != requested.cwd),
+        ("owner", previous.owner != requested.owner),
+        ("task", previous.task.as_deref() != requested.task),
+        ("name", previous.name.as_deref() != requested.name),
+        ("url", previous.url.as_deref() != requested.url),
+        (
+            "ttl",
+            previous
+                .expires_at_ms
+                .saturating_sub(previous.created_at_ms)
+                != requested.ttl_ms,
+        ),
+        ("grace", previous.grace_ms != requested.grace_ms),
+        (
+            "log limit",
+            previous.log_limit_bytes != requested.log_limit_bytes,
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(field, differs)| differs.then_some(field))
+    .collect()
+}
+
 fn validate_label(value: &str) -> Result<()> {
     if value.len() > 512 || value.chars().any(char::is_control) {
         bail!("labels must be at most 512 bytes without control characters");
@@ -569,6 +619,7 @@ fn dispatch(cli: &Cli) -> Result<i32> {
             name,
             url,
             key,
+            reuse,
             grace,
             wait_for_port,
             wait_for_log,
@@ -619,21 +670,44 @@ fn dispatch(cli: &Cli) -> Result<i32> {
                 }
                 if let Some(key) = key {
                     if let Some((previous, record)) = store.find_retry(key)? {
-                        if !same_launch_context(&previous, command, &cwd, &env)
-                            || &previous.owner != owner
-                            || &previous.task != task
-                            || &previous.name != name
-                            || &previous.url != url
-                            || previous
-                                .expires_at_ms
-                                .saturating_sub(previous.created_at_ms)
-                                != ttl
-                            || previous.grace_ms != grace
-                            || previous.log_limit_bytes != *log_limit
-                        {
-                            bail!("retry key already belongs to a different launch context");
+                        let differences = launch_differences(
+                            &previous,
+                            &Requested {
+                                argv: command,
+                                cwd: &cwd,
+                                owner,
+                                task: task.as_deref(),
+                                name: name.as_deref(),
+                                url: url.as_deref(),
+                                ttl_ms: ttl,
+                                grace_ms: grace,
+                                log_limit_bytes: *log_limit,
+                            },
+                        );
+                        if !differences.is_empty() {
+                            bail!(
+                                "retry key already belongs to a different launch context \
+                                 (differs: {}); nothing was launched",
+                                differences.join(", ")
+                            );
+                        }
+                        // --reuse deliberately keeps the retained job's original
+                        // environment; an ordinary retry must match it exactly.
+                        if !*reuse && !same_launch_context(&previous, command, &cwd, &env) {
+                            bail!(
+                                "retry key already belongs to a different launch context \
+                                 (differs: environment); nothing was launched. Only if you \
+                                 intend to return the retained job with its original launch \
+                                 environment, retry explicitly with --reuse"
+                            );
                         }
                         break 'launch (record, true);
+                    }
+                    if *reuse {
+                        bail!(
+                            "--reuse found no retained job for this retry key; \
+                             nothing was launched"
+                        );
                     }
                 }
                 let id = store.reserve()?;
@@ -948,6 +1022,81 @@ mod tests {
         assert!(json.get("last_lifecycle_write_ms").is_none());
         let restored: Record = serde_json::from_value(json).unwrap();
         assert!(restored.last_lifecycle_write_ms.is_none());
+    }
+
+    #[test]
+    fn launch_differences_name_each_policy_field_without_values() {
+        let argv = strings(&["/usr/bin/true", "secret-arg"]);
+        let previous = launch(&argv, Path::new("/work"), "f".into());
+        let same = Requested {
+            argv: &argv,
+            cwd: Path::new("/work"),
+            owner: "user",
+            task: None,
+            name: None,
+            url: None,
+            ttl_ms: 1,
+            grace_ms: 0,
+            log_limit_bytes: 1,
+        };
+        assert!(launch_differences(&previous, &same).is_empty());
+        let other_argv = strings(&["/usr/bin/true"]);
+        let cases: [(&str, Requested); 9] = [
+            (
+                "command",
+                Requested {
+                    argv: &other_argv,
+                    ..same
+                },
+            ),
+            (
+                "directory",
+                Requested {
+                    cwd: Path::new("/other"),
+                    ..same
+                },
+            ),
+            ("owner", Requested { owner: "x", ..same }),
+            (
+                "task",
+                Requested {
+                    task: Some("t"),
+                    ..same
+                },
+            ),
+            (
+                "name",
+                Requested {
+                    name: Some("n"),
+                    ..same
+                },
+            ),
+            (
+                "url",
+                Requested {
+                    url: Some("u"),
+                    ..same
+                },
+            ),
+            ("ttl", Requested { ttl_ms: 2, ..same }),
+            (
+                "grace",
+                Requested {
+                    grace_ms: 1,
+                    ..same
+                },
+            ),
+            (
+                "log limit",
+                Requested {
+                    log_limit_bytes: 2,
+                    ..same
+                },
+            ),
+        ];
+        for (field, requested) in cases {
+            assert_eq!(launch_differences(&previous, &requested), [field]);
+        }
     }
 
     #[test]
