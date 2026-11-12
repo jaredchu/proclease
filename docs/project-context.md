@@ -111,18 +111,20 @@ verification limits.
 
 ## Current state and progress
 
-The owner-requested v0.1.8 release is published on GitHub and crates.io, with a
+The earlier owner-requested v0.1.8 release is published on GitHub and crates.io, with a
 docs.rs overview, four verified native archives and matching live website pins.
 The published runtime and tests match reviewed `ef77123`; no host sandbox restriction
 was relaxed. Fresh binary and default Rust 1.89 registry installations passed
 explicit reuse and expiry checks. See [publication evidence](verification.md#v018-publication-2026-11-12)
 and [the release notes](releases/v0.1.8.md).
 
-The **v0.1.9 release candidate** packages `run --foreground` with file controls
-from reviewed `88b5ea7`. Published v0.1.8 binaries/crate do not contain it. Native
-archives, registry publication and website rollout remain release gates; see
-[the release notes](releases/v0.1.9.md). All 96 tests pass on macOS and native Linux, and a default
-Rust 1.89 source installation passes. Both tested restricted Linux clients passed
+The **v0.1.9 experimental prerelease** packages `run --foreground` with file
+controls from reviewed `88b5ea7`, with version metadata at `5d0c47b`. Four native
+archives, crates.io source, a docs.rs overview and matching website pins are
+published; v0.1.8 binaries/crate do not contain this feature. All 96 tests pass
+on all four native release targets, and default Rust 1.89 packaged-source and
+registry installations pass. See [the release notes](releases/v0.1.9.md) and
+[publication verification](verification.md#v019-publication-2026-11-12). Both tested restricted Linux clients passed
 cross-call file controls, explicit extension/reuse, stop and expiry with native
 execution tasks. Early client exits can still leave `unknown` records; strict
 Claude's private localhost still prevents cross-call HTTP access. See
@@ -173,9 +175,10 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- FIXED   Review corrections: stopping window, finalized retention, procfs bounds
 |-- TESTED  Corrected source: 81 tests on macOS/Linux; diagnostic recheck fails closed
 |-- DONE    v0.1.8 four-native/registry/website release and isolated installs verified
-|-- PREPARED v0.1.9 candidate: session-scoped foreground mode and bounded file controls
-|-- TESTED  96 tests on macOS/native Linux; default Rust 1.89 source installation
+|-- DONE    v0.1.9 session-scoped foreground mode and bounded file controls
+|-- TESTED  96 tests on all four native targets; default Rust 1.89 package/registry installs
 |-- TESTED  Native Codex/strict-Claude foreground controls, reuse, stop and expiry
+|-- DONE    v0.1.9 GitHub/registry/docs.rs/website publication and isolated installer checks
 `-- LIMITED Early client exit can lose finalization; strict-Claude localhost stays private
 ```
 
@@ -313,7 +316,7 @@ no search-ranking or traffic improvement has been measured.
   [matrix](agent-compatibility.md) preserves the historical rows and separates
   this session-scoped result from full application/client-exit compatibility.
   Untested profiles still need direct testing.
-- Version 0.1.8 is published; v0.1.9 foreground/file release gates remain under
+- Version 0.1.9 is published through
   the [release procedure](releasing.md). Same-user local control is not
   authenticated agent identity. The file queue's admission check is per client,
   not an atomic global cap; the protocol relies on private same-user state.

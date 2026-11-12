@@ -1353,12 +1353,49 @@ skill invocation, or compatibility beyond the stated versions/profiles.
 
 <a id="v019-publication-2026-11-12"></a>
 
-## v0.1.9 release preparation, 2026-11-12
+## v0.1.9 publication, 2026-11-12
 
-The release candidate packages reviewed `88b5ea7` foreground/file control.
-Runtime/test bytes, dependencies and the Rust 1.89 minimum are unchanged; only
-version metadata, installer/site pins, portable skill and release documentation
-change. The pre-release native-client matrix above remains scoped source-build
-evidence. Publication requires four native builds and archive/installer checks,
-inspected draft assets, a verified source crate, public downloads and website
-rollout. Preparation does not establish completion of those publication gates.
+The [experimental GitHub prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.9)
+packages reviewed `88b5ea7` foreground/file control at release/tag commit
+`5d0c47bafc713aee9ff5b1aa0f373ad1a01fb04b`. Runtime/test bytes, dependencies
+and the Rust 1.89 minimum are unchanged. Version metadata, installer/site pins,
+portable skill availability guidance and release documentation changed; the
+pre-release native-client matrix above remains scoped source-build evidence.
+
+All four native targets passed formatting, Clippy, 96 tests (32 unit, 64
+integration), optimized builds, archive expiry and installer checksum-failure
+checks in the [release run](https://github.com/jaredchu/proclease/actions/runs/43193755850).
+Draft inspection verified all ten asset sizes/digests, combined and individual
+checksums, four-file archive payloads, architectures and binary stripping.
+Native build logs contain no stripping-tool failure; Linux binaries are stripped
+and neither macOS binary retains Rust-mangled entries. Both macOS minimums are
+15.0. ARM macOS ad hoc signature verification passed; this is not Developer ID
+signing or notarization, which remain deferred for experimental releases.
+All ten anonymous public downloads match the inspected draft.
+
+The [crates.io package](https://crates.io/crates/proclease/0.1.9) contains 18 files,
+including `src/filectl.rs`. Its public download matches clean package SHA-256
+`dfc77ff38b985de5afc5920ea277fd04ca4c94cecb171e38eac48dbb5ee4afe0`.
+VCS provenance and `crates-v0.1.9` both identify the release commit above.
+The extracted package passed all 96 tests under Rust 1.89 and the publish dry
+run passed. The [docs.rs overview](https://docs.rs/crate/proclease/0.1.9) serves
+version 0.1.9 and the foreground-mode README; this CLI-only crate has no library
+API documentation.
+
+Default Rust 1.89 registry installation, the host-native archive and a fresh
+published website-installer installation passed version/help and explicit
+reuse/original-environment/expiry checks. Each also passed foreground startup
+with one stdout object, file controls, extension, immediate reuse, wrong-mode
+rejection, log access, stop and expiry with keeper finalization. The fresh
+installer binary matches the inspected archive, and both isolated agent skill
+links resolve to the version-matched payload. Verification uses isolated state.
+
+Main was fast-forwarded only after verified public assets and registry. Its
+[four Rust jobs](https://github.com/jaredchu/proclease/actions/runs/43195084479)
+and [automatic website checks/deployment/live verification](https://github.com/jaredchu/proclease/actions/runs/43195084559)
+passed at the release commit. Separate anonymous curl requests with the release
+verification User-Agent matched all twelve live files to that commit. This
+byte-match observation is scoped to those requests, not every HTTP client.
+The earlier v0.1.8 release metadata/assets and annotated/peeled release and crate
+tags remain unchanged. Closing documentation changes are outside the published
+crate; the immutable release and crate tags stay on `5d0c47b`.
