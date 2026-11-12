@@ -50,10 +50,10 @@ verification limits.
 - **Implementation choice:** use proven Rust/Unix primitives and per-job supervisors
   launched in the caller's execution context. Avoid a login-wide service accepting
   arbitrary execution requests from potentially restricted agents.
-- **Publication:** the experimental [v0.1.7 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.7)
+- **Publication:** the experimental [v0.1.8 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.8)
   provides four native binaries, checksums and a verified installer. The CLI
-  source is also published on [crates.io](https://crates.io/crates/proclease/0.1.7),
-  with a [docs.rs overview](https://docs.rs/crate/proclease/0.1.7). The public
+  source is also published on [crates.io](https://crates.io/crates/proclease/0.1.8),
+  with a [docs.rs overview](https://docs.rs/crate/proclease/0.1.8). The public
   [website](https://proclease.com) serves static assets through a Cloudflare Worker;
   [website source and deployment](../website/README.md) are maintained here.
 - **Website attribution, 2026-11-09:** the creator link points to Jared Chu’s
@@ -84,7 +84,7 @@ verification limits.
   including unverified Codex control state; no sandbox bypass or PID signalling
   was used to manufacture compatibility.
 - **Selected, 2026-11-12:** treat the restricted Linux Codex and strict-Claude
-  profiles as unsupported, not as targets for a workaround. Unreleased source
+  profiles as unsupported, not as targets for a workaround. Version 0.1.8
   adds a fail-closed control-socket preflight and a Linux
   [PID context](architecture.md#pid-context-unreleased). The PID context stops
   saved PIDs from another or unverifiable context being probed, used to infer
@@ -101,11 +101,12 @@ verification limits.
 
 ## Current state and progress
 
-The owner requested v0.1.8 on 2026-11-12. Release metadata and notes are being
-prepared on a candidate branch; native release builds, asset inspection,
-GitHub/crates.io publication and main/website promotion remain pending. The
-runtime and test sources match reviewed `ef77123`; no host sandbox restriction
-is relaxed. See [the release notes](releases/v0.1.8.md).
+The owner-requested v0.1.8 release is published on GitHub and crates.io, with a
+docs.rs overview, four verified native archives and matching live website pins.
+The runtime and test sources match reviewed `ef77123`; no host sandbox restriction
+is relaxed. Fresh binary and default Rust 1.89 registry installations passed
+explicit reuse and expiry checks. See [publication evidence](verification.md#v018-publication-2026-11-12)
+and [the release notes](releases/v0.1.8.md).
 
 ```text
 Goal: a usable ProcLease CLI, shared skill and public first release
@@ -143,14 +144,15 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- FIXED   Interrupted shutdown history ages out of default views after verified absence
 |-- DONE    v0.1.7 interrupted-history fix, four-native/registry release and website
 |-- TESTED  macOS real-agent Vite lifecycle; v0.1.7 retry/Next failures recorded
-|-- FIXED   `run --reuse` in v0.1.8 candidate; 68-test build and macOS clients passed
+|-- FIXED   `run --reuse`, now in v0.1.8; earlier 68-test build and macOS clients passed
 |-- FIXED   Next.js polling opt-in served initial/edited pages in both macOS clients
 |-- TESTED  Native Linux default-Claude Vite/Next workflow and 68 Rust tests
 |-- BLOCKED Tested Linux Codex/strict-Claude sandbox workflows; limits recorded
-|-- READY   v0.1.8 candidate includes socket preflight and Linux PID-context checks
+|-- DONE    v0.1.8 includes socket preflight and Linux PID-context checks
 |-- TESTED  Initial candidate: 76 tests; restricted-profile checks fail closed
 |-- FIXED   Review corrections: stopping window, finalized retention, procfs bounds
 |-- TESTED  Corrected source: 81 tests on macOS/Linux; diagnostic recheck fails closed
+|-- DONE    v0.1.8 four-native/registry/website release and isolated installs verified
 `-- BLOCKED Restricted Linux profiles need host persistence; Codex cleanup unverified
 ```
 
@@ -168,7 +170,7 @@ failures, then passes of the unreleased `run --reuse` and Next.js polling
 workflow in the same profiles, with a recorded Claude observer protocol
 deviation. Native Linux default-Claude
 workflow checks passed; tested Codex and strict-Claude sandbox profiles are
-blocked, with unverified Codex control state retained. Unreleased
+blocked, with unverified Codex control state retained. Pre-release
 [fail-closed diagnostics](verification.md#linux-sandbox-diagnostics-unreleased-source-2026-11-12)
 for those profiles first passed 76 tests in an initial candidate, which review
 then corrected. The corrected source passed formatting, Clippy with warnings
@@ -180,7 +182,9 @@ reported `unknown` with the PID-context explanation. The final host check
 served the HTTP marker, expired with the keeper-finalized marker and closed its
 port. These are not workflow passes: both profiles remain unsupported, Codex
 control-protocol cleanup is unverified, and neither the default-Claude Linux
-nor the macOS real-client Vite/Next.js workflow was rerun with this source. This source is unreleased; shipping needs separate release scope.
+nor the macOS real-client Vite/Next.js workflow was rerun with this source.
+These corrections are now distributed in v0.1.8; publication does not expand
+the measured real-agent compatibility scope.
 A comparative benchmark
 is needed before claiming measured superiority over another supervisor. The v0.1.3
 [startup and retry corrections](verification.md#startup-and-retry-corrections-2026-11-07)

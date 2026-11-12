@@ -1224,18 +1224,53 @@ These diagnostics are not a Vite/Next.js workflow rerun. The macOS real-client
 and native Linux default-Claude Vite/Next.js workflows remain results of the
 `e51ccd2` build and were not rerun with this source. Both restricted profiles
 remain unsupported; a host-documented persistent execution context is a
-requirement, not a demonstrated workaround. This source is unreleased; shipping
-needs separate release scope.
+requirement, not a demonstrated workaround. The source was unreleased at this
+diagnostic stage; the subsequent authorized v0.1.8 publication is recorded below.
 
 ## v0.1.8 publication, 2026-11-12
 
-The v0.1.8 candidate packages the reviewed `ef77123` runtime and test sources
-without changing them or dependency versions. Release metadata, installer and
-website pins, portable README links and release notes are prepared on a separate
-branch. Native archive builds, artifact inspection and GitHub/crates.io
-publication remain pending. The historical real-agent rows above are not new
-measurements of packaged v0.1.8 binaries. Both restricted Linux profiles remain
-unsupported.
+The experimental [v0.1.8 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.8)
+and `crates-v0.1.8` identify publication commit `739c45d`. Its runtime and test
+sources are byte-identical to reviewed `ef77123`; dependencies and Rust 1.89
+minimum are unchanged. Release metadata, installer/website pins, portable README
+links, skill guidance and release notes were independently reviewed before publication.
+
+All four native [release jobs](https://github.com/jaredchu/proclease/actions/runs/43159233228)
+passed formatting, Clippy, 81 tests, optimized builds, extracted-archive expiry
+and installer checksum-failure checks on macOS ARM64/Intel and Ubuntu 22.04
+ARM64/x64. Downloaded archives had the expected architecture and four-file
+payload. Linux binaries were stripped; macOS binaries contained no Rust-mangled
+symbols and declared macOS 15 minimum. ARM64 macOS ad hoc signature verification
+passed; Intel macOS remained unsigned. Developer ID signing/notarization remains
+deferred for this experimental prerelease.
+
+All ten anonymous GitHub downloads matched the inspected draft bytes, including
+GitHub asset digests, individual checksums and `SHA256SUMS`. The native macOS
+archive passed expiry and explicit-reuse checks: ordinary environment mismatch
+was rejected, `--reuse` retained the original environment, job identity and
+deadline, and terminal reuse launched nothing. Fixture supervisors were absent
+before state removal. This is binary smoke coverage, not a new real-agent run.
+
+The [crates.io package](https://crates.io/crates/proclease/0.1.8) contains 17 files,
+with clean VCS provenance `739c45d252c3aa8cdc25ff2e2e4fd691af0949d5` and SHA-256
+`a60d70512040dfbd61b99bf1cc1a68cd7cd43a6e8579bbad68d86f07eb6f2f69`.
+Extracted-package tests and publication dry run passed. The public crate checksum
+and downloaded bytes matched the reviewed package; fresh default Rust/Cargo 1.89
+registry installation passed version, help, explicit reuse and expiry checks
+without profile overrides. The [docs.rs overview](https://docs.rs/crate/proclease/0.1.8)
+serves the version and README; this binary-only crate does not provide an API page.
+
+Main was fast-forwarded to the release only after public assets and registry
+verification. The [website workflow](https://github.com/jaredchu/proclease/actions/runs/43160754681)
+deployed and verified live files. Separate anonymous HTTPS checks matched all
+twelve committed files. A fresh installation through the public installer matched
+the inspected native archive and linked the matching skill for both clients in
+isolated directories, then passed explicit reuse and expiry checks. The previous
+v0.1.7 release assets and tags were unchanged.
+
+The historical real-agent rows above remain measurements of their stated earlier
+binaries and source builds, not packaged v0.1.8 reruns. Both restricted Linux
+profiles remain unsupported, and protected unknown records remain unverified.
 
 ## Limits
 
@@ -1252,9 +1287,9 @@ discovery are verified, and one earlier ordinary local Codex preview session
 exposed the corrected registry-selection issue. The later
 [real-agent tests](agent-compatibility.md) used an explicitly isolated shared
 registry consistently. They cover the listed macOS profiles only: the v0.1.7
-retry and default Next.js failures, and the unreleased-source fixed workflow
+retry and default Next.js failures, and the then-unreleased source's fixed workflow
 with its recorded deviation and diagnostics. The later native Linux runs
 separately record a default-Claude pass and blocked restricted profiles, plus
-fail-closed diagnostics of the unreleased remediation. These
+fail-closed diagnostics of the then-unreleased remediation, now shipped in v0.1.8. These
 checks do not prove ordinary-registry integration for every client, automatic
 skill invocation, or compatibility beyond the stated versions/profiles.
