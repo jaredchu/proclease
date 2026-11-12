@@ -90,8 +90,25 @@ pub struct Record {
     pub keeper_pid: u32,
     pub guardian_pid: Option<u32>,
     pub command_pid: Option<u32>,
+    /// Opaque Linux token for the PID number space in which the keeper saved
+    /// these PIDs. Observers interpret saved PIDs only from the same context;
+    /// see `platform::pid_numbers_comparable`. Absent on macOS and in records
+    /// written before it existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid_context: Option<String>,
     pub exit_code: Option<i32>,
     pub finished_at_ms: Option<u64>,
+    /// Proof that no lifecycle writer remains and the managed group was
+    /// observed absent. Set only by the keeper's final lifecycle write, after
+    /// it has killed the guardian's group, reaped the guardian and accounted
+    /// for capture, and only if a signal-free observation then found the group
+    /// absent. Retention may collect such a terminal record without
+    /// interpreting any saved PID. False when that observation found members,
+    /// failed or was uncertain, in records written before the field existed,
+    /// and whenever that final write did not happen. A final write alone does
+    /// not set it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub finalized_by_keeper: bool,
     /// Display-only anchor for interrupted shutdown after the keeper and group
     /// are absent. The last lifecycle write is not an exact completion time.
     #[serde(skip)]
@@ -119,8 +136,10 @@ impl Record {
             keeper_pid: 0,
             guardian_pid: None,
             command_pid: None,
+            pid_context: None,
             exit_code: None,
             finished_at_ms: None,
+            finalized_by_keeper: false,
             last_lifecycle_write_ms: None,
             log_limit_bytes: launch.log_limit_bytes,
             logs_truncated: false,

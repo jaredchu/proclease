@@ -64,6 +64,49 @@ a PID read from persistent state. When control is unavailable, list may derive a
 terminal result for an already-stopping, now-absent group; otherwise it reports
 unverified state. Such observation never signals or adopts a process.
 
+### PID context (unreleased)
+
+Saved PID numbers are meaningful only in the PID space that saved them. In
+unreleased source, a Linux keeper also saves an opaque `pid_context` token with
+its first PID. The token is a digest of the boot ID, the keeper's PID-namespace
+link and the start time of that namespace's PID 1, in clock ticks since boot
+(zero is valid). The namespace inode alone is not used: follow-up native Linux
+probes in the strict Claude and Codex sandboxes saw the same `pid:[N]` value in
+two tool calls even though the first call's process had died. The procfs
+`stat` and `status` files read for this contain process names, but no name is
+retained; environment values are never read.
+
+`/proc/1` names that namespace's PID 1 only when procfs was mounted for the
+same PID namespace. A context is therefore created only when `NSpid` in
+`/proc/self/status` lists exactly one PID and that PID, like the PID in
+`/proc/self/stat`, equals the process's own PID. Several `NSpid` levels mean
+that procfs belongs to an ancestor namespace. That case, and a missing,
+repeated or malformed value, produces no context. This check is required.
+`/proc/self/status` is read up to 1 MiB, because a long `Groups:` line precedes
+`NSpid`. It does not read PID 1's namespace link, which ordinary users may not
+be permitted to read.
+
+Observers probe saved PIDs only when their own complete context matches. A
+mismatch, an unreadable context, or a Linux record written before this field
+fails closed. Resource metrics are `null`. A `stopping` job whose endpoint is
+unavailable is never derived finished. A healthy guardian's endpoint closes
+shortly before the keeper writes the final record, so the job stays `stopping`
+while its `record.json` was last written within the job's grace (capped at
+10 seconds) plus 2 seconds. Then it shows as `unknown`. Unreadable launch
+metadata and a missing, unreadable or future modification time show `unknown`
+at once. Either error names the connect failure kind and says that the saved
+PIDs belong to another or unverifiable PID context. Old records stay unchanged
+on disk. macOS records have no token and keep their existing behavior. None of
+these paths sends a signal. See [retention](#consistency-and-retry-semantics)
+for which finished records collection keeps.
+
+Before reserving a new job, `run` creates, binds and removes a temporary Unix
+socket in the state directory. It does this after any retained-key lookup, so
+`--reuse` remains read-only. If the socket step fails, `run` exits nonzero and
+records no job, so the retry key stays unused. A denial names the step and says
+that ProcLease requires a Unix-domain control socket. The guardian's own bind
+failure adds the same note. Neither message suggests widening a sandbox.
+
 ## Consistency and retry semantics
 
 A root advisory lock serializes launch reservations. A unique 12-hex-digit ID
@@ -92,8 +135,8 @@ Metadata is replaced atomically using private files and filesystem synchronizati
 This requires filesystem support for atomic replacement visible to concurrent
 readers; VM shared folders are not assumed to preserve those semantics.
 The keeper takes final write ownership after the guardian exits. A finished
-result derived by `list`, or returned by `stop`, can precede that final write,
-socket removal and the keeper's own collection. Anything that deletes a state
+result derived by `list`, or returned by `stop`, can precede the keeper's socket
+removal, its final write and its own collection. Anything that deletes a state
 directory, including test teardown, must first wait for its supervisors to exit.
 Status reads never renew leases or rewrite active lifecycle state; list/watch may collect
 confirmed finished history under the retention policy.
@@ -112,10 +155,31 @@ retry resolution and direct job control/log access still use complete stored sta
 History retention keeps confirmed finished jobs for at most 24 hours and caps
 them at the newest 100. Launches, list/watch, job completion and explicit `prune`
 perform opportunistic collection under the root launch lock. No idle background
-service is added. Active/unknown records, missing completion timestamps and
-unverified supervisor/group absence are protected. A keeper may collect its own
-record only after its final write and socket cleanup. Collection never signals
-processes. A verified candidate is atomically renamed into a reserved private
+service is added. Active/unknown records and missing completion timestamps are
+protected. In unreleased source, only the keeper's final write can set
+`finalized_by_keeper`. That write happens after the keeper has killed the
+guardian's group, reaped the guardian, accounted for capture and removed the
+socket, so no lifecycle writer remains. The final write alone does not prove
+that every group member has gone: a descendant in uninterruptible sleep can
+outlive the reaped leader with SIGKILL pending. The keeper therefore sets the
+marker only after it observes the group absent, re-observing for at most 200ms
+so that orphaned zombies can be reaped. The observation sends no signal; the
+keeper never signals the numeric group after reaping its leader. Live members,
+including an unrelated group that reused the number, or a failed or uncertain
+observation leave the marker false, and the record is still saved. The marker
+thus means verified group absence and no future lifecycle writer. A
+guardian-written terminal state never carries it. Finalized finished records
+are collected under the normal age and count limits without interpreting saved
+PIDs, so new history stays bounded across reboots, PID-namespace changes and
+container restarts when that absence was observed. Finished records without the
+marker, from earlier versions, a keeper that did not complete its final write
+or one that could not observe its group absent, still need verified keeper and
+group absence. On
+Linux that requires a matching [PID context](#pid-context-unreleased), so after
+a reboot or from another PID namespace such records, and their retry keys, stay
+until the user removes them. Failed launches recorded by the CLI without any
+supervisor PID remain collectable. A keeper may collect its own record only
+after its final write and socket cleanup. Collection never signals processes. A verified candidate is atomically renamed into a reserved private
 quarantine before recursive deletion; interrupted deletion is retried from there,
 so partial records do not poison keyed launches. Symlinked job/quarantine roots
 are refused. Cleanup failures are warnings, not evidence that space was reclaimed.
@@ -220,7 +284,8 @@ group before service usage is attributed. Group totals exclude the guardian and
 keeper and skip Linux thread entries, whose usage is already in process totals;
 PID/start-time changes invalidate the CPU baseline. On macOS, newly
 inserted snapshot entries receive a baseline refresh before timing CPU deltas.
-First-frame CPU, inaccessible counters and unverified groups remain unavailable.
+First-frame CPU, inaccessible counters, unverified groups and jobs whose saved
+PID context cannot be matched remain unavailable.
 The values are approximate samples, not accounting for exited processes or
 descendants that escape the group. RSS can count shared pages repeatedly.
 No sampled usage is persisted and no monitoring daemon is introduced. See the
@@ -233,6 +298,11 @@ No sampled usage is persisted and no monitoring daemon is introduced. See the
   clients to stop/extend a job. Skills must respect task ownership.
 - Host restrictions can deny spawning, state access or Unix-socket connections.
   ProcLease reports these failures and does not elevate privileges.
+- Jobs live only as long as their supervisors' host execution context. A host
+  that ends every process from a tool call when that call ends, for example
+  through a per-call PID namespace, ends supervision with it. ProcLease cannot
+  restore that persistence without leaving the sandbox, and it does not try to.
+  Such profiles need a host-documented persistent execution context.
 - No implicit shell interpretation; stdin is closed. An explicit shell remains
   the caller's responsibility and uses the same host authorization rules.
 - Restrictive directory permissions and no-follow file opens protect state from

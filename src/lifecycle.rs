@@ -181,10 +181,34 @@ fn signal_group(pid: u32, signal: i32) -> Result<()> {
     Ok(())
 }
 
+/// How long the keeper observes a reaped guardian's group for absence. This
+/// lets orphaned zombies be reaped by their new parent; it never delays the
+/// final record by more than this bound.
+const POST_REAP_OBSERVATION: Duration = Duration::from_millis(200);
+
+/// Whether `probe` reports the group absent (`Ok(false)`) within `bound`.
+/// Live members are re-observed until the bound; a probe error, or members
+/// still present at the bound, is never treated as absence. Observation only:
+/// the caller must not signal a group whose leader has been reaped, and the
+/// platform probe sends no signal (Linux uses signal 0, an existence check).
+fn group_observed_absent(mut probe: impl FnMut() -> Result<bool>, bound: Duration) -> bool {
+    let deadline = Instant::now() + bound;
+    loop {
+        match probe() {
+            Ok(false) => return true,
+            Ok(true) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
+            _ => return false,
+        }
+    }
+}
+
 pub fn keeper(store: &Store, id: &str) -> Result<()> {
     let launch = store.launch(id)?;
     let mut record = store.record(id)?;
     record.keeper_pid = std::process::id();
+    // Saved with the first PID so observers can tell whether these numbers
+    // belong to their own PID space. The guardian is this keeper's child.
+    record.pid_context = crate::platform::pid_context().map(str::to_owned);
     store.save(&record)?;
     let mut command = internal(store, "__guard", id)?;
     command.stdin(Stdio::piped());
@@ -228,11 +252,26 @@ pub fn keeper(store: &Store, id: &str) -> Result<()> {
     cleanup.disarm();
     guardian.wait()?;
     record.logs_truncated |= store.capture_truncated(id)?;
-    if record.state == State::Stopping || record.state.active() {
+    if record.state.active() {
         record.finish();
-        store.save(&record)?;
     }
+    // The endpoint is removed before the final write, so no finalized record
+    // is ever paired with a socket this job still owns.
     let _ = std::fs::remove_file(store.job(id)?.join("ctl.sock"));
+    // The group was killed and its leader reaped above, so no lifecycle writer
+    // other than this keeper remains. That alone does not prove the group is
+    // gone: a descendant in uninterruptible sleep can outlive the leader with
+    // SIGKILL pending. The marker therefore also requires observing the group
+    // absent. The observation sends no signal, and a live, reused or
+    // uncertain group simply leaves the marker false; the record is still
+    // saved and retention falls back to its conservative absence checks. A
+    // terminal state written by the guardian alone never carries the marker.
+    let pgid = guardian.id();
+    record.finalized_by_keeper = group_observed_absent(
+        || crate::platform::group_has_live_members(pgid),
+        POST_REAP_OBSERVATION,
+    );
+    store.save(&record)?;
     // Final state and socket cleanup are complete. Collection may now include
     // this job even though this keeper has not returned yet.
     match store.prune(false, Some(id)) {
@@ -433,8 +472,15 @@ fn prepare_guard(
         }
     });
 
-    let listener =
-        UnixListener::bind(dir.join("ctl.sock")).context("cannot bind control socket")?;
+    let listener = UnixListener::bind(dir.join("ctl.sock")).map_err(|error| {
+        let hint = if crate::platform::is_denial(&error) {
+            "; access was denied, for example by a host sandbox policy or directory \
+             permissions, and ProcLease requires a Unix-domain control socket for every job"
+        } else {
+            ""
+        };
+        anyhow::Error::new(error).context(format!("cannot bind control socket{hint}"))
+    })?;
     listener.set_nonblocking(true)?;
     let log = OpenOptions::new()
         .create_new(true)
@@ -603,7 +649,9 @@ const CONTROL_REPLY_LIMIT: usize = 1_048_576;
 pub const MAX_GRACE_MS: u64 = 10_000;
 
 /// Bound for confirming a stop after dispatch: grace (capped) plus two seconds.
-fn stop_bound(grace_ms: u64) -> Duration {
+/// Observers also use it as the finalization window for a `stopping` record
+/// whose saved PIDs they cannot interpret.
+pub(crate) fn stop_bound(grace_ms: u64) -> Duration {
     Duration::from_millis(grace_ms.min(MAX_GRACE_MS) + 2_000)
 }
 
@@ -634,7 +682,12 @@ fn existing_control_state(
     record: &Record,
 ) -> Result<Option<Record>> {
     match record.state {
-        State::Unknown => bail!("supervisor unavailable; refusing to signal a PID from disk"),
+        State::Unknown => match &record.error {
+            Some(observed) => {
+                bail!("supervisor unavailable; refusing to signal a PID from disk ({observed})")
+            }
+            None => bail!("supervisor unavailable; refusing to signal a PID from disk"),
+        },
         State::Stopping => match action {
             Control::Stop => Ok(Some(wait_for_stop(store, id, record.clone())?)),
             Control::Extend { .. } => {
@@ -981,6 +1034,63 @@ mod tests {
         record
     }
 
+    /// Kills and reaps a test-owned child on drop, including after a failed
+    /// assertion, so the test never leaves its process group behind.
+    struct OwnedChild(Child);
+
+    impl Drop for OwnedChild {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    #[test]
+    fn live_owned_group_cannot_earn_absence_until_reaped() {
+        let mut command = Command::new("sleep");
+        command.arg("30").process_group(0);
+        let mut child = OwnedChild(command.spawn().unwrap());
+        let pgid = child.0.id();
+        let probe = || crate::platform::group_has_live_members(pgid);
+        let started = Instant::now();
+        assert!(!group_observed_absent(probe, Duration::from_millis(50)));
+        // A live group is re-observed only until the bound.
+        assert!(started.elapsed() < Duration::from_secs(5));
+        child.0.kill().unwrap();
+        child.0.wait().unwrap();
+        assert!(group_observed_absent(probe, POST_REAP_OBSERVATION));
+    }
+
+    #[test]
+    fn uncertain_group_observation_is_never_absence() {
+        let mut calls = 0;
+        let error = |calls: &mut u32| -> Result<bool> {
+            *calls += 1;
+            bail!("injected probe failure")
+        };
+        // An error is final, even within the bound, and is not retried.
+        assert!(!group_observed_absent(
+            || error(&mut calls),
+            Duration::from_secs(5)
+        ));
+        assert_eq!(calls, 1);
+        // Live until the bound, then an error: still not absence.
+        let mut sequence = [Ok(true), Ok(true)].into_iter();
+        assert!(!group_observed_absent(
+            || sequence.next().unwrap_or_else(|| bail!("injected")),
+            Duration::from_secs(5)
+        ));
+        // Members still present at the bound are not absence.
+        assert!(!group_observed_absent(|| Ok(true), Duration::ZERO));
+        // Absence observed within the bound, for example after an orphaned
+        // zombie is reaped, earns it.
+        let mut sequence = [Ok(true), Ok(true), Ok(false)].into_iter();
+        assert!(group_observed_absent(
+            || sequence.next().unwrap(),
+            Duration::from_secs(5)
+        ));
+    }
+
     #[test]
     fn metadata_bounds_are_capped_and_record_identity_is_checked() {
         assert_eq!(stop_bound(u64::MAX), Duration::from_millis(12_000));
@@ -1160,6 +1270,52 @@ mod tests {
             .unwrap()
             .2
             .is_some());
+    }
+
+    #[test]
+    fn foreign_stopping_record_is_kept_only_within_its_finalization_window() {
+        let (_dir, store) = store();
+        let id = "0000000000d1";
+        let mut record = seed(&store, id, State::Stopping);
+        record.pid_context = Some("v1:from-another-pid-context".into());
+        record.reason = Some(Reason::Requested);
+        store.save(&record).unwrap();
+        let path = store.root.join(id).join("record.json");
+        let set_written = |time: std::time::SystemTime| {
+            File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(time)
+                .unwrap();
+        };
+        let now = std::time::SystemTime::now;
+        // No endpoint exists. A fresh write is within grace (100ms) plus 2s.
+        set_written(now());
+        let observed = store.observed_record(id).unwrap();
+        assert_eq!(observed.state, State::Stopping);
+        let note = observed.error.unwrap();
+        assert!(
+            note.contains("another or unverifiable PID context")
+                && note.contains("awaiting the supervisor's final record"),
+            "{note}"
+        );
+        // Past the window, or with a future write time, nothing is inferred.
+        for time in [
+            now() - Duration::from_millis(2_500),
+            now() + Duration::from_secs(60),
+        ] {
+            set_written(time);
+            let observed = store.observed_record(id).unwrap();
+            assert_eq!(observed.state, State::Unknown);
+            assert!(observed.finished_at_ms.is_none());
+        }
+        // Unreadable launch metadata fails closed even after a fresh write.
+        set_written(now());
+        std::fs::write(store.root.join(id).join("launch.json"), b"not json").unwrap();
+        assert_eq!(store.observed_record(id).unwrap().state, State::Unknown);
+        // Observation never rewrites the record.
+        assert_eq!(store.record(id).unwrap().state, State::Stopping);
     }
 
     #[test]

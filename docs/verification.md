@@ -1030,7 +1030,7 @@ SIGINT, fresh-session observation/stop, and independent 45-second expiry, with
 unchanged deadlines and closed ports after stop/expiry. An ungranted Codex
 registry baseline was denied. Both configured clients encountered cross-tool-call
 retry-context mismatches and Next.js Turbopack FSEvent failures; those checks are
-failed, not compatibility passes. Native Linux agent testing remains unavailable.
+failed, not compatibility passes. Native Linux agent testing was unavailable in that initial run.
 The matrix preserves the exact client/application versions, profile conditions,
 control comparison, protocol deviations and verification limits. The later
 fixed workflow is recorded [below](#real-client-fixed-workflow-unreleased-source-2026-11-12);
@@ -1057,9 +1057,11 @@ not values. New regressions cover:
 Locally on macOS arm64, `cargo fmt --check`,
 `cargo clippy --locked --all-targets -- -D warnings` and `cargo test --locked`
 pass: all 68 tests (16 unit, 52 integration), with isolated build output and a
-short isolated fixture root. The runtime source was not changed after these
-checks. This is unreleased source: no published binary, crate, installer or
-release pin includes `--reuse`.
+short isolated fixture root. The runtime source was not changed between these
+checks and the macOS real-client runs below; the later
+[Linux remediation](#linux-sandbox-diagnostics-unreleased-source-2026-11-12)
+changed it afterwards. This is unreleased source: no published binary, crate,
+installer or release pin includes `--reuse`.
 
 ## Real-client fixed workflow (unreleased source), 2026-11-12
 
@@ -1080,8 +1082,150 @@ Claude's observer deviated from protocol after three denied preflight commands,
 so its results are functional passes rather than a clean matched-protocol pass.
 Both clients' Next.js logs retained three nonfatal watch diagnostics. Earlier
 failed and protocol-incomplete polling probes remain in the matrix. Native Linux
-agent testing is deferred. No sleep/wake, clock-change, general-host or
-comparative claim follows from these runs.
+agent testing was deferred for those macOS runs and was later resumed below.
+No sleep/wake, clock-change, general-host or comparative claim follows from them.
+
+## Native Linux real-agent runs, 2026-11-12
+
+An optimized native GNU/Linux build of source `e51ccd2` and all 68 Rust tests
+passed on Arch Linux x86_64 with kernel 7.2.14-arch1-1 and ext4 state. Actual
+Codex CLI 0.167.2 and Claude Code 2.1.322 model sessions used isolated fixtures
+with Node 26.13.0, Vite 8.3.6 and Next.js 16.4.5. The
+[Linux matrix](agent-compatibility.md#native-linux-results-2026-11-12) records:
+
+- Default Claude, with Bash sandbox disabled, passed Vite/default-Next readiness,
+  reuse, edited content, client cancellation survival, fresh-session control,
+  stop, 60-second expiry and unchanged terminal reuse. Controller checks
+  corroborated content/state outcomes; no full Claude tool transcript is retained.
+- Codex's configured workspace sandbox initially reported both ports ready but
+  later calls found them closed and control unavailable. Two records remain
+  `unknown` after their deadlines. Host checks found no matching visible fixture
+  processes, but control-protocol cleanup remains unverified. Stop refused to
+  signal disk PIDs; no PID fallback or metadata rewrite was used.
+- Strict Claude could not bind the control socket before spawning Vite; Next
+  and subsequent lifecycle stages were not run. Its incorrect launch cwd is
+  retained as an additional deviation.
+
+Initial fixture-symlink and Codex tool-contract errors were corrected in separate
+labelled runs without changing profiles; failed receipts remain. The matrix
+qualifies the namespace interpretation, host-scan limits and declared policies.
+Linux testing is resumed, with these restrictions unresolved; this is not a
+blanket Linux-agent compatibility pass.
+
+## Linux sandbox diagnostics (unreleased source), 2026-11-12
+
+The [remediation](agent-compatibility.md#native-linux-results-2026-11-12) adds
+a control-socket preflight and Linux PID-context checks. It does not change
+the blocked status of either restricted profile.
+
+New integration tests cover: foreign-context records (`unknown`, never derived
+finished, `stop` refused, no signal; unfinalized history preserved and
+keeper-finalized history collected); a stop whose PID context stays foreign
+while its endpoint closes 120ms before the final record (single and bulk stop
+report `stopped`, not `unknown`); a live job with a foreign context (metrics
+`null`; its guardian restores its own context when accepting Stop); and a
+denied socket preflight (no job, unused key, read-only `--reuse` unaffected).
+Unit tests cover PID-context token completeness, including a zero PID 1 start
+time, `/proc/PID/stat` start-time parsing, a `Groups:` line of 65,536 entries
+before `NSpid`, the procfs namespace check, comparability rules, the
+`stopping` finalization window and the bind probe's cleanup.
+
+Earlier checks failed for corrected reasons, not product behavior:
+
+- A macOS test root too long for Unix-socket paths failed every
+  state-dependent test at state-directory validation (environment).
+- A foreign-context fixture seeded `stopping` records with a successful
+  command-exit result, so observed absence correctly derived `exited`. The
+  fixture now records lost supervision and checks prune candidates before
+  `list`, which collects eligible history.
+- An earlier candidate built the PID context without checking that procfs
+  belonged to the caller's PID namespace. The
+  [PID context](architecture.md#pid-context-unreleased) now requires a
+  single-level `NSpid` equal to the process's own PID.
+- Two later native Linux runs reused stale build outputs, because copied
+  sources had zero modification times. Their results are disregarded.
+
+For the initial remediation candidate, the implementing session reported that
+formatting, Clippy with warnings denied and all 76 tests (21 unit, 55
+integration) passed on macOS arm64 with Rust/Cargo 1.99.1; no transcript is
+retained, and the Linux-only procfs code was not compiled there. On native
+Linux, after the verified inputs were given current modification times and
+rebuilt, formatting, Clippy with warnings denied, all 76 tests and an optimized
+release build of that candidate passed with `--locked`. Hashes of the twelve
+checked Cargo, Rust and fixture inputs matched that candidate's source.
+
+Review of that candidate led to these corrections:
+
+- An endpoint that closed before the keeper's final write made a foreign-context
+  `stopping` job read as `unknown`, so `stop` could return `unknown` and bulk
+  stop `unverified` for a healthy shutdown. Such a record now stays `stopping`
+  for the [finalization window](architecture.md#pid-context-unreleased).
+- Finished records from another PID context, including every record after a
+  reboot, were never collected. The keeper's final write now carries a
+  `finalized_by_keeper` marker when the keeper has observed the managed group
+  absent after reaping its leader, and such records follow normal
+  [retention](architecture.md#consistency-and-retry-semantics). A final write
+  alone does not set it: live members, including a reused group number, or a
+  failed or uncertain observation leave it false, and retention keeps its
+  absence checks. The observation sends no signal.
+- A zero PID 1 start time and a long `Groups:` line that pushed `NSpid` past
+  a 4 KiB read both produced no PID context. Zero is now accepted and
+  `/proc/self/status` is read up to 1 MiB.
+
+Using the initial candidate's release binary, a host lease and the restricted
+Codex and strict-Claude profiles ran
+[diagnostic checks](agent-compatibility.md#native-linux-results-2026-11-12)
+with a bounded Python HTTP service. They confirmed the socket preflight and
+foreign-context reporting; host expiry and `--reuse` of an expired key passed.
+That initial run left one new Codex `unknown` record alongside the two earlier
+ones. These 76-test counts and probes are historical for the initial candidate.
+
+**Final corrected source.** After the corrections above, the twelve checked
+Cargo, Rust and fixture input hashes matched the corrected source in both runs
+below. Directly on macOS arm64 and natively on Linux, each with Rust 1.99.1,
+`cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`,
+`cargo test --locked` (all 81 tests: 25 unit, 56 integration) and
+`cargo build --release --locked` passed. Optimized binary SHA-256:
+macOS `14a14f13cf39f8a231f0eb94bd910fb757ea52ee52238ccef8522c217b63b409`,
+Linux `38e762c86350965a7dbb0fc9c271b68228a3f90be028b708e0a94fea1419835e`.
+These checks supersede the 76-test candidate counts as current status.
+Tests cover the finalization window, the group-absence marker (false for an
+uncertain observation or a live owned group), zero and long procfs status
+inputs. The evidence labels were checked against the supplied receipts. The tests use owned live and failed-observation
+probes; no physical uninterruptible-sleep (D-state) process was tested.
+
+The native Linux binary then reran the diagnostics:
+
+- Host, no agent sandbox: a 2-second lease reported TCP readiness, served HTTP
+  200 with the literal body `proclease-boundary-ready`, and reached `expired`
+  with `finalized_by_keeper: true`. A keyed `--reuse` returned the same ID,
+  deadline and `expired` state with `reused: true`, without resurrection; its
+  port wait reported `job_finished` (exit 1) because the job had ended. The
+  port was explicitly confirmed closed after expiry.
+- Codex `workspace-write`, same profile as before: the launch call reported the
+  service ready; the next call showed `unknown`, `resources: null` and an error
+  naming the refused connection and the foreign or unverifiable PID context.
+- Strict Claude, same profile as before: client-reported `Operation not
+  permitted (os error 1)` at control-socket creation, stating nothing was
+  launched and no job recorded; the next call listed no jobs.
+
+A host oracle outside both agents confirmed the strict-Claude registry held no
+record. A host launch with the same key created a fresh job (`reused: false`),
+which was stopped through ProcLease. For the Codex record, host `stop` refused
+to signal disk PIDs and `prune --dry-run` offered no candidate, so the `unknown`
+record was preserved. Both ports were then closed, no matching service process
+was visible, and the scan found no unreadable own-user process entries. Codex
+control-protocol cleanup is **not verified**. This run left one more `unknown`
+record, so four isolated Codex test records are now `unknown`: the original
+two, one from the initial diagnostics and one from this recheck. None was
+rewritten or deleted.
+
+These diagnostics are not a Vite/Next.js workflow rerun. The macOS real-client
+and native Linux default-Claude Vite/Next.js workflows remain results of the
+`e51ccd2` build and were not rerun with this source. Both restricted profiles
+remain unsupported; a host-documented persistent execution context is a
+requirement, not a demonstrated workaround. This source is unreleased; shipping
+needs separate release scope.
 
 ## Limits
 
@@ -1099,6 +1243,8 @@ exposed the corrected registry-selection issue. The later
 [real-agent tests](agent-compatibility.md) used an explicitly isolated shared
 registry consistently. They cover the listed macOS profiles only: the v0.1.7
 retry and default Next.js failures, and the unreleased-source fixed workflow
-with its recorded deviation and diagnostics. They do not prove ordinary-registry
-integration for every client, automatic skill invocation, or native Linux agent
-compatibility.
+with its recorded deviation and diagnostics. The later native Linux runs
+separately record a default-Claude pass and blocked restricted profiles, plus
+fail-closed diagnostics of the unreleased remediation. These
+checks do not prove ordinary-registry integration for every client, automatic
+skill invocation, or compatibility beyond the stated versions/profiles.

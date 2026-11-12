@@ -73,10 +73,29 @@ verification limits.
   [the compatibility diagnosis](agent-compatibility.md#observed-failures-and-limits).
 - **Owner-prioritized, 2026-11-12:** fix the macOS retry-context and Next.js
   sandbox issues first; native Linux agent testing is deferred and is not a
-  prerequisite. The selected Next.js workflow is an application opt-in to
+  prerequisite. This deferral was superseded by the later owner-requested
+  native Linux runs below. The selected Next.js workflow is an application opt-in to
   polling for both Turbopack and Watchpack, keeping Turbopack and the host
   sandbox; ProcLease does not mutate application config. See the
   [recipe](../README.md#nextjs-in-agent-sandboxes).
+- **Owner-requested, 2026-11-12:** resume native Linux real-agent tests using
+  existing Linux CLI logins. The [matrix](agent-compatibility.md#native-linux-results-2026-11-12)
+  records a default-Claude workflow pass and blocked Codex/strict-Claude profiles,
+  including unverified Codex control state; no sandbox bypass or PID signalling
+  was used to manufacture compatibility.
+- **Selected, 2026-11-12:** treat the restricted Linux Codex and strict-Claude
+  profiles as unsupported, not as targets for a workaround. Unreleased source
+  adds a fail-closed control-socket preflight and a Linux
+  [PID context](architecture.md#pid-context-unreleased). The PID context stops
+  saved PIDs from another or unverifiable context being probed, used to infer
+  shutdown or collect history, or used for metrics. Legacy Linux records fail
+  closed the same way. A foreground mode, an out-of-sandbox helper, a network
+  control channel and PID translation were rejected. After review, a
+  keeper-finalized marker, set only after the keeper observes the managed group
+  absent, lets finished history be collected without PID checks, so it stays
+  bounded across reboots; a foreign-context `stopping` job
+  keeps that state for a bounded finalization window instead of reading
+  `unknown` before its final record.
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
   proxying, auto-restart and hosted dashboards.
 
@@ -120,7 +139,13 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- TESTED  macOS real-agent Vite lifecycle; v0.1.7 retry/Next failures recorded
 |-- FIXED   Unreleased `run --reuse`; 68 tests and both macOS real clients pass
 |-- FIXED   Next.js polling opt-in served initial/edited pages in both macOS clients
-`-- OPEN    Native Linux agent runs, deferred by owner until after the macOS fixes
+|-- TESTED  Native Linux default-Claude Vite/Next workflow and 68 Rust tests
+|-- BLOCKED Tested Linux Codex/strict-Claude sandbox workflows; limits recorded
+|-- DONE    Unreleased fail-closed socket preflight and Linux PID-context checks
+|-- TESTED  Initial candidate: 76 tests; restricted-profile checks fail closed
+|-- FIXED   Review corrections: stopping window, finalized retention, procfs bounds
+|-- TESTED  Corrected source: 81 tests on macOS/Linux; diagnostic recheck fails closed
+`-- BLOCKED Restricted Linux profiles need host persistence; Codex cleanup unverified
 ```
 
 The [v0.1.5 publication](verification.md#v015-publication-2026-11-08) packages bulk
@@ -135,7 +160,22 @@ Codex preview session and the corrected registry-selection guidance. The
 Codex/Claude sandbox results: v0.1.7 Vite lifecycle passes with retry/Next.js
 failures, then passes of the unreleased `run --reuse` and Next.js polling
 workflow in the same profiles, with a recorded Claude observer protocol
-deviation. Native Linux agent workflows remain untested and deferred. A comparative benchmark
+deviation. Native Linux default-Claude
+workflow checks passed; tested Codex and strict-Claude sandbox profiles are
+blocked, with unverified Codex control state retained. Unreleased
+[fail-closed diagnostics](verification.md#linux-sandbox-diagnostics-unreleased-source-2026-11-12)
+for those profiles first passed 76 tests in an initial candidate, which review
+then corrected. The corrected source passed formatting, Clippy with warnings
+denied, all 81 tests and an optimized build directly on macOS and natively on
+Linux. In the initial and final
+[native Linux diagnostic checks](agent-compatibility.md#native-linux-results-2026-11-12),
+strict Claude launched nothing after the socket denial, and Codex's later call
+reported `unknown` with the PID-context explanation. The final host check
+served the HTTP marker, expired with the keeper-finalized marker and closed its
+port. These are not workflow passes: both profiles remain unsupported, Codex
+control-protocol cleanup is unverified, and neither the default-Claude Linux
+nor the macOS real-client Vite/Next.js workflow was rerun with this source. This source is unreleased; shipping needs separate release scope.
+A comparative benchmark
 is needed before claiming measured superiority over another supervisor. The v0.1.3
 [startup and retry corrections](verification.md#startup-and-retry-corrections-2026-11-07)
 record their regressions and current verification limits. A test-teardown race
@@ -231,12 +271,22 @@ no search-ranking or traffic improvement has been measured.
 
 ## Open questions
 
-- Native Linux agent profiles (deferred) and untested macOS profiles need
-  direct testing. The [compatibility matrix](agent-compatibility.md) records the
-  v0.1.7 cross-tool-call retry and default Turbopack watcher failures in the
-  tested macOS sandboxes, and the passing fixed workflow. `run --reuse` is not
-  in any release; shipping it needs separate release scope.
-  Same-user local control is not authenticated agent identity.
+- The implemented Linux remediation is defensive only: the socket preflight and
+  PID-context checks report the restrictions instead of guessing. The host
+  blockers remain: in the tested Codex `workspace-write` profile, processes
+  stopped when the launching tool call ended, and strict Claude denied
+  Unix-socket creation. Those profiles need a
+  host-documented persistent execution context, and strict Claude also needs
+  socket permission, before they can be claimed to work; that requirement is
+  not a demonstrated workaround. Four isolated Codex test records (two
+  original, one from each diagnostic run) remain `unknown` with
+  control-protocol cleanup unverified. The
+  [compatibility matrix](agent-compatibility.md) separates the default-Claude
+  Linux pass, blocked restricted profiles, historical macOS failures and fixed
+  macOS workflow. Untested profiles still need direct testing.
+- `run --reuse`, the socket preflight and PID-context checks are not in any
+  release; shipping needs separate release scope. Same-user local control is not authenticated
+  agent identity.
 - macOS Developer ID signing/notarization is deferred for experimental releases
   and required before promotion to stable. See the
   [release procedure](releasing.md) for binary and registry delivery.

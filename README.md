@@ -6,10 +6,11 @@ ProcLease is a Rust CLI and a portable skill for Codex and Claude Code. Start a
 foreground service with a deadline; inspect its status and bounded logs from later
 tool calls; explicitly extend it or let it expire. Reading logs never renews it.
 
-**Status:** experimental, MIT-licensed open source. Tested locally on macOS arm64
-and Linux aarch64 in a non-root container. Install a prebuilt binary, or build
-the CLI with Cargo; see [Build](#build). Domain: `proclease.com`; no hosted
-service is required.
+**Status:** experimental, MIT-licensed open source. Runtime tests cover macOS
+arm64, Linux aarch64 in a non-root container, and native Linux x86_64. Real-agent
+results depend on the [execution profile](docs/agent-compatibility.md). Install a
+prebuilt binary, or build the CLI with Cargo; see [Build](#build).
+Domain: `proclease.com`; no hosted service is required.
 
 Source and issues: [jaredchu/proclease](https://github.com/jaredchu/proclease).
 Website: [proclease.com](https://proclease.com).
@@ -331,7 +332,15 @@ or beyond the **100 newest finished jobs**, whichever comes first. Collection ru
 on `run`, `list`, each `watch` refresh and job completion. Without CLI activity or
 job completion, overdue history is collected on the next use; there is no separate
 background cleanup service. Active jobs, unverified state and jobs whose supervisors
-cannot be verified absent are preserved. Filesystem errors defer deletion with a
+cannot be verified absent are preserved. In unreleased source, a job whose own
+keeper observed the managed process group absent before writing its final record
+is collected under these limits without checking saved PIDs, so new history
+stays bounded after a reboot or PID-namespace change. On Linux, finished records
+without that keeper marker (from earlier versions, or whose keeper did not
+complete its final write or could not observe its group absent) stay, with their
+retry keys, when their
+saved PIDs come from another or unverifiable [PID context](docs/architecture.md#pid-context-unreleased),
+including after a reboot, until you remove them. Filesystem errors defer deletion with a
 warning, so protected or failed-cleanup data can exceed the normal history bound.
 While a bulk stop runs, collection of job directories is deferred and `prune --json`
 reports `"deferred": true`; normal retention resumes on the next collection trigger
@@ -417,14 +426,26 @@ Other Next.js versions, applications and hosts are untested; see the
 
 ## Boundaries
 
-The targets are macOS and Linux foreground Node/Vite/Next-style servers. Tests
-have run locally on macOS arm64 and in a non-root Linux aarch64 container.
+The targets are macOS and Linux foreground Node/Vite/Next-style servers. Runtime
+tests have run on macOS arm64, a non-root Linux aarch64 container and native
+Linux x86_64; agent-profile limits are recorded below.
 Hosted macOS and Ubuntu checks run in [GitHub Actions](https://github.com/jaredchu/proclease/actions/workflows/ci.yml).
 The [real-agent compatibility matrix](docs/agent-compatibility.md) records the
 macOS Codex/Claude profiles tested with v0.1.7 and their retry and default
 Next.js failures. It also records passes for the same profiles with unreleased
 `run --reuse` and the [Next.js polling opt-in](#nextjs-in-agent-sandboxes).
-Native Linux agent workflows are untested; that testing is deferred.
+Native Linux testing passed the default-Claude workflow and found blockers in
+the tested Codex workspace sandbox and strict Claude sandbox; see the matrix
+for profile versions, retained `unknown` state and cleanup limits.
+Those two profiles are unsupported. ProcLease needs a Unix-domain control socket
+and supervisors that outlive the launching tool call, which requires a
+host-documented persistent execution context. Unreleased source adds fail-closed
+diagnostics but does not make these profiles work. `run` now launches nothing
+when it cannot create a control socket. Saved PIDs from another or unverifiable
+PID context, such as a per-call PID namespace, are never probed, used for
+metrics or used to infer shutdown. See [PID context](docs/architecture.md#pid-context-unreleased).
+Native Linux checks of the initial remediation build in both profiles reported
+these fail-closed results; they are diagnostics, not compatibility passes.
 There is no privileged or login-wide execution daemon. Jobs are supervised only
 after being launched through ProcLease. A descendant that deliberately creates a
 new session/process group can escape group cleanup. Docker, PID adoption,

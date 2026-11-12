@@ -62,7 +62,11 @@ impl Sampler {
         let now = Instant::now();
         let elapsed = self.sampled_at.map(|previous| now.duration_since(previous));
         let cpu_ready = elapsed.is_some_and(|d| d >= sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-        for record in records.iter().filter(|r| r.state.active()) {
+        // Saved PIDs from another or unverifiable PID space are never
+        // attributed; their metrics are unavailable rather than guessed.
+        for record in records.iter().filter(|r| {
+            r.state.active() && crate::platform::pid_numbers_comparable(r.pid_context.as_deref())
+        }) {
             let Some(guardian) = record
                 .guardian_pid
                 .filter(|&pid| pid > 1 && pid <= i32::MAX as u32)

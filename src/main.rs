@@ -710,6 +710,8 @@ fn dispatch(cli: &Cli) -> Result<i32> {
                         );
                     }
                 }
+                // After retained-key lookup, so read-only reuse is unaffected.
+                store.probe_control_socket()?;
                 let id = store.reserve()?;
                 let created = now_ms();
                 let launch = Launch {

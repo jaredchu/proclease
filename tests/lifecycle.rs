@@ -647,10 +647,17 @@ fn retention_count_is_serialized_and_preserves_active_unverified_and_live_owners
     let mut unknown = record.clone();
     unknown["state"] = serde_json::json!("unknown");
     fixture.seed_history("fffffffffff1", &unknown, &launch, 1);
-    let mut owned = record.clone();
+    // Live owners protect only unfinalized records; a keeper-finalized record
+    // is collected without interpreting saved PIDs.
+    let mut unfinalized = record.clone();
+    unfinalized
+        .as_object_mut()
+        .unwrap()
+        .remove("finalized_by_keeper");
+    let mut owned = unfinalized.clone();
     owned["keeper_pid"] = serde_json::json!(std::process::id());
     fixture.seed_history("fffffffffff2", &owned, &launch, 1);
-    let mut live_group = record.clone();
+    let mut live_group = unfinalized;
     live_group["guardian_pid"] = serde_json::json!(unsafe { libc::getpgrp() });
     fixture.seed_history("fffffffffff3", &live_group, &launch, 1);
     let mut missing_finish = record.clone();
@@ -992,6 +999,10 @@ fn legacy_interrupted_history_hides_only_after_verified_supervisor_absence() {
         record["finished_at_ms"] = Value::Null;
         record["keeper_pid"] = keeper;
         record["guardian_pid"] = guardian;
+        record
+            .as_object_mut()
+            .unwrap()
+            .remove("finalized_by_keeper");
         fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
         fs::File::options()
             .write(true)
@@ -1688,6 +1699,457 @@ fn stale_state_never_grants_authority_to_kill_an_unrelated_pid() {
     assert!(unrelated.0.try_wait().unwrap().is_none());
 }
 
+/// A context token no observer can have: PIDs saved under it are foreign.
+const FOREIGN_PID_CONTEXT: &str = "v1:from-another-pid-context";
+
+#[test]
+fn foreign_pid_context_is_never_probed_inferred_finished_or_collected() {
+    struct OwnedChild(std::process::Child);
+    impl Drop for OwnedChild {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let fixture = Fixture::new();
+    let (template, launch) = fixture.finished_template();
+    // A Linux keeper saves its own complete context; macOS saves none.
+    assert_eq!(
+        template.get("pid_context").is_some(),
+        cfg!(target_os = "linux"),
+        "{template}"
+    );
+    // A local process with a live group stands in for numbers that would
+    // have a different meaning in the PID space that saved them.
+    // The keeper's final write marks the record finalized once it has observed
+    // the reaped job's group absent.
+    assert_eq!(template["finalized_by_keeper"], true, "{template}");
+    let unrelated = OwnedChild(Command::new("/bin/sleep").arg("30").spawn().unwrap());
+    let absent = 0x7fff_fff0u32;
+    let seed = |id: &str,
+                state: &str,
+                (keeper, guardian): (u32, u32),
+                context: Option<&str>,
+                finished: Value,
+                finalized: bool| {
+        fixture.seed_history(id, &template, &launch, 1);
+        let mut record = template.clone();
+        record["id"] = serde_json::json!(id);
+        record["state"] = serde_json::json!(state);
+        record["created_at_ms"] = serde_json::json!(0);
+        record["keeper_pid"] = serde_json::json!(keeper);
+        record["guardian_pid"] = serde_json::json!(guardian);
+        record["finished_at_ms"] = finished;
+        if state == "stopping" {
+            // Shutdown after supervision was lost: the keeper died before
+            // recording a command result, so observed absence is `interrupted`.
+            record["reason"] = serde_json::json!("supervision_lost");
+            record["exit_code"] = Value::Null;
+        }
+        match context {
+            Some(context) => record["pid_context"] = serde_json::json!(context),
+            None => {
+                record.as_object_mut().unwrap().remove("pid_context");
+            }
+        }
+        if !finalized {
+            record
+                .as_object_mut()
+                .unwrap()
+                .remove("finalized_by_keeper");
+        }
+        let path = fixture.state.join(id).join("record.json");
+        fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        // Past any shutdown finalization window.
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(60))
+            .unwrap();
+    };
+    let foreign = Some(FOREIGN_PID_CONTEXT);
+    let own = template.get("pid_context").and_then(Value::as_str);
+    let gone = (absent, absent);
+    // Live local PIDs stand in for numbers saved in another PID space.
+    let live = (std::process::id(), unrelated.0.id());
+    seed(
+        "000000000001",
+        "running",
+        (absent, unrelated.0.id()),
+        foreign,
+        Value::Null,
+        false,
+    );
+    seed(
+        "000000000002",
+        "stopping",
+        gone,
+        foreign,
+        Value::Null,
+        false,
+    );
+    seed("000000000003", "stopping", gone, own, Value::Null, false);
+    // Unfinalized (legacy or partial) foreign history is preserved.
+    let finished = serde_json::json!(1);
+    seed(
+        "000000000004",
+        "exited",
+        gone,
+        foreign,
+        finished.clone(),
+        false,
+    );
+    seed("000000000005", "exited", gone, own, finished.clone(), false);
+    // Keeper-finalized history is collected without interpreting saved
+    // PIDs: from a foreign context, and with no context naming live PIDs.
+    seed(
+        "000000000006",
+        "exited",
+        live,
+        foreign,
+        finished.clone(),
+        true,
+    );
+    seed(
+        "000000000007",
+        "stopped",
+        live,
+        None,
+        finished.clone(),
+        true,
+    );
+    // A legacy record without context or marker: Linux cannot compare its
+    // PIDs and preserves it; macOS keeps verifying absence as before.
+    seed("000000000008", "exited", gone, None, finished, false);
+    let legacy_collected = !cfg!(target_os = "linux");
+
+    // Before any collecting command: same-context unfinalized history and
+    // finalized history are eligible; foreign unfinalized history is not.
+    let candidates = fixture.call(&["prune", "--dry-run"])["candidates"].clone();
+    let mut expected = vec!["000000000005", "000000000006", "000000000007"];
+    if legacy_collected {
+        expected.push("000000000008");
+    }
+    assert_eq!(candidates, serde_json::json!(expected));
+
+    let jobs = fixture.call(&["list", "--all", "--resources"])["jobs"].clone();
+    let job = |id: &str| -> Value {
+        jobs.as_array()
+            .unwrap()
+            .iter()
+            .find(|j| j["id"] == id)
+            .unwrap()
+            .clone()
+    };
+    for id in ["000000000001", "000000000002"] {
+        assert_eq!(job(id)["state"], "unknown", "{id}");
+        let error = job(id)["error"].as_str().unwrap().to_owned();
+        assert!(
+            error.starts_with("control endpoint unavailable (")
+                && error.contains("cleanup is not verified")
+                && error.contains("another or unverifiable PID context"),
+            "{error}"
+        );
+        assert!(job(id)["resources"].is_null());
+    }
+    // Same-context absence is still observed, as before.
+    assert_eq!(job("000000000003")["state"], "interrupted");
+    assert!(job("000000000003")["finished_at_ms"].is_null());
+
+    let output = fixture.command(&["stop", "000000000001"]).output().unwrap();
+    assert!(!output.status.success());
+    let error = parse(&output)["error"].as_str().unwrap().to_owned();
+    assert!(
+        error.contains("refusing to signal a PID from disk")
+            && error.contains("another or unverifiable PID context"),
+        "{error}"
+    );
+    // `list` collected the eligible records; foreign unfinalized history
+    // remains.
+    for id in ["000000000005", "000000000006", "000000000007"] {
+        assert!(!fixture.state.join(id).exists(), "{id}");
+    }
+    assert!(fixture.state.join("000000000004/record.json").exists());
+    assert_eq!(
+        fixture.state.join("000000000008").exists(),
+        !legacy_collected
+    );
+    let candidates = fixture.call(&["prune", "--dry-run"])["candidates"].clone();
+    assert_eq!(candidates, serde_json::json!([]));
+    // Nothing above may signal the stand-in process or rewrite a record.
+    let mut unrelated = unrelated;
+    assert!(unrelated.0.try_wait().unwrap().is_none());
+    let persisted: Value =
+        serde_json::from_slice(&fs::read(fixture.state.join("000000000002/record.json")).unwrap())
+            .unwrap();
+    assert_eq!(persisted["state"], "stopping");
+    for i in [1, 2, 3, 4, 8] {
+        let dir = fixture.state.join(format!("{i:012x}"));
+        if dir.exists() {
+            fs::remove_dir_all(dir).unwrap();
+        }
+    }
+}
+
+/// Play a healthy supervisor of a seeded job whose saved PID context stays
+/// foreign throughout shutdown. It ignores availability probes, accepts one
+/// Stop, saves `stopping`, then closes its endpoint as an exiting guardian
+/// does, and writes the keeper's final record only `delay` later.
+fn foreign_supervisor(
+    record_path: PathBuf,
+    socket: PathBuf,
+    mut record: Value,
+    delay: Duration,
+) -> thread::JoinHandle<()> {
+    use std::io::{Read, Write};
+    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    thread::spawn(move || {
+        let save = |record: &Value| {
+            let tmp = record_path.with_extension("tmp");
+            fs::write(&tmp, serde_json::to_vec(record).unwrap()).unwrap();
+            fs::rename(&tmp, &record_path).unwrap();
+        };
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            assert!(Instant::now() < deadline, "no Stop request arrived");
+            let mut stream = match listener.accept() {
+                Ok((stream, _)) => stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(5));
+                    continue;
+                }
+                Err(error) => panic!("{error}"),
+            };
+            // Darwin rejects socket options on a probe its peer already
+            // closed; such a connection carries no request.
+            if stream.set_nonblocking(false).is_err()
+                || stream
+                    .set_read_timeout(Some(Duration::from_secs(1)))
+                    .is_err()
+            {
+                continue;
+            }
+            let mut request = Vec::new();
+            let mut byte = [0u8; 1];
+            while !request.ends_with(b"\n") {
+                match stream.read(&mut byte) {
+                    Ok(1) => request.push(byte[0]),
+                    _ => break,
+                }
+            }
+            if !request.ends_with(b"\n") {
+                // An availability probe: connect, then close.
+                continue;
+            }
+            let control: Value = serde_json::from_slice(&request).unwrap();
+            assert_eq!(control["action"], "stop");
+            record["state"] = serde_json::json!("stopping");
+            record["reason"] = serde_json::json!("requested");
+            save(&record);
+            let mut reply = serde_json::to_vec(&serde_json::json!({
+                "record": record,
+                "error": null,
+            }))
+            .unwrap();
+            reply.push(b'\n');
+            stream.write_all(&reply).unwrap();
+            break;
+        }
+        // The guardian's group is killed: its endpoint refuses connections.
+        drop(listener);
+        thread::sleep(delay);
+        record["state"] = serde_json::json!("stopped");
+        record["finished_at_ms"] = serde_json::json!(now_ms());
+        record["finalized_by_keeper"] = serde_json::json!(true);
+        save(&record);
+    })
+}
+
+#[test]
+fn stop_waits_for_final_record_when_pid_context_stays_foreign() {
+    let fixture = Fixture::new();
+    let (template, launch) = fixture.finished_template();
+    let absent = 0x7fff_fff0u32;
+    let seed = |id: &str| -> thread::JoinHandle<()> {
+        fixture.seed_history(id, &template, &launch, 1);
+        let mut record = template.clone();
+        record["id"] = serde_json::json!(id);
+        record["task"] = serde_json::json!("foreign-stop");
+        for (field, value) in [
+            ("state", serde_json::json!("running")),
+            ("reason", Value::Null),
+            ("exit_code", Value::Null),
+            ("finished_at_ms", Value::Null),
+            ("keeper_pid", serde_json::json!(absent)),
+            ("guardian_pid", serde_json::json!(absent)),
+            ("command_pid", serde_json::json!(absent)),
+            ("pid_context", serde_json::json!(FOREIGN_PID_CONTEXT)),
+        ] {
+            record[field] = value;
+        }
+        record
+            .as_object_mut()
+            .unwrap()
+            .remove("finalized_by_keeper");
+        let dir = fixture.state.join(id);
+        fs::write(
+            dir.join("record.json"),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .unwrap();
+        foreign_supervisor(
+            dir.join("record.json"),
+            dir.join("ctl.sock"),
+            record,
+            Duration::from_millis(120),
+        )
+    };
+    let persisted = |id: &str| -> Value {
+        serde_json::from_slice(&fs::read(fixture.state.join(id).join("record.json")).unwrap())
+            .unwrap()
+    };
+
+    // Single-job stop waits through the closed endpoint for the final record.
+    let single = seed("0000000000c1");
+    let stopped = fixture.call(&["stop", "0000000000c1"]);
+    single.join().unwrap();
+    assert_eq!(stopped["job"]["state"], "stopped", "{stopped}");
+    assert_eq!(
+        persisted("0000000000c1")["pid_context"],
+        FOREIGN_PID_CONTEXT
+    );
+
+    // Bulk stop reports both jobs finished rather than unverified.
+    let first = seed("0000000000c2");
+    let second = seed("0000000000c3");
+    let output = fixture
+        .command(&["stop", "--all", "--task", "foreign-stop"])
+        .output()
+        .unwrap();
+    first.join().unwrap();
+    second.join().unwrap();
+    let report = parse(&output);
+    assert!(output.status.success(), "{report}");
+    let results = report["results"].as_array().unwrap();
+    assert_eq!(results.len(), 2, "{report}");
+    for result in results {
+        assert_eq!(result["status"], "finished", "{report}");
+        assert_eq!(result["job"]["state"], "stopped", "{report}");
+    }
+    for id in ["0000000000c2", "0000000000c3"] {
+        assert_eq!(persisted(id)["pid_context"], FOREIGN_PID_CONTEXT);
+    }
+}
+
+#[test]
+fn live_job_with_foreign_pid_context_has_no_metrics_but_remains_controllable() {
+    let fixture = Fixture::new();
+    let (id, path) = fixture.start("resource-child", "30s");
+    ready(&path);
+    // Control: in its own PID context the same job is attributed.
+    wait(|| {
+        let view = fixture.call(&["list", "--resources"]);
+        view["jobs"][0]["resources"]["processes"]
+            .as_u64()
+            .is_some_and(|count| count > 0)
+            .then_some(())
+    });
+    let file = fixture.state.join(&id).join("record.json");
+    let mut record: Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
+    record["pid_context"] = serde_json::json!(FOREIGN_PID_CONTEXT);
+    fs::write(&file, serde_json::to_vec(&record).unwrap()).unwrap();
+    let view = fixture.call(&["list", "--resources"]);
+    assert_eq!(view["jobs"][0]["id"], id);
+    // The control endpoint is reachable, so state is still observed.
+    assert_eq!(view["jobs"][0]["state"], "running");
+    assert!(view["jobs"][0]["resources"].is_null());
+    assert_eq!(fixture.call(&["stop", &id])["job"]["state"], "stopped");
+    // Accepting Stop, the guardian re-saved its in-memory record, restoring
+    // its own context, so this shutdown was observed from a matching context.
+    // `stop_waits_for_final_record_when_pid_context_stays_foreign` covers a
+    // context that stays foreign through shutdown.
+    let record: Value = wait(|| {
+        let record: Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
+        (record["finalized_by_keeper"] == true).then_some(record)
+    });
+    assert_ne!(record["pid_context"], FOREIGN_PID_CONTEXT);
+}
+
+#[test]
+fn denied_control_socket_launches_nothing_and_keeps_the_key_unused() {
+    use std::os::unix::fs::PermissionsExt;
+    // Root bypasses the directory permission used to deny the socket.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let fixture = Fixture::new();
+    let marker = fixture.dir.path().join("launched");
+    let retained = [
+        "run",
+        "--ttl",
+        "30s",
+        "--grace",
+        "100ms",
+        "--key",
+        "retained",
+        "--",
+        "/bin/sleep",
+        "30",
+    ];
+    let existing = fixture.call(&retained)["job"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let fresh = [
+        "run",
+        "--grace",
+        "100ms",
+        "--key",
+        "fresh",
+        "--",
+        "/usr/bin/touch",
+        marker.to_str().unwrap(),
+    ];
+    let before = job_dirs(&fixture);
+    fs::set_permissions(&fixture.state, fs::Permissions::from_mode(0o500)).unwrap();
+    let denied = fixture.command(&fresh).output();
+    let mut reuse: Vec<&str> = retained.to_vec();
+    reuse.insert(7, "--reuse");
+    let reused = fixture.command(&reuse).output();
+    fs::set_permissions(&fixture.state, fs::Permissions::from_mode(0o700)).unwrap();
+    let denied = denied.unwrap();
+    assert!(!denied.status.success());
+    let error = parse(&denied)["error"].as_str().unwrap().to_owned();
+    assert!(
+        error.contains("cannot bind a Unix control socket in the state directory")
+            && error.contains("Access was denied")
+            && error.contains("nothing was launched and no job was recorded"),
+        "{error}"
+    );
+    assert!(!error.contains("allowAllUnixSockets"));
+    assert_eq!(job_dirs(&fixture), before);
+    assert!(!marker.exists());
+    assert!(fs::read_dir(&fixture.state)
+        .unwrap()
+        .flatten()
+        .all(|entry| !entry.file_name().to_string_lossy().starts_with(".probe-")));
+    // Read-only reuse of a retained job does not need the capability check.
+    let reused = reused.unwrap();
+    assert!(reused.status.success(), "{reused:?}");
+    let reused = parse(&reused);
+    assert_eq!(
+        (reused["reused"].clone(), reused["job"]["id"].clone()),
+        (serde_json::json!(true), serde_json::json!(existing))
+    );
+    // The denied key was never consumed.
+    let launched = fixture.call(&fresh);
+    assert_eq!(launched["reused"], false);
+    fixture.terminal(launched["job"]["id"].as_str().unwrap());
+    assert!(marker.exists());
+}
+
 #[test]
 fn slow_partial_control_request_cannot_starve_expiry() {
     use std::io::Write;
@@ -2041,6 +2503,10 @@ fn overdue_startup_expires_without_starting_the_command() {
     assert!(record["command_pid"].is_null());
     assert!(record["guardian_pid"].is_u64());
     assert!(record["finished_at_ms"].is_u64());
+    // The guardian wrote the terminal state; only the keeper's later final
+    // write, after reaping the guardian and observing its group absent, marks
+    // it finalized.
+    assert_eq!(record["finalized_by_keeper"], true, "{record}");
     assert!(
         !marker.exists(),
         "an overdue lease must not run its command"
@@ -2080,6 +2546,7 @@ fn guardian_setup_failure_is_a_failed_launch() {
     assert_eq!(record["state"], "failed");
     assert_eq!(record["reason"], "launch_failed");
     assert!(record["command_pid"].is_null());
+    assert_eq!(record["finalized_by_keeper"], true, "{record}");
     assert!(record["error"]
         .as_str()
         .unwrap()

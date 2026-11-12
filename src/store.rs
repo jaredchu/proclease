@@ -163,6 +163,35 @@ impl Store {
         }
         Ok(path)
     }
+    /// Confirm that a Unix control socket can be created and bound in this
+    /// state directory before anything is reserved, so a host that denies
+    /// Unix-domain sockets records no job and consumes no retry key. The
+    /// temporary name is shorter than a job's socket path, which `open`
+    /// already bounds, and is removed before returning.
+    pub fn probe_control_socket(&self) -> Result<()> {
+        use crate::platform::SocketStep;
+        let name = format!(
+            ".probe-{}",
+            &uuid::Uuid::new_v4().simple().to_string()[..12]
+        );
+        let Err((step, error)) = crate::platform::probe_unix_bind(&self.root.join(name)) else {
+            return Ok(());
+        };
+        let step = match step {
+            SocketStep::Create => "create",
+            SocketStep::Bind => "bind",
+        };
+        let hint = if crate::platform::is_denial(&error) {
+            ". Access was denied, for example by a host sandbox policy or directory \
+             permissions; ProcLease requires a Unix-domain control socket for every job"
+        } else {
+            ""
+        };
+        bail!(
+            "cannot {step} a Unix control socket in the state directory: {error}{hint}; \
+             nothing was launched and no job was recorded"
+        )
+    }
     pub fn reserve(&self) -> Result<String> {
         loop {
             let id = uuid::Uuid::new_v4().simple().to_string()[..12].to_owned();
@@ -308,17 +337,33 @@ impl Store {
                 let Some(time) = record.finished_at_ms else {
                     return Ok(None);
                 };
+                // The marker is set by the keeper's final write only after
+                // group KILL, guardian reaping and an observation that found
+                // the group absent, so no supervised process or lifecycle
+                // writer remains. No saved PID is interpreted, so this holds
+                // after a reboot or from another PID context.
+                if record.finalized_by_keeper {
+                    return Ok(Some((time, name.clone())));
+                }
+                // Unfinalized terminal records (earlier versions, a keeper
+                // that did not complete its final write, or one that could not
+                // observe its group absent) need verified absence.
                 let own_completion =
                     completed_id == Some(name.as_str()) && record.keeper_pid == std::process::id();
+                // Absence of saved PIDs is meaningful only in their own PID
+                // space; otherwise the record is preserved. A keeper finishing
+                // its own job saved these PIDs itself.
+                let comparable = own_completion
+                    || crate::platform::pid_numbers_comparable(record.pid_context.as_deref());
                 if !own_completion
                     && !never_supervised(&record)
-                    && !process_is_absent(record.keeper_pid)
+                    && !(comparable && process_is_absent(record.keeper_pid))
                 {
                     return Ok(None);
                 }
                 if record
                     .guardian_pid
-                    .is_some_and(|pid| pid <= 1 || !group_is_absent(pid))
+                    .is_some_and(|pid| pid <= 1 || !comparable || !group_is_absent(pid))
                 {
                     return Ok(None);
                 }
@@ -436,12 +481,47 @@ impl Store {
     /// bounded caller (such as a readiness wait) can keep its overall budget.
     pub fn observed_record_until(&self, id: &str, probe: std::time::Instant) -> Result<Record> {
         let mut record = self.record(id)?;
+        if !record.state.active() {
+            return Ok(record);
+        }
         // Observation only: never signal an OS PID copied from disk.
         // The probe connect is bounded; scans hold the root lock while probing.
-        if record.state.active()
-            && crate::platform::connect_unix(&self.job(id)?.join("ctl.sock"), probe).is_err()
-        {
-            if record.state == State::Stopping {
+        if let Err(error) = crate::platform::connect_unix(&self.job(id)?.join("ctl.sock"), probe) {
+            // Saved PIDs are probed only from the PID space they were saved in.
+            let comparable = crate::platform::pid_numbers_comparable(record.pid_context.as_deref());
+            let unavailable = || {
+                let mut message = format!(
+                    "control endpoint unavailable ({}); cleanup is not verified",
+                    error.kind()
+                );
+                if !comparable {
+                    message.push_str(
+                        "; its saved PIDs belong to another or unverifiable PID context \
+                         (for example a sandbox that runs each tool call in its own PID \
+                         namespace) and are not probed from here",
+                    );
+                }
+                message
+            };
+            if record.state == State::Stopping && !comparable {
+                // Absence cannot be checked, so shutdown is never inferred.
+                // A healthy supervisor closes its endpoint shortly before the
+                // keeper writes the final record, so `stopping` is kept for a
+                // bounded window after the last lifecycle write; then, or if
+                // that write time cannot be established, it is `unknown`.
+                let message = unavailable();
+                if self.within_finalization_window(id) {
+                    record.error = Some(match record.error.take() {
+                        Some(previous) => {
+                            format!("{previous}; {message}; awaiting the supervisor's final record")
+                        }
+                        None => format!("{message}; awaiting the supervisor's final record"),
+                    });
+                } else {
+                    record.state = State::Unknown;
+                    record.error = Some(message);
+                }
+            } else if record.state == State::Stopping {
                 if record.guardian_pid.is_some_and(group_is_absent) {
                     record.finish();
                     // The keeper died before recording completion; the exact
@@ -452,24 +532,44 @@ impl Store {
                         // shutdown write as a stable display anchor, including
                         // for records left by older versions. Never rewrite
                         // lifecycle state or invent an exact completion time.
-                        record.last_lifecycle_write_ms =
-                            fs::symlink_metadata(self.job(id)?.join("record.json"))
-                                .ok()
-                                .filter(|metadata| metadata.is_file())
-                                .and_then(|metadata| metadata.modified().ok())
-                                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-                                .and_then(|age| u64::try_from(age.as_millis()).ok())
-                                .filter(|&time| time <= crate::model::now_ms());
+                        record.last_lifecycle_write_ms = self
+                            .record_written_at(id)
+                            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                            .and_then(|age| u64::try_from(age.as_millis()).ok())
+                            .filter(|&time| time <= crate::model::now_ms());
                     }
                 }
             } else if record.state != State::Starting
                 || crate::model::now_ms().saturating_sub(record.created_at_ms) > 5_000
             {
                 record.state = State::Unknown;
-                record.error = Some("control endpoint unavailable; cleanup is not verified".into());
+                record.error = Some(unavailable());
             }
         }
         Ok(record)
+    }
+    /// Modification time of a job's regular `record.json`, the time of its
+    /// last lifecycle write.
+    fn record_written_at(&self, id: &str) -> Option<std::time::SystemTime> {
+        fs::symlink_metadata(self.job(id).ok()?.join("record.json"))
+            .ok()
+            .filter(|metadata| metadata.is_file())
+            .and_then(|metadata| metadata.modified().ok())
+    }
+    /// Whether the last lifecycle write is recent enough that a healthy
+    /// supervisor may still be finalizing: within the stop bound for this
+    /// job's grace (capped at `MAX_GRACE_MS`, plus 2s). Unreadable launch
+    /// metadata and a missing, unreadable or future write time fail closed.
+    fn within_finalization_window(&self, id: &str) -> bool {
+        let Ok(launch) = self.launch(id) else {
+            return false;
+        };
+        let Some(written) = self.record_written_at(id) else {
+            return false;
+        };
+        std::time::SystemTime::now()
+            .duration_since(written)
+            .is_ok_and(|age| age <= crate::lifecycle::stop_bound(launch.grace_ms))
     }
     pub fn list(&self) -> Result<(Vec<Record>, Vec<String>)> {
         let mut jobs = Vec::new();
