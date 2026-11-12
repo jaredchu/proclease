@@ -236,6 +236,9 @@ defensive change, and was not rerun with the remediation source.
 
 ## Session-scoped foreground mode (unreleased source), 2026-11-12
 
+These pre-release source measurements underpin v0.1.9. They are not reruns of
+the final release archives; the version change leaves runtime/tests unchanged.
+
 Later native Linux tests exercised explicit `run --foreground` with file controls
 in source after v0.1.8. The manifest still reports 0.1.8; the published binaries
 and crate lack the flag. These tests use bounded Python HTTP/heartbeat fixtures,

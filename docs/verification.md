@@ -1274,6 +1274,9 @@ profiles remain unsupported, and protected unknown records remain unverified.
 
 ## Foreground sessions and file control (unreleased source), 2026-11-12
 
+These measurements name the pre-release source candidates. The v0.1.9 release
+preparation below preserves their runtime/test bytes and qualifications.
+
 Source after v0.1.8 adds explicit `run --foreground`; published v0.1.8 artifacts
 do not include it. Detached/socket behavior remains the default. Foreground
 jobs use the same keeper/guardian lifecycle, an invocation-to-keeper liveness
@@ -1347,3 +1350,15 @@ separately record a default-Claude pass and blocked restricted profiles, plus
 fail-closed diagnostics of the then-unreleased remediation, now shipped in v0.1.8. These
 checks do not prove ordinary-registry integration for every client, automatic
 skill invocation, or compatibility beyond the stated versions/profiles.
+
+<a id="v019-publication-2026-11-12"></a>
+
+## v0.1.9 release preparation, 2026-11-12
+
+The release candidate packages reviewed `88b5ea7` foreground/file control.
+Runtime/test bytes, dependencies and the Rust 1.89 minimum are unchanged; only
+version metadata, installer/site pins, portable skill and release documentation
+change. The pre-release native-client matrix above remains scoped source-build
+evidence. Publication requires four native builds and archive/installer checks,
+inspected draft assets, a verified source crate, public downloads and website
+rollout. Preparation does not establish completion of those publication gates.

@@ -91,7 +91,7 @@ launching. Never move or copy a live job's state to make it appear elsewhere.
 
 ## Foreground sessions
 
-`run --foreground` is unreleased source; published v0.1.8 does not have it.
+`run --foreground` requires v0.1.9 or later; v0.1.8 and earlier do not have it.
 Use it only if `proclease run --help` lists `--foreground`, and only when the
 host keeps one command running for the life of the session. Examples are a
 Codex execution session or a Claude Code Bash command run in the background.

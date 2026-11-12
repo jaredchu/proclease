@@ -117,10 +117,9 @@ Foreground jobs skip this probe; see below.
 
 <a id="foreground-sessions-unreleased-source"></a>
 
-### Foreground sessions (unreleased source)
+### Foreground sessions (v0.1.9)
 
-`run --foreground` is in source after v0.1.8 and not in the published v0.1.8
-release. Launch and record files persist `mode` (`detached` or `foreground`)
+`run --foreground` is available from v0.1.9. Launch and record files persist `mode` (`detached` or `foreground`)
 and `transport` (`socket` or `file`). Missing fields, as in every earlier
 record, mean `detached` and `socket`. Each mode has exactly one transport. A
 guardian refuses a launch whose pair is inconsistent, and no path falls back
@@ -240,8 +239,8 @@ arguments, paths and environment entries cannot contain NUL.
 While history is retained, they return the original record, including terminal
 records, without renewal. Purging history ends that key's deduplication window.
 Changing a context while reusing a key is an error. There is no automatic
-command-text deduplication or cross-task ownership transfer. In unreleased
-source, the launch mode is part of that policy: a key never switches between a
+command-text deduplication or cross-task ownership transfer. From v0.1.9,
+the launch mode is part of that policy: a key never switches between a
 detached and a foreground job, and the rejection names `mode`. The mode is
 compared even with `--reuse`, which relaxes only the environment comparison. A
 matching retry or `--reuse` of a foreground job, which must itself pass

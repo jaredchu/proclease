@@ -3,7 +3,7 @@
 # Keep execution at EOF so an incomplete download cannot start installation.
 main() {
     set -eu
-    version=v0.1.8
+    version=v0.1.9
     skills=none
     bin_dir=${PROCLEASE_INSTALL_DIR:-"$HOME/.local/bin"}
     data_dir=${XDG_DATA_HOME:-"$HOME/.local/share"}/proclease
@@ -14,7 +14,7 @@ main() {
                 skills=$2; shift 2 ;;
             --help)
                 echo 'Usage: sh install.sh [--skills codex|claude|both|none]'
-                echo 'Installs v0.1.8 to ~/.local/bin; PROCLEASE_INSTALL_DIR overrides the binary directory.'
+                echo 'Installs v0.1.9 to ~/.local/bin; PROCLEASE_INSTALL_DIR overrides the binary directory.'
                 return 0 ;;
             *) echo "Unknown option: $1" >&2; return 1 ;;
         esac

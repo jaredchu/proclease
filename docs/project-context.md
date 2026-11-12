@@ -118,9 +118,10 @@ was relaxed. Fresh binary and default Rust 1.89 registry installations passed
 explicit reuse and expiry checks. See [publication evidence](verification.md#v018-publication-2026-11-12)
 and [the release notes](releases/v0.1.8.md).
 
-Subsequent **unreleased source** implements `run --foreground` with file controls.
-Published v0.1.8 binaries/crate do not contain it; the source still reports 0.1.8,
-so check `run --help`. All 96 tests pass on macOS and native Linux, and a default
+The **v0.1.9 release candidate** packages `run --foreground` with file controls
+from reviewed `88b5ea7`. Published v0.1.8 binaries/crate do not contain it. Native
+archives, registry publication and website rollout remain release gates; see
+[the release notes](releases/v0.1.9.md). All 96 tests pass on macOS and native Linux, and a default
 Rust 1.89 source installation passes. Both tested restricted Linux clients passed
 cross-call file controls, explicit extension/reuse, stop and expiry with native
 execution tasks. Early client exits can still leave `unknown` records; strict
@@ -172,7 +173,7 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- FIXED   Review corrections: stopping window, finalized retention, procfs bounds
 |-- TESTED  Corrected source: 81 tests on macOS/Linux; diagnostic recheck fails closed
 |-- DONE    v0.1.8 four-native/registry/website release and isolated installs verified
-|-- IMPLEMENTED Unreleased session-scoped foreground mode and bounded file controls
+|-- PREPARED v0.1.9 candidate: session-scoped foreground mode and bounded file controls
 |-- TESTED  96 tests on macOS/native Linux; default Rust 1.89 source installation
 |-- TESTED  Native Codex/strict-Claude foreground controls, reuse, stop and expiry
 `-- LIMITED Early client exit can lose finalization; strict-Claude localhost stays private
@@ -312,7 +313,7 @@ no search-ranking or traffic improvement has been measured.
   [matrix](agent-compatibility.md) preserves the historical rows and separates
   this session-scoped result from full application/client-exit compatibility.
   Untested profiles still need direct testing.
-- Version 0.1.8 is published; foreground/file control remains unreleased under
+- Version 0.1.8 is published; v0.1.9 foreground/file release gates remain under
   the [release procedure](releasing.md). Same-user local control is not
   authenticated agent identity. The file queue's admission check is per client,
   not an atomic global cap; the protocol relies on private same-user state.

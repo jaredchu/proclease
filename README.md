@@ -17,7 +17,7 @@ Website: [proclease.com](https://proclease.com).
 
 ## Install
 
-Download and review [the v0.1.8 installer](https://github.com/jaredchu/proclease/releases/download/v0.1.8/install.sh), then run:
+Download and review [the v0.1.9 installer](https://github.com/jaredchu/proclease/releases/download/v0.1.9/install.sh), then run:
 
 ```sh
 sh install.sh --skills both
@@ -32,10 +32,10 @@ unrelated skill folders and symlinks are preserved. Restart the agent session
 to discover a new skill.
 
 For manual installation, download an archive from the
-[experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.8),
+[experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.9),
 verify it against `SHA256SUMS`, extract it and place `proclease` on PATH. Each
 archive includes the skill, README and MIT license. See the
-[release notes](https://github.com/jaredchu/proclease/blob/v0.1.8/docs/releases/v0.1.8.md)
+[release notes](https://github.com/jaredchu/proclease/blob/v0.1.9/docs/releases/v0.1.9.md)
 for tested platforms and signing limits.
 
 ## Build
@@ -45,7 +45,7 @@ recommended. The prebuilt installer above does not need Rust. To build the CLI
 from the crates.io registry:
 
 ```sh
-cargo install proclease --version 0.1.8 --locked
+cargo install proclease --version 0.1.9 --locked
 proclease --version
 ```
 
@@ -90,7 +90,7 @@ details and preview URLs. It switches to a stacked layout in narrow terminals. C
 for terminals; `NO_COLOR`, `TERM=dumb` or `--color never` disables them, and
 `--color always` forces them. Redirected output and JSON stay uncolored by default.
 
-![ProcLease terminal table showing example jobs](https://raw.githubusercontent.com/jaredchu/proclease/v0.1.8/docs/assets/terminal-preview.png)
+![ProcLease terminal table showing example jobs](https://raw.githubusercontent.com/jaredchu/proclease/v0.1.9/docs/assets/terminal-preview.png)
 
 A real disposable worker and synthetic history rows shown with
 `proclease watch --all`; the default view briefly shows recently finished jobs
@@ -378,7 +378,7 @@ running inside a Linux VM or container.
 
 ## Install the skill
 
-The same [skill folder](https://github.com/jaredchu/proclease/blob/v0.1.8/skills/proclease/SKILL.md) works as an instruction-only
+The same [skill folder](https://github.com/jaredchu/proclease/blob/v0.1.9/skills/proclease/SKILL.md) works as an instruction-only
 skill in both hosts. With `proclease` on the executor's PATH, link the folder into
 each host you use:
 
@@ -395,11 +395,10 @@ local execution to a chat that does not already have it.
 
 <a id="foreground-sessions-unreleased-source"></a>
 
-## Foreground sessions (unreleased source)
+## Foreground sessions (v0.1.9)
 
-`run --foreground` exists only in source after v0.1.8; the published v0.1.8
-binaries and crate do not include it, even though the source manifest still
-reads 0.1.8. Check `proclease run --help` for `--foreground` before using it.
+Available in v0.1.9 and later. Earlier releases do not include `run --foreground`;
+check `proclease run --help` for `--foreground` before using an older installation.
 The default `run` is unchanged: it returns after startup, the job keeps running
 on its own, and control uses the job's Unix-domain socket.
 
@@ -540,7 +539,7 @@ PID context, such as a per-call PID namespace, are never probed, used for
 metrics or used to infer shutdown. See [PID context](https://github.com/jaredchu/proclease/blob/main/docs/architecture.md#pid-context-unreleased).
 Native Linux checks of the initial remediation build in both profiles reported
 these fail-closed results; they are diagnostics, not compatibility passes.
-Unreleased source adds [foreground sessions](#foreground-sessions-unreleased-source)
+Version 0.1.9 adds [foreground sessions](#foreground-sessions-unreleased-source)
 with file-based control for hosts that can keep one command running; they
 last only as long as that session, and default mode still needs the socket.
 There is no privileged or login-wide execution daemon. Jobs are supervised only
@@ -586,4 +585,4 @@ Codex led the initial implementation and documentation. Claude, through Claude
 Code, contributed independent review and validation. See the
 [contribution and attribution policy](https://github.com/jaredchu/proclease/blob/main/CONTRIBUTING.md#commit-attribution).
 
-Released under the [MIT license](https://github.com/jaredchu/proclease/blob/v0.1.8/LICENSE).
+Released under the [MIT license](https://github.com/jaredchu/proclease/blob/v0.1.9/LICENSE).
