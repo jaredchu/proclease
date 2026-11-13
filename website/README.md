@@ -10,6 +10,31 @@ The production target is a static-assets-only Cloudflare Worker named
 `proclease.com`; Cloudflare manages its domain binding and TLS. There is no
 server script, database, tracking or account system.
 
+## Pages
+
+- `dist/index.html`: the homepage, served at `/`. Only this page loads `app.js`.
+- `dist/experiments/index.html`: the [v0.1.9 lifecycle experiments](../docs/experiments/v0.1.9/README.md)
+  summary, served at `/experiments/`. It is static HTML with the shared
+  stylesheet and a smaller same-document Tabler sprite; its data and harness
+  are linked on GitHub rather than copied into `dist/`. Its small
+  `experiments/keyboard.js` helper makes wide tables respond to Left/Right and
+  Home/End when their scroll region is focused; content and touch scrolling
+  remain available without JavaScript.
+
+Each additional page must be `<dir>/index.html`, carry its own canonical and
+`og:url` for its directory URL, and appear in `sitemap.xml`.
+`scripts/check-website.py` checks every HTML page under `dist/`: local
+references (including fragments on other pages), canonical, `og:url` and
+sitemap agreement, social metadata, per-page sprite rules (symbols reused
+unchanged from the homepage, each used and resolved), glyph and em dash
+absence. Homepage-only checks (structured data, scripted icons, installer
+mirror) are unchanged.
+
+Cloudflare's static assets serve a page at its directory URL and answer a
+direct `/<dir>/index.html` request with a 307 redirect, as `/index.html` already
+does. The live-file step in `website.yml` requests `/<dir>/` for
+`<dir>/index.html`, as it does for `/`.
+
 ## Canonical URL and redirects
 
 The canonical address is `https://proclease.com`. A Cloudflare zone Single
@@ -130,7 +155,7 @@ checks.
 Use curl or an identifying application User-Agent for automated HTTP checks;
 Cloudflare's Browser Integrity Check rejects the default Python `urllib` signature.
 See [Cloudflare's explanation](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1010/).
-Release links and the installer are pinned to the v0.1.7 prerelease.
+Release links and the installer are pinned to the v0.1.9 prerelease.
 Update those pins together for a future release, and merge them to main only
 after its matching release assets are public; the pin check blocks deployment
 otherwise. See [the release procedure](../docs/releasing.md).

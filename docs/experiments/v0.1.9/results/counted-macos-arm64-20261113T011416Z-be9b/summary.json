@@ -1,0 +1,613 @@
+{
+ "meta": {
+  "archive_sha256": "2e3b0bf36eb517f5badc531e63d6e17572d43280a102d12f3acd455acb8686a1",
+  "binary_sha256": "0275b1ef9e0c176bb21a9ff073fc064f859d9d2c946cb54abe4acafe0fee4af6",
+  "binary_version": "proclease 0.1.9",
+  "cpu_count": 10,
+  "final_task_processes": 0,
+  "final_task_supervisors": 0,
+  "finished_utc": "2026-11-13T01:22:23Z",
+  "harness_sha256": "55c460a7bbf53ef7edeadc8b3c6b385672eeffc0355d885e89d1998bc059dcca",
+  "kind": "counted",
+  "load_average_end": [
+   2.36,
+   2.71,
+   2.78
+  ],
+  "load_average_start": [
+   3.5,
+   2.94,
+   2.76
+  ],
+  "machine": "arm64",
+  "macos_version": "27.2.1",
+  "methodology_sha256": "fe6f4fed2fcf01ae9617fa87ea9f03537e39b205f511a99c273464ffd805d93b",
+  "os": "Darwin",
+  "os_release": "27.2.0",
+  "parallel_trials": 3,
+  "platform": "macos-arm64",
+  "pre_existing_task_processes": 0,
+  "protocol_sha256": "ec28ec60c068b23454f334d31b0763684f3f70750a2ec2b96c01c1b032f23a38",
+  "python": "3.9.6",
+  "repetitions": 30,
+  "run_id": "counted-macos-arm64-20261113T011416Z-be9b",
+  "started_utc": "2026-11-13T01:14:16Z"
+ },
+ "scenarios": {
+  "detached_expiry_graceful": {
+   "finalized_by_keeper_true": 30,
+   "fixture_final_classes": {
+    "absent": 30,
+    "zombie": 30
+   },
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {
+    "expired": 30
+   },
+   "timings_s": {
+    "after_deadline_child_exit_s": {
+     "max": 0.091,
+     "median": 0.058,
+     "min": 0.024,
+     "n": 30
+    },
+    "after_deadline_parent_exit_s": {
+     "max": 0.091,
+     "median": 0.058,
+     "min": 0.025,
+     "n": 30
+    },
+    "after_deadline_port_closed_s": {
+     "max": 0.091,
+     "median": 0.058,
+     "min": 0.024,
+     "n": 30
+    },
+    "ready_margin_s": {
+     "max": 2.761,
+     "median": 2.751,
+     "min": 2.31,
+     "n": 30
+    }
+   },
+   "trials": 30
+  },
+  "detached_expiry_term_resistant": {
+   "finalized_by_keeper_true": 30,
+   "fixture_final_classes": {
+    "absent": 59,
+    "reused": 1
+   },
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {
+    "expired": 30
+   },
+   "timings_s": {
+    "after_deadline_child_exit_s": {
+     "max": 1.1,
+     "median": 1.059,
+     "min": 1.032,
+     "n": 30
+    },
+    "after_deadline_parent_exit_s": {
+     "max": 1.105,
+     "median": 1.06,
+     "min": 1.032,
+     "n": 30
+    },
+    "after_deadline_port_closed_s": {
+     "max": 1.1,
+     "median": 1.058,
+     "min": 1.011,
+     "n": 30
+    },
+    "ready_margin_s": {
+     "max": 2.758,
+     "median": 2.749,
+     "min": 2.331,
+     "n": 30
+    }
+   },
+   "trials": 30
+  },
+  "detached_guardian_sigkill": {
+   "finalized_by_keeper_true": 30,
+   "fixture_final_classes": {
+    "absent": 59,
+    "reused": 1
+   },
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {
+    "interrupted": 30
+   },
+   "timings_s": {
+    "after_kill_child_exit_s": {
+     "max": 1.1,
+     "median": 1.071,
+     "min": 1.022,
+     "n": 30
+    },
+    "after_kill_parent_exit_s": {
+     "max": 1.151,
+     "median": 1.073,
+     "min": 1.022,
+     "n": 30
+    },
+    "after_kill_port_closed_s": {
+     "max": 1.1,
+     "median": 1.071,
+     "min": 1.022,
+     "n": 30
+    }
+   },
+   "trials": 30
+  },
+  "detached_keeper_sigkill": {
+   "finalized_by_keeper_true": 0,
+   "fixture_final_classes": {
+    "absent": 57,
+    "reused": 3
+   },
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {
+    "interrupted": 30
+   },
+   "timings_s": {
+    "after_kill_child_exit_s": {
+     "max": 1.102,
+     "median": 1.072,
+     "min": 1.023,
+     "n": 30
+    },
+    "after_kill_parent_exit_s": {
+     "max": 1.104,
+     "median": 1.077,
+     "min": 1.023,
+     "n": 30
+    },
+    "after_kill_port_closed_s": {
+     "max": 1.102,
+     "median": 1.074,
+     "min": 1.023,
+     "n": 30
+    }
+   },
+   "trials": 30
+  },
+  "foreground_expiry_graceful": {
+   "finalized_by_keeper_true": 30,
+   "fixture_final_classes": {
+    "absent": 30,
+    "zombie": 30
+   },
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {
+    "expired": 30
+   },
+   "timings_s": {
+    "after_deadline_child_exit_s": {
+     "max": 0.104,
+     "median": 0.063,
+     "min": 0.014,
+     "n": 30
+    },
+    "after_deadline_parent_exit_s": {
+     "max": 0.104,
+     "median": 0.068,
+     "min": 0.023,
+     "n": 30
+    },
+    "after_deadline_port_closed_s": {
+     "max": 0.104,
+     "median": 0.063,
+     "min": 0.014,
+     "n": 30
+    },
+    "launcher_exit_after_deadline_s": {
+     "max": 1.165,
+     "median": 1.117,
+     "min": 1.076,
+     "n": 30
+    },
+    "ready_margin_s": {
+     "max": 2.763,
+     "median": 2.753,
+     "min": 2.336,
+     "n": 30
+    }
+   },
+   "trials": 30
+  },
+  "foreground_expiry_term_resistant": {
+   "finalized_by_keeper_true": 30,
+   "fixture_final_classes": {
+    "absent": 60
+   },
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {
+    "expired": 30
+   },
+   "timings_s": {
+    "after_deadline_child_exit_s": {
+     "max": 1.098,
+     "median": 1.065,
+     "min": 1.032,
+     "n": 30
+    },
+    "after_deadline_parent_exit_s": {
+     "max": 1.098,
+     "median": 1.065,
+     "min": 1.032,
+     "n": 30
+    },
+    "after_deadline_port_closed_s": {
+     "max": 1.098,
+     "median": 1.065,
+     "min": 1.032,
+     "n": 30
+    },
+    "launcher_exit_after_deadline_s": {
+     "max": 1.154,
+     "median": 1.115,
+     "min": 1.074,
+     "n": 30
+    },
+    "ready_margin_s": {
+     "max": 2.76,
+     "median": 2.752,
+     "min": 2.645,
+     "n": 30
+    }
+   },
+   "trials": 30
+  },
+  "foreground_sigint_blocked_stdout": {
+   "finalized_by_keeper_true": 30,
+   "fixture_final_classes": {
+    "absent": 60
+   },
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {
+    "interrupted": 30
+   },
+   "timings_s": {
+    "after_signal_child_exit_s": {
+     "max": 1.2,
+     "median": 1.151,
+     "min": 1.102,
+     "n": 30
+    },
+    "after_signal_parent_exit_s": {
+     "max": 1.2,
+     "median": 1.151,
+     "min": 1.102,
+     "n": 30
+    },
+    "after_signal_port_closed_s": {
+     "max": 1.2,
+     "median": 1.151,
+     "min": 1.102,
+     "n": 30
+    },
+    "launcher_exit_after_signal_s": {
+     "max": 1.192,
+     "median": 1.139,
+     "min": 1.09,
+     "n": 30
+    }
+   },
+   "trials": 30
+  },
+  "mismatch_command_detached": {
+   "finalized_by_keeper_true": 0,
+   "fixture_final_classes": {},
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {},
+   "timings_s": {},
+   "trials": 30
+  },
+  "mismatch_command_foreground": {
+   "finalized_by_keeper_true": 0,
+   "fixture_final_classes": {},
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {},
+   "timings_s": {},
+   "trials": 30
+  },
+  "negative_control_blind_observer": {
+   "finalized_by_keeper_true": 0,
+   "fixture_final_classes": {},
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {},
+   "timings_s": {},
+   "trials": 30
+  },
+  "negative_control_unmanaged_live": {
+   "finalized_by_keeper_true": 0,
+   "fixture_final_classes": {},
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {},
+   "timings_s": {},
+   "trials": 30
+  },
+  "retry_concurrent8_detached": {
+   "finalized_by_keeper_true": 0,
+   "fixture_final_classes": {},
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {},
+   "timings_s": {},
+   "trials": 30
+  },
+  "retry_concurrent8_foreground": {
+   "finalized_by_keeper_true": 0,
+   "fixture_final_classes": {},
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {},
+   "timings_s": {},
+   "trials": 30
+  },
+  "retry_sequential_detached": {
+   "finalized_by_keeper_true": 0,
+   "fixture_final_classes": {},
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {},
+   "timings_s": {
+    "retry_elapsed_s": {
+     "max": 0.009,
+     "median": 0.006,
+     "min": 0.005,
+     "n": 30
+    }
+   },
+   "trials": 30
+  },
+  "retry_sequential_foreground": {
+   "finalized_by_keeper_true": 0,
+   "fixture_final_classes": {},
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {},
+   "timings_s": {
+    "retry_elapsed_s": {
+     "max": 0.008,
+     "median": 0.006,
+     "min": 0.005,
+     "n": 30
+    }
+   },
+   "trials": 30
+  },
+  "reuse_changed_env_detached": {
+   "finalized_by_keeper_true": 0,
+   "fixture_final_classes": {},
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {},
+   "timings_s": {
+    "reuse_elapsed_s": {
+     "max": 0.008,
+     "median": 0.006,
+     "min": 0.005,
+     "n": 30
+    }
+   },
+   "trials": 30
+  },
+  "reuse_changed_env_foreground": {
+   "finalized_by_keeper_true": 0,
+   "fixture_final_classes": {},
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {},
+   "timings_s": {
+    "reuse_elapsed_s": {
+     "max": 0.008,
+     "median": 0.005,
+     "min": 0.005,
+     "n": 30
+    }
+   },
+   "trials": 30
+  },
+  "terminal_retry_detached": {
+   "finalized_by_keeper_true": 0,
+   "fixture_final_classes": {},
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {},
+   "timings_s": {
+    "ordinary_elapsed_s": {
+     "max": 0.012,
+     "median": 0.008,
+     "min": 0.005,
+     "n": 30
+    },
+    "reuse_elapsed_s": {
+     "max": 0.009,
+     "median": 0.007,
+     "min": 0.005,
+     "n": 30
+    }
+   },
+   "trials": 30
+  },
+  "terminal_retry_foreground": {
+   "finalized_by_keeper_true": 0,
+   "fixture_final_classes": {},
+   "outcomes": {
+    "error": 0,
+    "fail": 0,
+    "not_ready": 0,
+    "pass": 30,
+    "timeout": 0,
+    "unobserved": 0
+   },
+   "reasons": {},
+   "states": {},
+   "timings_s": {
+    "ordinary_elapsed_s": {
+     "max": 0.012,
+     "median": 0.009,
+     "min": 0.006,
+     "n": 30
+    },
+    "reuse_elapsed_s": {
+     "max": 0.01,
+     "median": 0.008,
+     "min": 0.005,
+     "n": 30
+    }
+   },
+   "trials": 30
+  }
+ },
+ "totals": {
+  "error": 0,
+  "fail": 0,
+  "not_ready": 0,
+  "pass": 570,
+  "timeout": 0,
+  "trials": 570,
+  "unobserved": 0
+ }
+}

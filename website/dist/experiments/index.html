@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101010">
+  <title>ProcLease v0.1.9 lifecycle experiments: expiry, failures and retries</title>
+  <meta name="description" content="Scripted tests of the published ProcLease v0.1.9 binaries on macOS arm64 and Linux x86_64: expiry, supervisor and launcher failures, and keyed retries. 1,140 of 1,140 trials passed, with methods and limits.">
+  <link rel="canonical" href="https://proclease.com/experiments/">
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="ProcLease">
+  <meta property="og:title" content="ProcLease v0.1.9 lifecycle experiments">
+  <meta property="og:description" content="Scripted expiry, failure and retry tests of the published v0.1.9 binaries on macOS and Linux, judged by independent process and port observation.">
+  <meta property="og:url" content="https://proclease.com/experiments/">
+  <meta property="og:image" content="https://proclease.com/assets/social.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="ProcLease logo with the text: Every dev process gets a deadline. Open-source Rust CLI for macOS and Linux.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image:alt" content="ProcLease logo with the text: Every dev process gets a deadline. Open-source Rust CLI for macOS and Linux.">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/experiments/keyboard.js" defer></script>
+</head>
+<body>
+  <!-- Tabler Icons v3.50.0 (MIT, Copyright (c) 2020-2026 Paweł Kuna), https://github.com/tabler/tabler-icons/tree/v3.50.0. License: /assets/tabler-icons/LICENSE.txt -->
+  <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" width="0" height="0" aria-hidden="true" focusable="false">
+    <symbol id="i-arrow-up-right" viewBox="0 0 24 24" data-source="icons/outline/arrow-up-right.svg"><path d="M17 7l-10 10"/><path d="M8 7l9 0l0 9"/></symbol>
+  </svg>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-header"><nav class="wrap nav" aria-label="Main navigation">
+    <a class="wordmark" href="/" aria-label="ProcLease home"><img src="/assets/icon.svg" width="28" height="28" alt="">ProcLease<span class="slash">/</span></a>
+    <div class="nav-links"><a href="/#how">How it works</a><a href="/#install">Install</a><a href="/#faq">FAQ</a><a href="/experiments/" aria-current="page">Experiments</a><a class="with-icon" href="https://github.com/jaredchu/proclease#readme">Docs<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up-right"/></svg></a><a class="github with-icon" href="https://github.com/jaredchu/proclease">GitHub<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up-right"/></svg></a></div>
+  </nav></header>
+  <main id="main">
+    <section class="wrap exp-hero" aria-labelledby="exp-title">
+      <p class="eyebrow mono">LIFECYCLE EXPERIMENTS / v0.1.9 / 2026-11-13</p>
+      <h1 id="exp-title">1,140 scripted trials. <span>Every cleanup inside its declared bound.</span></h1>
+      <p class="intro">We ran the published v0.1.9 binaries on native macOS arm64 and Linux x86_64: expiry, killed supervisors, an interrupted launcher with blocked output, and keyed retries. An independent observer decided each cleanup by watching the service processes and their port, not by asking ProcLease. All 570 trials on each platform passed. The total includes 1,020 product trials and 120 observer controls. These figures come from the primary series, run with the amended observer of protocol version 2. An earlier series with the first observer also passed and stays published separately. These are scripted host CLI tests, not agent sessions, and not a benchmark.</p>
+      <div class="exp-links"><a class="text-link with-icon" href="https://github.com/jaredchu/proclease/blob/main/docs/experiments/v0.1.9/README.md">Full report<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up-right"/></svg></a><a class="text-link with-icon" href="https://github.com/jaredchu/proclease/blob/main/docs/experiments/v0.1.9/protocol.md">Protocol and pass criteria<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up-right"/></svg></a><a class="text-link with-icon" href="https://github.com/jaredchu/proclease/tree/main/docs/experiments/v0.1.9/results">Result data<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up-right"/></svg></a><a class="text-link with-icon" href="https://github.com/jaredchu/proclease/blob/main/scripts/experiments-v019.py">Harness<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up-right"/></svg></a></div>
+    </section>
+
+    <div class="wrap spec-strip mono" aria-label="Experiment totals"><div><strong>570/570</strong><span>MACOS ARM64 PASSED</span></div><div><strong>570/570</strong><span>LINUX X86_64 PASSED</span></div><div><strong>0</strong><span>FAILED, TIMED OUT OR ERRORED</span></div></div>
+
+    <section class="wrap exp-section" aria-labelledby="results-title">
+      <p class="eyebrow mono">01 / RESULTS</p>
+      <h2 id="results-title">Thirty repetitions per scenario, <span>per platform.</span></h2>
+      <p>Each detached (default) or foreground case is counted separately. Every row passed all of its declared criteria in every repetition.</p>
+      <p class="table-hint">On narrow screens, scroll tables horizontally to compare both platforms.</p>
+      <div class="table-scroll" role="region" aria-labelledby="results-caption" tabindex="0"><table class="results">
+        <caption id="results-caption">PASSED TRIALS BY SCENARIO</caption>
+        <thead><tr><th scope="col">Scenario</th><th scope="col">What passing required</th><th scope="col">macOS</th><th scope="col">Linux</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Expiry, detached and foreground</th><td>Parent and same-group child are seen stopped and the port closes in the deadline window; TERM-ignoring services keep running through the 1 s grace, then stop; state <code>expired</code></td><td class="num">120/120</td><td class="num">120/120</td></tr>
+          <tr><th scope="row">Keeper or guardian SIGKILL</th><td>Identity checked before the signal; group gone and port closed within 3.5 s; no supervisor left; state <code>interrupted</code></td><td class="num">60/60</td><td class="num">60/60</td></tr>
+          <tr><th scope="row">Foreground SIGINT, stdout blocked</th><td>Signal sent only after confirming one running job, a full pipe and the live launcher; exit 130 within 6.5 s with the pipe still unread; group gone; state <code>interrupted</code></td><td class="num">30/30</td><td class="num">30/30</td></tr>
+          <tr><th scope="row">Sequential retry, both modes</th><td>Same job and deadline, <code>reused: true</code>, one service start</td><td class="num">60/60</td><td class="num">60/60</td></tr>
+          <tr><th scope="row">8 simultaneous same-key callers, both modes</th><td>One job, one start, one creator and seven reusers</td><td class="num">60/60</td><td class="num">60/60</td></tr>
+          <tr><th scope="row">Changed environment, both modes</th><td>Ordinary retry rejected naming <code>environment</code>; <code>--reuse</code> returns the job and the service keeps its original environment</td><td class="num">60/60</td><td class="num">60/60</td></tr>
+          <tr><th scope="row">Changed command, both modes</th><td>Rejected with and without <code>--reuse</code>; original job unchanged</td><td class="num">60/60</td><td class="num">60/60</td></tr>
+          <tr><th scope="row">Retry after expiry, both modes</th><td>Retained <code>expired</code> record returned; service not started again; port stays closed</td><td class="num">60/60</td><td class="num">60/60</td></tr>
+          <tr><th scope="row">Negative controls</th><td>The observer never reports cleanup for a live process, or without first seeing it</td><td class="num">60/60</td><td class="num">60/60</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section class="wrap exp-section" aria-labelledby="timing-title">
+      <p class="eyebrow mono">02 / TIMING</p>
+      <h2 id="timing-title">How long cleanup took <span>after each event.</span></h2>
+      <p>Seconds until the service parent and child were both seen absent or exited, median and maximum of 30 trials in the primary series. The observer polls every 0.05 s and up to three trials ran at once, so these describe these runs only. They are not benchmarks, and the two hosts differ in hardware, load and Python version.</p>
+      <div class="table-scroll" role="region" aria-labelledby="timing-caption" tabindex="0"><table class="results">
+        <caption id="timing-caption">SECONDS AFTER THE EVENT, MEDIAN / MAX</caption>
+        <thead><tr><th scope="col">Event</th><th scope="col">macOS</th><th scope="col">Linux</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Detached expiry, default TERM</th><td class="num">0.070 / 0.103</td><td class="num">0.026 / 0.067</td></tr>
+          <tr><th scope="row">Detached expiry, TERM ignored (1 s grace)</th><td class="num">1.051 / 1.099</td><td class="num">1.034 / 1.056</td></tr>
+          <tr><th scope="row">Foreground expiry, default TERM</th><td class="num">0.076 / 0.104</td><td class="num">0.018 / 0.065</td></tr>
+          <tr><th scope="row">Foreground expiry, TERM ignored</th><td class="num">1.058 / 1.112</td><td class="num">1.042 / 1.057</td></tr>
+          <tr><th scope="row">Keeper SIGKILL, TERM ignored</th><td class="num">1.067 / 1.104</td><td class="num">1.030 / 1.084</td></tr>
+          <tr><th scope="row">Guardian SIGKILL, TERM ignored</th><td class="num">1.064 / 1.095</td><td class="num">1.027 / 1.079</td></tr>
+          <tr><th scope="row">Foreground SIGINT, stdout blocked</th><td class="num">1.155 / 1.200</td><td class="num">1.093 / 1.120</td></tr>
+        </tbody>
+      </table></div>
+      <p>Recorded state is kept apart from observed cleanup. After a keeper SIGKILL every group was cleaned up, yet no record carried the keeper's finalization marker, because that keeper was gone. After a guardian SIGKILL, all 60 did.</p>
+    </section>
+
+    <section class="wrap exp-section" aria-labelledby="method-title">
+      <p class="eyebrow mono">03 / METHOD</p>
+      <h2 id="method-title">Real binaries. <span>Independent observation.</span></h2>
+      <ul>
+        <li>Release archives were checked against the published <code>SHA256SUMS</code>; the extracted binaries reported <code>proclease 0.1.9</code>. Nothing was built from source.</li>
+        <li>A Python standard-library harness ran the same protocol on both hosts. Protocol version 2 and the published harness were frozen, with recorded hashes, before the primary runs. Smoke runs are not counted, and no trial was retried or discarded.</li>
+        <li>Each trial had its own private state directory, temporary directory and synthetic environment. The service was a small HTTP fixture: a parent and a forked child in one process group.</li>
+        <li>Cleanup counted only after the observer had first seen both processes running, the same process group and the HTTP marker. It then required each process to be absent or exited (unreaped) and the port to refuse connections.</li>
+        <li>A failed or denied process listing is recorded as an error, never as absence. A live PID whose command no longer shows the trial token is never counted as stopped; the observer keeps polling.</li>
+        <li>Supervisors and launchers were signalled only after their current command line identified this trial's job. Saved PIDs were never signalled on their own.</li>
+      </ul>
+    </section>
+
+    <section class="wrap exp-section" aria-labelledby="limits-title">
+      <p class="eyebrow mono">04 / LIMITS</p>
+      <h2 id="limits-title">What these trials <span>do not show.</span></h2>
+      <ul>
+        <li>No agent took part. Codex and Claude Code compatibility, sandbox profiles and application servers such as Vite or Next.js are outside these results.</li>
+        <li>Cleanup was checked for a parent and one same-group child. A descendant that starts its own session or process group can escape ProcLease cleanup; no containment is claimed.</li>
+        <li>Thirty repetitions cannot rule out rarer failures. Sleep and wake, clock changes, destroying both supervisors at once and whole-sandbox teardown were not tested.</li>
+        <li>In 10 of 420 exit observations on macOS and 22 of 420 on Linux, a live PID briefly showed a command without the trial token. The harness cannot tell an exiting process from PID reuse, so it waited until each was absent or exited.</li>
+        <li>The observer sees processes and the port, not signals. TERM-ignoring services surviving the grace does not show the signal order.</li>
+      </ul>
+      <p>The first counted series used an observer that ignored <code>ps</code> failures and counted 21 such samples as stopped. It also passed 570 of 570 trials per platform, but it is kept as a separate, earlier dataset. The primary series repeated every trial with the amended observer.</p>
+      <p><a href="https://github.com/jaredchu/proclease/blob/main/docs/experiments/v0.1.9/README.md">Read the full report</a> for artifact hashes, host conditions, every timing and the reproduction steps.</p>
+    </section>
+  </main>
+  <footer class="wrap footer"><a class="wordmark" href="/" aria-label="ProcLease home"><img src="/assets/icon.svg" width="24" height="24" alt="">ProcLease</a><p>Created by <a href="https://cv.jaredchu.com/">Jared Chu</a>.<br>Built with Codex and Claude contributions.</p><nav class="footer-links mono" aria-label="Project links"><a href="/">HOME</a><a class="with-icon" href="https://github.com/jaredchu/proclease#readme">DOCS<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up-right"/></svg></a><a class="with-icon" href="https://github.com/jaredchu/proclease">SOURCE<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up-right"/></svg></a><a class="with-icon" href="https://github.com/jaredchu/proclease/issues">SUPPORT / ISSUES<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up-right"/></svg></a><a class="with-icon" href="https://github.com/jaredchu/proclease/blob/main/LICENSE">MIT LICENSE<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up-right"/></svg></a></nav></footer>
+</body>
+</html>

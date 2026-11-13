@@ -1,6 +1,6 @@
 # ProcLease project context
 
-Last reviewed: 2026-11-12.
+Last reviewed: 2026-11-13.
 
 ## Purpose and scope
 
@@ -106,6 +106,11 @@ verification limits.
   controls do not expose application ports across private network namespaces.
   See [the architecture](architecture.md#foreground-sessions-unreleased-source)
   and [the scoped client results](agent-compatibility.md#session-scoped-foreground-mode-unreleased-source-2026-11-12).
+- **Owner-authorized, 2026-11-13:** run expiry, failure-handling and retry
+  experiments on the published v0.1.9 binaries on native macOS and Linux, and
+  publish sanitized findings in this repository and on the existing website.
+  The harness is a public, standard-library black-box tool; raw diagnostics
+  stay private. See [the experiments](experiments/v0.1.9/README.md).
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
   proxying, auto-restart and hosted dashboards.
 
@@ -179,8 +184,28 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- TESTED  96 tests on all four native targets; default Rust 1.89 package/registry installs
 |-- TESTED  Native Codex/strict-Claude foreground controls, reuse, stop and expiry
 |-- DONE    v0.1.9 GitHub/registry/docs.rs/website publication and isolated installer checks
-`-- LIMITED Early client exit can lose finalization; strict-Claude localhost stays private
+|-- LIMITED Early client exit can lose finalization; strict-Claude localhost stays private
+|-- FIXED   Experiment observer amended (protocol v2): ps failures, token-less PIDs, preconditions
+|-- TESTED  v0.1.9 lifecycle experiments, primary v2 series: 570/570 each on macOS arm64 and Linux x86_64
+`-- DONE    Reproducible report and static experiments page, with versioned methods and data
 ```
+
+On 2026-11-13, scripted [lifecycle experiments](experiments/v0.1.9/README.md)
+ran the published v0.1.9 binaries 30 times per scenario on native macOS arm64
+and Linux x86_64. Detached and foreground expiry, keeper/guardian SIGKILL,
+foreground SIGINT with blocked stdout, sequential and eight-way concurrent
+keyed retries, changed-environment `--reuse`, changed-command rejection and
+retries of expired jobs passed all 1,020 product trials. Another 120 observer
+control trials passed; the primary total is 1,140 across both platforms.
+Independent process and port observation judged cleanup. The primary series uses
+[protocol version 2](experiments/v0.1.9/protocol.md). It treats `ps` failures as
+errors and never counts a live PID without the trial token as stopped. An earlier
+protocol version 1 series also passed 1,140 trials and stays published
+separately as superseded evidence. These are host CLI tests, not agent sessions
+or a benchmark; the report lists limits. The website sources include a static
+`/experiments/` summary. The workflow's live-file check requests that directory
+URL for `experiments/index.html`, as documented in the
+[website README](../website/README.md#pages).
 
 The [v0.1.5 publication](verification.md#v015-publication-2026-11-08) packages bulk
 stop and its retention correction with matching installer, shared skill and live
@@ -302,6 +327,9 @@ no search-ranking or traffic improvement has been measured.
 - [GitHub topics, description and social preview](github-discovery.md)
 - [Verification and limits](verification.md)
 - [Real-agent macOS/Linux compatibility matrix](agent-compatibility.md)
+- [v0.1.9 lifecycle experiments](experiments/v0.1.9/README.md) and their
+  [protocol](experiments/v0.1.9/protocol.md) (version 2; historical
+  [version 1](experiments/v0.1.9/protocol-v1.md))
 - [Shared ProcLease skill](../skills/proclease/SKILL.md)
 - [Contributing and attribution](../CONTRIBUTING.md)
 

@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Check static document references, metadata, assets and the installer mirror."""
+"""Check static document references, metadata, assets and the installer mirror.
+
+Every HTML page under website/dist is checked. The homepage keeps its specific
+structured-data, script and installer checks; other pages are served at their
+directory URL (`/name/` for `name/index.html`) and must not load app.js.
+"""
 import json
 import re
 import struct
@@ -22,6 +27,7 @@ class Document(HTMLParser):
         self.meta = {}
         self.links = []
         self.json_ld = []
+        self.scripts = []
         self._in_json = False
 
     def handle_starttag(self, tag, attrs):
@@ -43,6 +49,8 @@ class Document(HTMLParser):
                 self.meta[key] = attrs.get("content", "")
         if tag == "link":
             self.links.append(attrs)
+        if tag == "script" and "src" in attrs:
+            self.scripts.append(attrs["src"])
         if tag == "script" and attrs.get("type") == "application/ld+json":
             self._in_json = True
             self.json_ld.append("")
@@ -62,7 +70,17 @@ def local_path(url):
         url = url[len(origin):]
     assert url.startswith("/"), url
     path = url.split("#")[0].split("?")[0]
-    return root / ("index.html" if path == "/" else path.lstrip("/"))
+    if path.endswith("/"):
+        path += "index.html"
+    return root / path.lstrip("/")
+
+
+def page_url(path):
+    """Directory URL under which a dist HTML file is served."""
+    relative = path.relative_to(root).as_posix()
+    assert relative == "index.html" or relative.endswith("/index.html"), (
+        "pages must be <dir>/index.html so they are served at a directory URL", relative)
+    return "/" + relative[: -len("index.html")]
 
 
 def png_size(path):
@@ -71,51 +89,79 @@ def png_size(path):
     return struct.unpack(">II", data[16:24])
 
 
-document = Document()
-document.feed((root / "index.html").read_text())
-for ref in document.references:
-    if ref.startswith("#"):
-        assert len(ref) == 1 or ref[1:] in document.ids, ref
-    elif ref.startswith("/"):
-        assert local_path(ref).is_file(), ref
-for control in document.controls:
-    assert control in document.ids, control
+pages = sorted(root.rglob("*.html"))
+home = root / "index.html"
+assert home in pages
+documents = {}
+for path in pages:
+    document = Document()
+    document.feed(path.read_text())
+    documents[path] = document
 
-# Canonical, social URL and sitemap agree on one preferred URL.
-canonicals = [l["href"] for l in document.links if l.get("rel") == "canonical"]
-assert canonicals == [canonical], canonicals
-assert document.meta.get("og:url") == canonical
+page_canonicals = []
+for path, document in documents.items():
+    for ref in document.references:
+        if ref.startswith("#"):
+            assert len(ref) == 1 or ref[1:] in document.ids, (path, ref)
+        elif ref.startswith("/") or ref.startswith(origin + "/"):
+            target = local_path(ref)
+            assert target.is_file(), (path, ref)
+            if "#" in ref and target.suffix == ".html":
+                fragment = ref.split("#", 1)[1]
+                target_doc = documents.get(target)
+                assert target_doc is None or not fragment or fragment in target_doc.ids, (path, ref)
+    for control in document.controls:
+        assert control in document.ids, (path, control)
+
+    # Canonical, social URL and sitemap agree on one preferred URL per page.
+    expected = origin + page_url(path)
+    canonicals = [l["href"] for l in document.links if l.get("rel") == "canonical"]
+    assert canonicals == [expected], (path, canonicals)
+    assert document.meta.get("og:url") == expected, path
+    page_canonicals.append(expected)
+    for key in ["description", "og:title", "og:description", "og:image:alt"]:
+        assert document.meta.get(key), (path, key)
+
+    # Social image exists locally with the declared dimensions.
+    social = local_path(document.meta["og:image"])
+    assert social.is_file(), social
+    assert png_size(social) == (int(document.meta["og:image:width"]), int(document.meta["og:image:height"]))
+    rels = {l.get("rel") for l in document.links}
+    assert {"icon", "apple-touch-icon"} <= rels, (path, rels)
+    if path != home:
+        assert "/app.js" not in document.scripts, (path, "app.js targets homepage elements")
+    for block in document.json_ld:
+        json.loads(block)
+
 sitemap = ET.parse(root / "sitemap.xml").getroot()
 locs = [e.text for e in sitemap.iter("{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
-assert locs == [canonical], locs
+assert locs[0] == canonical and len(locs) == len(set(locs)), locs
+assert sorted(locs) == sorted(page_canonicals), (locs, page_canonicals)
 assert "Sitemap: " + origin + "/sitemap.xml" in (root / "robots.txt").read_text()
-for key in ["description", "og:title", "og:description", "og:image:alt"]:
-    assert document.meta.get(key), key
-
-# Social image exists locally with the declared dimensions.
-social = local_path(document.meta["og:image"])
-assert social.is_file(), social
-assert png_size(social) == (int(document.meta["og:image:width"]), int(document.meta["og:image:height"]))
 
 # Icons: SVG parses; PNG fallbacks have their expected sizes.
 ET.parse(root / "assets/icon.svg")
 assert png_size(root / "assets/apple-touch-icon.png") == (180, 180)
 assert png_size(root / "assets/icon-32.png") == (32, 32)
 assert (root / "favicon.ico").read_bytes()[:4] == b"\x00\x00\x01\x00"
-rels = {l.get("rel") for l in document.links}
-assert {"icon", "apple-touch-icon"} <= rels, rels
 
-# Structured data parses and names the visible product.
+# Homepage structured data parses and names the visible product.
+document = documents[home]
 assert len(document.json_ld) == 1
 graph = json.loads(document.json_ld[0])["@graph"]
 apps = [n for n in graph if n["@type"] == "SoftwareApplication"]
 assert len(apps) == 1 and apps[0]["name"] == "ProcLease" and apps[0]["url"] == canonical
-for banned in ["aggregateRating", "review", "offers", "softwareVersion"]:
-    assert banned not in apps[0], banned
+for doc in documents.values():
+    for block in doc.json_ld:
+        data = json.loads(block)
+        for node in data.get("@graph", [data]):
+            if node.get("@type") == "SoftwareApplication":
+                for banned in ["aggregateRating", "review", "offers", "softwareVersion"]:
+                    assert banned not in node, banned
 
 # No em dash, literal or encoded, in served text files.
 for path in root.rglob("*"):
-    if path.suffix in {".html", ".css", ".js", ".svg", ".txt", ".xml", ".sh"}:
+    if path.suffix in {".html", ".css", ".js", ".svg", ".txt", ".xml", ".sh", ".json"}:
         text = path.read_text()
         for token in ["—", "&mdash;", "&#8212;", "&#x2014;", "\\u2014"]:
             assert token.lower() not in text.lower(), (path, token)
@@ -170,48 +216,59 @@ class Icons(HTMLParser):
             control[2] += data
 
 
-# Icons: one hidden same-document sprite of Tabler symbols, each used, each use resolved.
-icons = Icons()
-html = (root / "index.html").read_text()
-icons.feed(html)
-assert len(icons.sprites) == 1, icons.sprites
-assert icons.sprites[0].get("aria-hidden") == "true" and icons.sprites[0].get("focusable") == "false"
-assert icons.sprites[0].get("width") == "0" and icons.sprites[0].get("height") == "0"
-for sid, symbol in icons.symbols.items():
-    assert sid.startswith("i-") and symbol.get("viewbox") == "0 0 24 24", sid
-    style = "filled" if sid.endswith("-filled") else "outline"
-    name = sid[2:].removesuffix("-filled")
-    assert symbol.get("data-source") == f"icons/{style}/{name}.svg", sid
-    assert symbol["paths"] and all(symbol["paths"]), sid
-for icon in icons.icons:
-    assert "icon" in icon.get("class", "").split(), icon
-    assert icon.get("aria-hidden") == "true" and icon.get("focusable") == "false", icon
-assert len(icons.uses) == len(icons.icons), "each icon has exactly one <use>"
-used = {href[1:] for href in icons.uses}
-assert all(href.startswith("#i-") for href in icons.uses), icons.uses
+# Icons: per page, one hidden same-document sprite of Tabler symbols, each used,
+# each use resolved. Other pages reuse the homepage's exact symbol geometry.
 app = (root / "app.js").read_text()
 scripted = {"i-" + n for n in re.findall(
     r'(?:setIcon\([^,]+,\s*|showState\(|showControl\(|setFeedback\()"([a-z0-9-]+)"', app)}
 assert scripted, "scripted icon names"
-assert used | scripted <= set(icons.symbols), (used | scripted) - set(icons.symbols)
-assert set(icons.symbols) <= used | scripted, set(icons.symbols) - used - scripted
-for tag, label, text, has_icon in icons.controls:
-    if has_icon:
-        assert label.strip() or text.strip(), f"unnamed icon {tag}"
+home_symbols = None
+for path in [home] + [p for p in pages if p != home]:
+    icons = Icons()
+    icons.feed(path.read_text())
+    if path != home and not icons.icons and not icons.sprites:
+        continue
+    assert len(icons.sprites) == 1, (path, icons.sprites)
+    sprite = icons.sprites[0]
+    assert sprite.get("aria-hidden") == "true" and sprite.get("focusable") == "false", path
+    assert sprite.get("width") == "0" and sprite.get("height") == "0", path
+    for sid, symbol in icons.symbols.items():
+        assert sid.startswith("i-") and symbol.get("viewbox") == "0 0 24 24", (path, sid)
+        style = "filled" if sid.endswith("-filled") else "outline"
+        name = sid[2:].removesuffix("-filled")
+        assert symbol.get("data-source") == f"icons/{style}/{name}.svg", (path, sid)
+        assert symbol["paths"] and all(symbol["paths"]), (path, sid)
+        if home_symbols is not None:
+            assert sid in home_symbols and symbol["paths"] == home_symbols[sid]["paths"], (path, sid)
+    for icon in icons.icons:
+        assert "icon" in icon.get("class", "").split(), (path, icon)
+        assert icon.get("aria-hidden") == "true" and icon.get("focusable") == "false", (path, icon)
+    assert len(icons.uses) == len(icons.icons), (path, "each icon has exactly one <use>")
+    used = {href[1:] for href in icons.uses}
+    assert all(href.startswith("#i-") for href in icons.uses), (path, icons.uses)
+    page_scripted = scripted if path == home else set()
+    assert used | page_scripted <= set(icons.symbols), (path, (used | page_scripted) - set(icons.symbols))
+    assert set(icons.symbols) <= used | page_scripted, (path, set(icons.symbols) - used - page_scripted)
+    for tag, label, text, has_icon in icons.controls:
+        if has_icon:
+            assert label.strip() or text.strip(), f"unnamed icon {tag} in {path}"
+    notice = [c for c in icons.comments if "Tabler Icons v3.50.0" in c]
+    assert len(notice) == 1 and "/assets/tabler-icons/LICENSE.txt" in notice[0], (path, icons.comments)
+    if path == home:
+        home_symbols = icons.symbols
 
 # Tabler attribution: pinned version, exact upstream MIT notice served locally.
 license_path = root / "assets/tabler-icons/LICENSE.txt"
 license_text = license_path.read_text()
 assert license_text.startswith("MIT License\n\nCopyright (c) 2020-2026 Paweł Kuna\n"), license_path
 assert "The above copyright notice and this permission notice shall be included" in license_text
-notice = [c for c in icons.comments if "Tabler Icons v3.50.0" in c]
-assert len(notice) == 1 and "/assets/tabler-icons/LICENSE.txt" in notice[0], icons.comments
 assert local_path("/assets/tabler-icons/LICENSE.txt").is_file()
 assert list((root / "assets/tabler-icons").iterdir()) == [license_path], "bundle only the notice"
 
 # Interface glyphs are replaced by icons; textual punctuation and command syntax stay.
-for path in [root / "index.html", root / "app.js", root / "style.css"]:
+for path in pages + [root / "app.js", root / "style.css"]:
     text = path.read_text()
     for glyph in ["↗", "↓", "→", "↺", "↳", "●", "○", "&gt;_", "&#8599;", "&#8595;"]:
         assert glyph not in text, (path, glyph)
-print("Links, metadata, structured data, icons, Tabler sprite and license, em dash absence and installer mirror passed")
+print(f"{len(pages)} pages: links, metadata, structured data, icons, Tabler sprite and license, "
+      "em dash absence and installer mirror passed")

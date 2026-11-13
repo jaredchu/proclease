@@ -548,6 +548,12 @@ new session/process group can escape group cleanup. Docker, PID adoption,
 automatic cross-task reuse, reverse proxying and auto-restart are out of scope.
 An unavailable control endpoint is not permission to kill a PID copied from disk.
 
+Scripted [lifecycle experiments](https://github.com/jaredchu/proclease/blob/main/docs/experiments/v0.1.9/README.md)
+ran the published v0.1.9 binaries on native macOS arm64 and Linux x86_64:
+expiry, supervisor and launcher failures, and keyed retries, judged by
+independent process and port observation. They are host CLI tests, not
+real-agent sessions or a benchmark; the report lists exact counts and limits.
+
 Existing tools already cover much of general process management. See the
 [comparison with GNU timeout, systemd-run and rentctl](https://github.com/jaredchu/proclease/blob/main/docs/comparison.md)
 and [architecture](https://github.com/jaredchu/proclease/blob/main/docs/architecture.md)

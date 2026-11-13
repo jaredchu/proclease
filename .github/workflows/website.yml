@@ -155,7 +155,13 @@ jobs:
             failed=()
             for file in "${files[@]}"; do
               path=${file#website/dist/}
-              if [ "$path" = index.html ]; then url=https://proclease.com/; else url=https://proclease.com/$path; fi
+              # Static assets canonicalize directory index files with a redirect.
+              # Fetch their served URL directly so byte verification requires 200.
+              case "$path" in
+                index.html) url=https://proclease.com/ ;;
+                */index.html) url=https://proclease.com/${path%index.html} ;;
+                *) url=https://proclease.com/$path ;;
+              esac
               if ! curl --fail --silent --show-error --proto '=https' --max-time 20 \
                   --user-agent "$ua" --header 'Cache-Control: no-cache' --output "$body" "$url" \
                   || ! cmp -s "$body" "$file"; then

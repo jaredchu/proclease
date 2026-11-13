@@ -1399,3 +1399,74 @@ byte-match observation is scoped to those requests, not every HTTP client.
 The earlier v0.1.8 release metadata/assets and annotated/peeled release and crate
 tags remain unchanged. Closing documentation changes are outside the published
 crate; the immutable release and crate tags stay on `5d0c47b`.
+
+## v0.1.9 lifecycle experiments, 2026-11-13
+
+The [experiment report](experiments/v0.1.9/README.md) records black-box tests of
+the published v0.1.9 binaries, extracted from release archives verified against
+`SHA256SUMS`, on native macOS arm64 and Linux x86_64. There are two counted
+series with the same binaries and settings, reported separately.
+
+The **primary series** used [protocol version 2](experiments/v0.1.9/protocol.md)
+and the published standard-library [harness](../scripts/experiments-v019.py)
+(SHA-256 `b818a9a6…5181`), frozen before measurement. Observer,
+failure-injection and sanitizer self-checks passed on both platforms first. They
+covered `ps` errors and a token-less live PID injected after successful
+pre-observation, plus a failed final scan. One uncounted smoke run per platform
+also passed. Runs `counted-macos-arm64-20261113T013637Z-47a2` and
+`counted-linux-x86_64-20261113T013640Z-670f` passed 570 of 570 trials per
+platform: 19 scenarios with 30 repetitions, at most three trials in parallel.
+Every process observation and final scan succeeded. A live PID without the
+trial token appeared transiently in 10 of 420 macOS and 22 of 420 Linux exit
+observations. Version 2 never counts that as stopped, and each later resolved
+to `absent` or `zombie`.
+
+The **earlier series** (runs `counted-macos-arm64-20261113T011416Z-be9b` and
+`counted-linux-x86_64-20261113T011414Z-063b`, [protocol version 1](experiments/v0.1.9/protocol-v1.md))
+also passed 570 of 570 per platform, but its observer ignored `ps` failures and
+counted 21 such samples (`reused`) as stopped. Its harness also listed
+owner-specific sanitizer strings, so it was retained privately rather than
+published. Its result files remain public and unchanged. A prepublication
+review led to the version 2 amendment and the full repeat.
+
+Both series covered detached and
+foreground expiry with graceful and TERM-resistant parent/child groups,
+identity-verified keeper and guardian SIGKILL, foreground SIGINT with a full
+unread stdout pipe, sequential and eight-caller keyed retries, changed-environment
+rejection and explicit `--reuse`, changed-command rejection and retries of
+expired jobs in both modes, plus two negative controls for the observer. Cleanup
+in the primary series required positive pre-observation, then each process
+`absent` or `zombie` and a refused port. Lifecycle state was recorded separately: in the primary series,
+keeper-kill records read `interrupted` without the keeper finalization marker
+(0 of 60), while guardian-kill records carried it (60 of 60).
+
+Validation recomputed every summary from the per-trial records, checked
+denominators and repetition identifiers, and matched each directory to its
+protocol version and harness hash. It also rejected path-, address- and
+hostname-like strings, trial tokens, runtime account and host names, and the
+entries of a private deny list. A task-scoped scan of the changed public source and
+data found no private identifiers. It found only the public repository owner
+in GitHub URLs, the public creator link and a synthetic RFC 1918 sanitizer
+example. The version 1 source stays private; the public harness uses the
+revised generic checks. No run-level process or trial supervisor remained after
+the primary runs. Limits:
+synthetic fixtures rather than application servers, no agent sessions,
+same-group observation only, no observation of signal order, and
+polling-based timing on two dissimilar hosts. No comparative or compatibility
+claim follows.
+
+
+Website validation covers both HTML pages, their canonical and sitemap entries,
+local references, metadata, icons and the installer mirror. Six deliberately
+broken scratch copies were rejected (canonical, sitemap, anchor, unused icon,
+homepage script on the report, and a non-directory page URL). Twenty-four final
+browser checks passed across Chromium, Firefox and WebKit: 320/390/768/1440 px,
+200% root text at narrow widths, homepage navigation and keyboard scrolling of
+wide tables. A small report-only keyboard helper supplies the same behavior in
+WebKit; content and touch scrolling remain available without JavaScript.
+The live-file workflow maps every directory `index.html` to its canonical
+served URL, including `/experiments/`, without relaxing byte comparison or the
+main-only deployment gate. Workflow YAML parsing and representative URL mappings
+passed. The unchanged Rust source separately passed formatting, Clippy with
+warnings denied and all 96 tests; these are regression checks, distinct from
+the published-binary measurements above.
