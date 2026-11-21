@@ -116,6 +116,12 @@ verification limits.
 
 ## Current state and progress
 
+The [unreleased skill guidance](../skills/proclease/SKILL.md) carries the job
+ID and registry identity across Codex and Claude Code sessions. For a fixed
+cleanup selection it previews candidates, then stops the authorized jobs by
+ID. A bulk stop selects the matching set again when applied. The CLI's
+existing lifecycle behavior supplies both operations.
+
 The earlier owner-requested v0.1.8 release is published on GitHub and crates.io, with a
 docs.rs overview, four verified native archives and matching live website pins.
 The published runtime and tests match reviewed `ef77123`; no host sandbox restriction
@@ -187,7 +193,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- LIMITED Early client exit can lose finalization; strict-Claude localhost stays private
 |-- FIXED   Experiment observer amended (protocol v2): ps failures, token-less PIDs, preconditions
 |-- TESTED  v0.1.9 lifecycle experiments, primary v2 series: 570/570 each on macOS arm64 and Linux x86_64
-`-- DONE    Reproducible report and static experiments page, with versioned methods and data
+|-- DONE    Reproducible report and static experiments page, with versioned methods and data
+`-- SOURCE  Skill handoff and exact-ID cleanup guidance
 ```
 
 On 2026-11-13, scripted [lifecycle experiments](experiments/v0.1.9/README.md)
