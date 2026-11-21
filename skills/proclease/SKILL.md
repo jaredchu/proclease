@@ -25,6 +25,13 @@ selection for run/list/logs/extend/stop/watch and include the exact watch comman
 in the handoff. If project rules require isolation, explain its visibility before
 launching. Never move or copy a live job's state to make it appear elsewhere.
 
+When handing a service from Codex to Claude Code or back, pass its job ID,
+declared owner and task, service directory, expiry, and registry selection through
+the task's handoff channel. The receiving session checks the same job with
+`proclease list --all --json` before acting, using the authorized registry.
+If it cannot find or verify that ID, reconcile the registry and session access
+first. A handoff does not itself authorize cleanup or replacement.
+
 ## Start a service
 
 - Inspect `proclease list --json` first. Identify jobs by ID, project directory,
@@ -33,8 +40,8 @@ launching. Never move or copy a live job's state to make it appear elsewhere.
 - Launch the intended foreground executable and arguments after `--`. For example:
 
   ```sh
-  proclease run --owner codex --task task-label --key task-label-preview-1 --ttl 2h -- npm run dev
-  proclease run --owner claude --task task-label --key task-label-preview-1 --ttl 2h -- npm run dev
+  proclease run --owner codex --task task-label --key task-label-preview-1 --ttl 2h --json -- npm run dev
+  proclease run --owner claude --task task-label --key task-label-preview-1 --ttl 2h --json -- npm run dev
   ```
 
 - Choose a duration appropriate to the request. ProcLease defaults to two hours
@@ -168,10 +175,14 @@ URL and expiry. Parse the returned state; a successful command can still report
 Bulk stop requires ProcLease 0.1.5 or later. Check `proclease stop --help` before
 relying on `stop --all`. Use it only when the user has authorized that scope:
 
-- Prefer stopping specific IDs, or a scoped task cleanup such as
-  `proclease stop --all --owner OWNER --task TASK --dry-run --json` followed by
-  the same command without `--dry-run`. Confirm the dry-run IDs belong to the
-  authorized scope first.
+- For cleanup of specific jobs, list the registry or use
+  `proclease stop --all --owner OWNER --task TASK --dry-run --json` to identify
+  candidates. Confirm each intended job and its authorization, then run
+  `proclease stop JOB_ID --json` for each verified ID. Check the terminal state
+  by ID in the same registry.
+- Bulk apply recomputes the matching set, so it may include jobs that appeared
+  after the preview. Use it only when authorization covers the full matching set
+  at execution time.
 - `--owner` and `--task` are declared labels, not identity. `--owner` alone does
   not authorize stopping every job carrying that label, and a task label does not
   authorize stopping another task's jobs. Run unfiltered `stop --all` only when the
