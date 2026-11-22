@@ -17,7 +17,7 @@ Website: [proclease.com](https://proclease.com).
 
 ## Install
 
-Download and review [the v0.1.9 installer](https://github.com/jaredchu/proclease/releases/download/v0.1.9/install.sh), then run:
+Download and review [the v0.1.10 installer](https://github.com/jaredchu/proclease/releases/download/v0.1.10/install.sh), then run:
 
 ```sh
 sh install.sh --skills both
@@ -32,10 +32,10 @@ unrelated skill folders and symlinks are preserved. Restart the agent session
 to discover a new skill.
 
 For manual installation, download an archive from the
-[experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.9),
+[experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.10),
 verify it against `SHA256SUMS`, extract it and place `proclease` on PATH. Each
 archive includes the skill, README and MIT license. See the
-[release notes](https://github.com/jaredchu/proclease/blob/v0.1.9/docs/releases/v0.1.9.md)
+[release notes](https://github.com/jaredchu/proclease/blob/v0.1.10/docs/releases/v0.1.10.md)
 for tested platforms and signing limits.
 
 ## Build
@@ -90,7 +90,7 @@ details and preview URLs. It switches to a stacked layout in narrow terminals. C
 for terminals; `NO_COLOR`, `TERM=dumb` or `--color never` disables them, and
 `--color always` forces them. Redirected output and JSON stay uncolored by default.
 
-![ProcLease terminal table showing example jobs](https://raw.githubusercontent.com/jaredchu/proclease/v0.1.9/docs/assets/terminal-preview.png)
+![ProcLease terminal table showing example jobs](https://raw.githubusercontent.com/jaredchu/proclease/v0.1.10/docs/assets/terminal-preview.png)
 
 A real disposable worker and synthetic history rows shown with
 `proclease watch --all`; the default view briefly shows recently finished jobs
@@ -378,7 +378,7 @@ running inside a Linux VM or container.
 
 ## Install the skill
 
-The same [skill folder](https://github.com/jaredchu/proclease/blob/v0.1.9/skills/proclease/SKILL.md) works as an instruction-only
+The same [skill folder](https://github.com/jaredchu/proclease/blob/v0.1.10/skills/proclease/SKILL.md) works as an instruction-only
 skill in both hosts. With `proclease` on the executor's PATH, link the folder into
 each host you use:
 
@@ -591,4 +591,4 @@ Codex led the initial implementation and documentation. Claude, through Claude
 Code, contributed independent review and validation. See the
 [contribution and attribution policy](https://github.com/jaredchu/proclease/blob/main/CONTRIBUTING.md#commit-attribution).
 
-Released under the [MIT license](https://github.com/jaredchu/proclease/blob/v0.1.9/LICENSE).
+Released under the [MIT license](https://github.com/jaredchu/proclease/blob/v0.1.10/LICENSE).
