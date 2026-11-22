@@ -1,6 +1,6 @@
 # ProcLease project context
 
-Last reviewed: 2026-11-13.
+Last reviewed: 2026-11-22.
 
 ## Purpose and scope
 
@@ -116,14 +116,15 @@ verification limits.
 
 ## Current state and progress
 
-The [v0.1.10 candidate](releases/v0.1.10.md) packages the
+The [v0.1.10 experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.10) packages the
 [updated skill guidance](../skills/proclease/SKILL.md), which carries the job
 ID and registry identity across Codex and Claude Code sessions. For a fixed
 cleanup selection it previews candidates, then stops the authorized jobs by
 ID. A bulk stop selects the matching set again when applied. The CLI's
-existing lifecycle behavior supplies both operations. The candidate branch
-holds the v0.1.10 download pins until its archives are public. The live
-installer and crates.io package are v0.1.9.
+existing lifecycle behavior supplies both operations. The installer and
+website source pin v0.1.10. The [release workflow](https://github.com/jaredchu/proclease/actions/runs/44982560907)
+verified four native archives, including expiry and installer checksum
+rejection. The crates.io install command still uses v0.1.9.
 
 The earlier owner-requested v0.1.8 release is published on GitHub and crates.io, with a
 docs.rs overview, four verified native archives and matching live website pins.
@@ -134,8 +135,8 @@ and [the release notes](releases/v0.1.8.md).
 
 The **v0.1.9 experimental prerelease** packages `run --foreground` with file
 controls from reviewed `88b5ea7`, with version metadata at `5d0c47b`. Four native
-archives, crates.io source, a docs.rs overview and matching website pins are
-published; v0.1.8 binaries/crate do not contain this feature. All 96 tests pass
+archives, crates.io source, a docs.rs overview and matching website pins were
+published for v0.1.9. Its predecessor v0.1.8 predates this feature. All 96 tests pass
 on all four native release targets, and default Rust 1.89 packaged-source and
 registry installations pass. See [the release notes](releases/v0.1.9.md) and
 [publication verification](verification.md#v019-publication-2026-11-12). Both tested restricted Linux clients passed
@@ -198,7 +199,7 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- TESTED  v0.1.9 lifecycle experiments, primary v2 series: 570/570 each on macOS arm64 and Linux x86_64
 |-- DONE    Reproducible report and static experiments page, with versioned methods and data
 |-- SOURCE  Skill handoff and exact-ID cleanup guidance
-`-- PREPARED v0.1.10 experimental candidate with isolated release pins
+`-- DONE    v0.1.10 GitHub prerelease and four native archives verified
 ```
 
 On 2026-11-13, scripted [lifecycle experiments](experiments/v0.1.9/README.md)
