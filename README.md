@@ -378,6 +378,8 @@ running inside a Linux VM or container.
 
 ## Install the skill
 
+Browse the [ProcLease skill on skills.sh](https://www.skills.sh/jaredchu/proclease/proclease).
+
 The same [skill folder](https://github.com/jaredchu/proclease/blob/v0.1.10/skills/proclease/SKILL.md) works as an instruction-only
 skill in both hosts. With `proclease` on the executor's PATH, link the folder into
 each host you use:
