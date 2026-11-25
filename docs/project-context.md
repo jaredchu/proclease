@@ -175,7 +175,6 @@ updates; Dependabot has since moved several pins to their v7 releases. Evidence:
 [foreground signal stop](verification.md#foreground-signal-stop-unreleased-source-2026-11-25),
 [pinned actions and provenance](verification.md#pinned-actions-and-build-provenance-unreleased-source-2026-11-25)
 and [review cleanups](verification.md#review-cleanups-unreleased-source-2026-11-25).
-The provenance step first runs at the next version tag.
 
 **Compatibility.** The [agent compatibility matrix](agent-compatibility.md)
 records scoped results. In the tested macOS Codex/Claude sandbox profiles, the
