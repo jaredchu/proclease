@@ -1,9 +1,8 @@
 use crate::model::{Launch, Reason, Record, State, Transport};
 use anyhow::{bail, Context, Result};
-use fs2::FileExt;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
-    fs::{self, DirBuilder, File, OpenOptions},
+    fs::{self, DirBuilder, File, OpenOptions, TryLockError},
     io::{Read, Write},
     os::unix::{
         ffi::OsStrExt,
@@ -211,7 +210,7 @@ impl Store {
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW)
             .open(self.root.join(".lock"))?;
-        FileExt::lock_exclusive(&file)?;
+        file.lock()?;
         Ok(file)
     }
     /// Open the guard without following a symlink, without blocking on a FIFO,
@@ -243,7 +242,8 @@ impl Store {
     /// than contention; it never blocks.
     pub fn protect_retention_locked(&self) -> Result<RetentionGuard> {
         let file = self.retention_file()?;
-        FileExt::try_lock_shared(&file)
+        file.try_lock_shared()
+            .map_err(std::io::Error::from)
             .context("cannot protect selected jobs from history collection")?;
         Ok(RetentionGuard { _file: file })
     }
@@ -252,15 +252,10 @@ impl Store {
     /// bulk stop holds protection. Never blocks.
     fn collection_permit(&self) -> Result<Option<File>> {
         let file = self.retention_file()?;
-        match FileExt::try_lock_exclusive(&file) {
+        match file.try_lock() {
             Ok(()) => Ok(Some(file)),
-            Err(error)
-                if error.kind() == std::io::ErrorKind::WouldBlock
-                    || error.raw_os_error() == fs2::lock_contended_error().raw_os_error() =>
-            {
-                Ok(None)
-            }
-            Err(error) => Err(error).context("cannot check retention guard"),
+            Err(TryLockError::WouldBlock) => Ok(None),
+            Err(TryLockError::Error(error)) => Err(error).context("cannot check retention guard"),
         }
     }
 
@@ -331,7 +326,22 @@ impl Store {
                     return Ok(None);
                 }
                 let record = self.record(&name)?;
-                if record.id != name || record.state.active() || record.state == State::Unknown {
+                if record.id != name {
+                    return Ok(None);
+                }
+                // No process of an earlier boot of this machine remains, so
+                // neither saved PIDs nor a final record are needed. Without a
+                // completion time, the last lifecycle write dates the record.
+                if crate::platform::from_earlier_boot(
+                    record.machine_context.as_deref(),
+                    record.boot_context.as_deref(),
+                ) {
+                    return Ok(record
+                        .finished_at_ms
+                        .or_else(|| self.record_written_ms(&name))
+                        .map(|time| (time, name.clone())));
+                }
+                if record.state.active() || record.state == State::Unknown {
                     return Ok(None);
                 }
                 let Some(time) = record.finished_at_ms else {
@@ -495,6 +505,19 @@ impl Store {
             Transport::File => crate::filectl::endpoint_live(&self.job(id)?),
         };
         if let Err(error) = endpoint {
+            // An earlier boot of this machine ended every process it ran.
+            if crate::platform::from_earlier_boot(
+                record.machine_context.as_deref(),
+                record.boot_context.as_deref(),
+            ) {
+                self.finish_unobserved(
+                    id,
+                    &mut record,
+                    "supervision ended with an earlier boot of this machine; \
+                     no process from that boot can still be running",
+                );
+                return Ok(record);
+            }
             // Saved PIDs are probed only from the PID space they were saved in.
             let comparable = crate::platform::pid_numbers_comparable(record.pid_context.as_deref());
             let unavailable = || {
@@ -540,21 +563,51 @@ impl Store {
                         // shutdown write as a stable display anchor, including
                         // for records left by older versions. Never rewrite
                         // lifecycle state or invent an exact completion time.
-                        record.last_lifecycle_write_ms = self
-                            .record_written_at(id)
-                            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-                            .and_then(|age| u64::try_from(age.as_millis()).ok())
-                            .filter(|&time| time <= crate::model::now_ms());
+                        record.last_lifecycle_write_ms = self.record_written_ms(id);
                     }
                 }
             } else if record.state != State::Starting
                 || crate::model::now_ms().saturating_sub(record.created_at_ms) > 5_000
             {
-                record.state = State::Unknown;
-                record.error = Some(unavailable());
+                if comparable && supervision_absent(&record) {
+                    // Both supervisors ended without a final record, for
+                    // example when a sandbox or the OS killed them together.
+                    // Absence is observed, not inferred from the endpoint.
+                    self.finish_unobserved(
+                        id,
+                        &mut record,
+                        "supervision ended without a final record; the keeper, the managed \
+                         process group and the command were observed absent",
+                    );
+                } else {
+                    record.state = State::Unknown;
+                    record.error = Some(unavailable());
+                }
             }
         }
         Ok(record)
+    }
+    /// Present an active record whose supervision is proven over as
+    /// finished, without rewriting it. The exact completion time is unknown,
+    /// so `finished_at_ms` stays empty; the last lifecycle write anchors the
+    /// recent-history window, and a missing or future write time keeps the
+    /// record visible.
+    fn finish_unobserved(&self, id: &str, record: &mut Record, note: &str) {
+        record.finish();
+        record.finished_at_ms = None;
+        record.last_lifecycle_write_ms = self.record_written_ms(id);
+        record.error = Some(match record.error.take() {
+            Some(previous) => format!("{previous}; {note}"),
+            None => note.to_owned(),
+        });
+    }
+    /// The last lifecycle write in milliseconds since the epoch, if known and
+    /// not in the future.
+    fn record_written_ms(&self, id: &str) -> Option<u64> {
+        self.record_written_at(id)
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .and_then(|age| u64::try_from(age.as_millis()).ok())
+            .filter(|&time| time <= crate::model::now_ms())
     }
     /// Modification time of a job's regular `record.json`, the time of its
     /// last lifecycle write.
@@ -614,6 +667,17 @@ fn never_supervised(record: &Record) -> bool {
         && record.keeper_pid == 0
         && record.guardian_pid.is_none()
         && record.command_pid.is_none()
+}
+
+/// Whether the keeper, guardian's process group and command are all observed
+/// absent in this PID context. A missing PID can mean its writer died before
+/// recording it, so it cannot establish absence.
+fn supervision_absent(record: &Record) -> bool {
+    process_is_absent(record.keeper_pid)
+        && record
+            .guardian_pid
+            .is_some_and(|pid| pid > 1 && group_is_absent(pid))
+        && record.command_pid.is_some_and(process_is_absent)
 }
 
 fn group_is_absent(pid: u32) -> bool {

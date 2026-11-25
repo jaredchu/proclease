@@ -206,6 +206,11 @@ unavailable values are `null`. An unavailable group has `resources: null`.
 - Listing, reading logs and opening the terminal view do not renew a lease.
 - On expiry, stop or command exit, the supported process group receives TERM,
   followed by KILL after a default two-second grace. `--grace` can be set up to 10s.
+  In unreleased source after v0.1.10, the grace is an upper bound: KILL follows
+  as soon as no other live process remains in the group and captured output has
+  reached end-of-file, so a service that exits on TERM stops promptly. A group
+  that ignores TERM still gets the whole grace. If the group cannot be observed
+  reliably, the whole grace is used.
 - Elapsed wall time includes sleep. An overdue job is stopped when execution
   resumes. No process can enforce a deadline while the machine is powered off.
   If startup is delayed past the deadline, the job finishes `expired` without
@@ -291,7 +296,8 @@ proclease stop --all
   dispatched job is then polled together until its own grace (capped at 10
   seconds, the `run` maximum, even if metadata says otherwise) plus 2 seconds; a
   polling pass can add up to 0.5 seconds per unresponsive pending job. Typical
-  total time is the longest selected grace plus 2 seconds. Many unresponsive
+  total time is at most the longest selected grace plus 2 seconds; with
+  unreleased source after v0.1.10 it is shorter when services exit on TERM. Many unresponsive
   supervisors lengthen dispatch in batches of 8. Local file reads are not
   separately bounded. Shutdown is not atomic or instantaneous.
 - Exit status is 0 only when every selected job is confirmed finished (or, in a
@@ -353,6 +359,21 @@ saved PIDs come from another or unverifiable [PID context](https://github.com/ja
 including after a reboot, until you remove them. Filesystem errors defer deletion with a
 warning, so protected or failed-cleanup data can exceed the normal history bound.
 On Linux, jobs active or stopping at reboot can remain `unknown` afterwards.
+<a id="earlier-boot-reconciliation"></a>
+In unreleased source after v0.1.10, the keeper also saves opaque digests of the
+machine and of its boot: on Linux the machine ID with the host name, and the
+kernel boot ID; on macOS the hardware UUID and the boot session UUID. A record
+proven to come from an earlier boot of the same machine has no process left. It
+is shown finished (`interrupted`, or the outcome its saved shutdown reason
+implies) with `finished_at_ms` still `null`, and is collected under the normal
+limits, dated by its last lifecycle write when it has no completion time. This
+lifts the two reboot limits above for jobs started by such a build. Records
+written earlier, records without a complete identity and records from another
+machine sharing the state directory prove nothing and are kept as before. A
+`starting` or `running` record whose keeper, managed group and command are all
+observed absent from the same PID context is likewise shown `interrupted`
+instead of `unknown`. That display is never written back and does not make the
+record collectable; a live or uncertain saved PID keeps it `unknown`.
 Unreadable procfs (for example, a restrictive `hidepid` mount) also prevents
 PID-derived absence checks and makes resource metrics unavailable. Protocol
 controls and expiry still work when their supervisors remain reachable.

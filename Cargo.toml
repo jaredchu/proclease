@@ -23,7 +23,6 @@ include = [
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
-fs2 = "0.4"
 humantime = "2"
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }
