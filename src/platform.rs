@@ -114,7 +114,7 @@ fn group_members(pgid: u32) -> Result<Vec<(u32, bool)>> {
             anyhow::bail!("oversized procfs stat record");
         }
         let Some((state, group)) = stat_state_and_group(&stat) else {
-            anyhow::bail!("invalid procfs stat record");
+            anyhow::bail!("invalid procfs stat record for PID {pid}");
         };
         if group == pgid {
             members.push((pid, !matches!(state, "Z" | "X")));
@@ -164,7 +164,9 @@ fn stat_state_and_group(stat: &[u8]) -> Option<(&str, u32)> {
     let mut fields = tail.split_ascii_whitespace();
     let state = fields.next()?;
     fields.next()?;
-    Some((state, positive_decimal(fields.next()?)?))
+    // Kernel threads can have process group 0, which cannot match a guardian.
+    let group = fields.next()?.parse().ok()?;
+    Some((state, group))
 }
 
 /// Whether the process group `pgid` has a live member other than `own`,
@@ -925,6 +927,10 @@ mod tests {
         assert_eq!(
             stat_state_and_group(b"123 (name) \xff) S 2 123 4 0"),
             Some(("S", 123))
+        );
+        assert_eq!(
+            stat_state_and_group(b"2 (kthreadd) S 0 0 0 0"),
+            Some(("S", 0))
         );
         assert_eq!(stat_state_and_group(b"123 (name) S 2"), None);
     }

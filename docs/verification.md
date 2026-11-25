@@ -1381,13 +1381,14 @@ record unverified, and an invalid saved boot digest cannot make history
 eligible for collection. Linux early shutdown now requires an unfiltered
 procfs mount in the guardian's own PID namespace. It parses process names as
 bytes and defers to the full grace if a visible entry is unreadable, malformed
-or the scan exceeds its budget. Tests exercise these cases with incomplete
-records, invalid digests, restricted mount options and a non-UTF-8 process name.
+or the scan exceeds its budget. Regression cases cover incomplete records,
+invalid boot digests, restricted mount options, non-UTF-8 process names and
+the zero process group that Linux reports for kernel threads.
 
-Limits: macOS runtime behavior (`gethostuuid`, `kern.bootsessionuuid` and
-`proc_listpids` group membership) was type-checked but not run locally and
-relies on hosted macOS CI. No real reboot was performed; earlier boots were
-simulated with seeded records.
+The original Linux validation used type checks for macOS. The follow-up
+passed formatting, Clippy and all 101 tests locally on macOS arm64, including
+the boot-context and group-membership checks. Earlier boots were simulated
+with seeded records. No real reboot was performed.
 
 ## Limits
 
