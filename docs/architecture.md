@@ -30,12 +30,22 @@ The guardian is the group's session leader. Its service inherits that group.
 On deadline, explicit stop, command exit, signal, or loss of the keeper's liveness
 pipe, the guardian records the shutdown reason, sends group TERM, waits a bounded
 grace, then sends group KILL. The guardian intentionally dies in that escalation.
+In unreleased source after v0.1.10, the grace ends early once no live process
+other than the guardian remains in its group and both output pipes have reached
+end-of-file, so shutdown output is still captured. Group membership is read
+with `proc_listpids` on macOS and from procfs on Linux, where procfs must belong
+to the guardian's own PID namespace; zombies are not members. The guardian must
+see itself in that view. A failed or uncertain observation waits out the whole
+grace, and KILL is sent either way. Launch-metadata grace is capped at 10 seconds
+in the guardian and keeper as well as in observers.
 
 The keeper waits with `waitid(..., WNOWAIT)` and retains its exited guardian as an
 unreaped child until group KILL is complete. This prevents the session leader's
 numeric ID being reused during cleanup. If the guardian crashes, the keeper
 enforces cleanup. If the keeper crashes, EOF causes the guardian to clean up.
 Simultaneous destruction of both supervisors is outside this fail-closed guarantee.
+Observers then report the job `unknown`, except as described under
+[boot context](#boot-context-unreleased-source).
 
 Startup failures before the service is spawned are launch failures. If the CLI
 cannot spawn the keeper, it records the committed job as `failed` while holding
@@ -63,6 +73,41 @@ Only a running supervisor signals its own anchored group. CLI control never kill
 a PID read from persistent state. When control is unavailable, list may derive a
 terminal result for an already-stopping, now-absent group; otherwise it reports
 unverified state. Such observation never signals or adopts a process.
+
+<a id="boot-context-unreleased-source"></a>
+
+### Boot context (unreleased source)
+
+In unreleased source after v0.1.10, the keeper saves `machine_context` and
+`boot_context` with its first PID. Both are domain-separated SHA-256 digests.
+On Linux, the machine digest covers `/etc/machine-id` (or
+`/var/lib/dbus/machine-id`) together with the host name, so hosts cloned from
+one image and sharing a state directory are still told apart, and the boot
+digest covers the kernel's random `boot_id`. On macOS they cover the hardware
+UUID from `gethostuuid` and `kern.bootsessionuuid`. A missing, malformed or
+uninitialized source produces no context. Raw identifiers are never stored.
+
+A record whose machine digest equals the observer's and whose boot digest
+differs comes from an earlier boot of this machine, so none of its processes can
+still run. With its endpoint unavailable, it is shown finished through the usual
+reason mapping (`interrupted` without a recorded reason), with `finished_at_ms`
+left `null` and its last lifecycle write anchoring the recent-history window.
+Retention collects it under the normal age and count limits whatever its saved
+state, PID context or keeper marker, dated by `finished_at_ms` or else by that
+write. Nothing is rewritten or signalled. Every failure mode withholds the
+inference: a changed host name, an unreadable source, a record written before
+these fields existed, or a record from another machine all prove nothing. The
+remaining risk is two machines that share both machine ID and host name while
+also sharing a state directory, which the
+[filesystem requirements](../README.md#state-and-output) already exclude.
+
+Separately, a `starting` (after its 5-second startup allowance) or `running`
+record whose keeper PID, guardian process group and command PID are all
+observed absent from a comparable PID context is shown `interrupted` with a
+note, instead of `unknown`. This mirrors the existing `stopping` derivation and
+is display only: the record is never rewritten and stays protected from
+collection. Requiring the command PID too keeps a command that left the group,
+and a record whose saved PIDs now name unrelated live processes, `unknown`.
 
 <a id="pid-context-unreleased"></a>
 
@@ -299,8 +344,9 @@ or one that could not observe its group absent, still need verified keeper and
 group absence. On
 Linux that requires a matching [PID context](#pid-context-unreleased), so after
 a reboot or from another PID namespace such records, and their retry keys, stay
-until the user removes them. Failed launches recorded by the CLI without any
-supervisor PID remain collectable. A keeper may collect its own record only
+until the user removes them, unless their [boot context](#boot-context-unreleased-source)
+proves an earlier boot of the same machine. Failed launches recorded by the CLI
+without any supervisor PID remain collectable. A keeper may collect its own record only
 after its final write and socket cleanup. Collection never signals processes. A verified candidate is atomically renamed into a reserved private
 quarantine before recursive deletion; interrupted deletion is retried from there,
 so partial records do not poison keyed launches. Symlinked job/quarantine roots

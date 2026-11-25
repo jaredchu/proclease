@@ -156,12 +156,15 @@ job disappearing from the default view does not mean its history was deleted.
 `watch --all` includes that history in the human view. Finished metadata and logs
 remain available by ID until collection. Confirmed finished history is collected
 after 24 hours or beyond the newest 100 jobs, whichever comes first, during normal
-CLI use and job completion. Active and unverified jobs are preserved. On Linux,
-jobs active or stopping at reboot can remain `unknown`. Restricted procfs
+CLI use and job completion. Active and unverified jobs are preserved. Jobs active or
+stopping at a reboot can remain `unknown` when started by v0.1.10 or earlier on
+Linux; newer builds show a job from an earlier boot of the same machine as
+finished. Restricted procfs
 access can disable PID-derived absence checks and metrics. Do not delete such
 records to hide them; report the unverified state for operator reconciliation.
 Older finished records whose saved PIDs cannot be checked from the current PID
-context, for example after a reboot, are also preserved with their retry keys.
+context are also preserved with their retry keys, unless a newer build proves
+they come from an earlier boot of the same machine.
 A purged key can create a new job: reconcile current task jobs before retrying an
 old request.
 `proclease prune --dry-run --json` previews cleanup; `proclease prune` applies the

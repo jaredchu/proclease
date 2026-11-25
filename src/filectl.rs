@@ -26,10 +26,9 @@
 
 use crate::model::{now_ms, Control, Record, Reply};
 use anyhow::{bail, Context, Result};
-use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{self, DirBuilder, File, OpenOptions},
+    fs::{self, DirBuilder, File, OpenOptions, TryLockError},
     io::{self, Read, Write},
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
@@ -182,19 +181,14 @@ fn abandoned(path: &Path) -> bool {
 /// live process holds it; any error means no live endpoint was proven.
 pub fn endpoint_live(job_dir: &Path) -> io::Result<()> {
     let file = open_private(&job_dir.join(CONTROL_LOCK), false)?;
-    match FileExt::try_lock_shared(&file) {
+    match file.try_lock_shared() {
         // Acquired: nobody holds it exclusively. Dropping the file releases it.
         Ok(()) => Err(io::Error::new(
             io::ErrorKind::NotConnected,
             "no live supervisor holds the control lock",
         )),
-        Err(error)
-            if error.kind() == io::ErrorKind::WouldBlock
-                || error.raw_os_error() == fs2::lock_contended_error().raw_os_error() =>
-        {
-            Ok(())
-        }
-        Err(error) => Err(error),
+        Err(TryLockError::WouldBlock) => Ok(()),
+        Err(TryLockError::Error(error)) => Err(error),
     }
 }
 
@@ -247,10 +241,12 @@ impl Endpoint {
         // Observers hold a shared lock only momentarily.
         let deadline = Instant::now() + Duration::from_secs(1);
         loop {
-            match FileExt::try_lock_exclusive(&lock) {
+            match lock.try_lock() {
                 Ok(()) => break,
                 Err(_) if Instant::now() < deadline => thread::sleep(Duration::from_millis(5)),
-                Err(error) => return Err(error).context("cannot hold control lock"),
+                Err(error) => {
+                    return Err(io::Error::from(error)).context("cannot hold control lock")
+                }
             }
         }
         Ok(Self {

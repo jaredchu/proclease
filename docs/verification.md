@@ -1329,6 +1329,38 @@ exercised. Direct host scans found no matching test processes with complete
 own-user visibility, without claiming supervisor finalization. Existing registries,
 installed binaries/skills and running jobs/watch were outside these isolated checks.
 
+## Review fixes (unreleased source), 2026-11-25
+
+Four findings from an independent Claude Code review were fixed on a branch
+after v0.1.10: earlier-boot and absent-supervisor reconciliation, an early end
+to the shutdown grace, standard-library file locks replacing `fs2`, and capped
+launch-metadata grace in the guardian and keeper. See the
+[architecture](architecture.md#boot-context-unreleased-source).
+
+- Natively on Linux x86_64 with stable Rust 1.100: formatting, Clippy with
+  warnings denied and all 100 tests (34 unit, 66 integration) passed in four
+  consecutive runs, with no remaining supervisors or fixture files.
+- New regressions: a service that exits on TERM stops well inside an 8-second
+  grace, while a TERM-ignoring group still waits out 1.5 seconds; earlier-boot
+  `running` and unfinalized `exited` records with live saved PIDs and a foreign
+  PID context are collected past 24 hours, a recent one is shown `interrupted`
+  without being rewritten, and a record from another machine stays `unknown`
+  and protected; group-membership checks exclude the caller and zombies and
+  reject a view that omits the caller.
+- Updated expectations: a `running` record whose keeper, group and command are
+  observed absent now reads `interrupted` (a live saved PID still reads
+  `unknown`); the grace-window test uses a TERM-ignoring group so its stopping
+  window lasts the whole grace.
+- Clippy with warnings denied also passed for `aarch64-apple-darwin` and
+  `x86_64-apple-darwin` as type checks, and `cargo check` passed with Rust 1.89
+  for Linux and macOS. Rust 1.89's Clippy reports one older
+  `nonminimal_bool` lint in unchanged retention code; CI runs Clippy on stable.
+
+Limits: macOS runtime behavior (`gethostuuid`, `kern.bootsessionuuid` and
+`proc_listpids` group membership) was type-checked but not run locally and
+relies on hosted macOS CI. No real reboot was performed; earlier boots were
+simulated with seeded records.
+
 ## Limits
 
 No direct system sleep/wake, clock-change or simultaneous destruction of both

@@ -466,9 +466,50 @@ fn default_views_show_recent_completion_then_history_but_keep_unverified_jobs() 
         assert_eq!(fixture.call(view)["jobs"], serde_json::json!([]));
     }
     assert_eq!(fixture.call(&["list", "--all"])["jobs"][0]["id"], id);
-    // Unavailable supervision is not evidence of completion. Keep this state
-    // visible even though routine finished history is hidden.
+
+    // A running record whose keeper, managed group and command are all
+    // observed absent ended without a final record. It is shown as finished
+    // without an exact completion time and is never rewritten.
+    let keeper = record["keeper_pid"].as_u64().unwrap() as i32;
+    wait(|| {
+        (unsafe { libc::kill(keeper, 0) } == -1
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH))
+        .then_some(())
+    });
     record["state"] = serde_json::json!("running");
+    for field in ["reason", "exit_code", "finished_at_ms"] {
+        record[field] = Value::Null;
+    }
+    fs::write(&record_path, serde_json::to_vec(&record).unwrap()).unwrap();
+    let persisted = fs::read(&record_path).unwrap();
+    for view in [&["list"][..], &["watch", "--once"][..]] {
+        let job = fixture.call(view)["jobs"][0].clone();
+        assert_eq!(job["state"], "interrupted", "{job}");
+        assert!(job["finished_at_ms"].is_null(), "{job}");
+        assert!(
+            job["error"].as_str().unwrap().contains("observed absent"),
+            "{job}"
+        );
+    }
+    // The last lifecycle write anchors the recent window, as for interrupted
+    // shutdown, so it leaves the default view but stays in history.
+    fs::File::options()
+        .write(true)
+        .open(&record_path)
+        .unwrap()
+        .set_modified(SystemTime::now() - Duration::from_secs(31))
+        .unwrap();
+    for view in [&["list"][..], &["watch", "--once"][..]] {
+        assert_eq!(fixture.call(view)["jobs"], serde_json::json!([]));
+    }
+    assert_eq!(
+        fixture.call(&["list", "--all"])["jobs"][0]["state"],
+        "interrupted"
+    );
+    assert_eq!(fs::read(&record_path).unwrap(), persisted);
+    // Only observed absence counts. A live saved supervisor PID leaves
+    // supervision unverified, and that stays visible.
+    record["keeper_pid"] = serde_json::json!(std::process::id());
     fs::write(&record_path, serde_json::to_vec(&record).unwrap()).unwrap();
     for view in [&["list"][..], &["watch", "--once"][..]] {
         assert_eq!(fixture.call(view)["jobs"][0]["state"], "unknown");
@@ -2289,8 +2330,11 @@ fn grace_window_controls_return_lifecycle_results() {
         "--grace",
         "700ms",
         "--",
-        "/bin/sleep",
-        "20",
+        // Ignoring TERM keeps the group alive for the whole grace, so the
+        // stopping window cannot end early.
+        "/bin/sh",
+        "-c",
+        "trap '' TERM; exec /bin/sleep 20",
     ]);
     let id = result["job"]["id"].as_str().unwrap().to_owned();
     let mut first_stop = fixture.command(&["stop", &id]);
@@ -2315,6 +2359,164 @@ fn grace_window_controls_return_lifecycle_results() {
     let first = first.join().unwrap();
     assert!(first.status.success());
     assert_eq!(parse(&first)["job"]["state"], "stopped");
+}
+
+#[test]
+fn grace_ends_once_the_group_exits_but_term_resistant_groups_get_all_of_it() {
+    let fixture = Fixture::new();
+    let stop = |args: &[&str]| -> (Duration, Value) {
+        let mut run = vec!["run", "--ttl", "30s"];
+        run.extend_from_slice(args);
+        let id = fixture.call(&run)["job"]["id"].as_str().unwrap().to_owned();
+        let started = Instant::now();
+        let stopped = fixture.call(&["stop", &id]);
+        (started.elapsed(), stopped["job"].clone())
+    };
+    // A service that exits on TERM does not wait out a long grace.
+    let (elapsed, job) = stop(&["--grace", "8s", "--", "/bin/sleep", "30"]);
+    assert_eq!(job["state"], "stopped", "{job}");
+    assert!(elapsed < Duration::from_secs(4), "{elapsed:?}");
+    // A group that ignores TERM still gets the whole grace before KILL.
+    let (elapsed, job) = stop(&[
+        "--grace",
+        "1500ms",
+        "--",
+        "/bin/sh",
+        "-c",
+        "trap '' TERM; exec /bin/sleep 30",
+    ]);
+    assert_eq!(job["state"], "stopped", "{job}");
+    assert!(elapsed >= Duration::from_millis(1_400), "{elapsed:?}");
+}
+
+#[test]
+fn earlier_boot_records_are_finished_and_collected_but_other_machines_are_not() {
+    let fixture = Fixture::new();
+    let (template, launch) = fixture.finished_template();
+    let Some(machine) = template.get("machine_context").and_then(Value::as_str) else {
+        // Hosts without a complete machine and boot identity save none, and
+        // nothing is inferred for them.
+        assert!(template.get("boot_context").is_none(), "{template}");
+        eprintln!("skipped: this host has no machine/boot context");
+        return;
+    };
+    let machine = machine.to_owned();
+    let boot = template["boot_context"].as_str().unwrap().to_owned();
+    let earlier = format!("v1:{}", "0".repeat(64));
+    assert_ne!(boot, earlier);
+    // Live PIDs prove that nothing here is decided from saved PIDs, and that
+    // nothing is signalled. A foreign PID context is what Linux sees after a
+    // reboot.
+    let seed = |id: &str, state: &str, machine: &str, finished: Value, age: Duration| {
+        fixture.seed_history(id, &template, &launch, 1);
+        let mut record = template.clone();
+        for (field, value) in [
+            ("id", serde_json::json!(id)),
+            ("state", serde_json::json!(state)),
+            ("keeper_pid", serde_json::json!(std::process::id())),
+            (
+                "guardian_pid",
+                serde_json::json!(unsafe { libc::getpgrp() }),
+            ),
+            ("command_pid", serde_json::json!(std::process::id())),
+            ("pid_context", serde_json::json!(FOREIGN_PID_CONTEXT)),
+            ("machine_context", serde_json::json!(machine)),
+            ("boot_context", serde_json::json!(earlier)),
+            ("finished_at_ms", finished),
+        ] {
+            record[field] = value;
+        }
+        if state != "exited" {
+            record["reason"] = Value::Null;
+            record["exit_code"] = Value::Null;
+        }
+        record
+            .as_object_mut()
+            .unwrap()
+            .remove("finalized_by_keeper");
+        let path = fixture.state.join(id).join("record.json");
+        fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(SystemTime::now() - age)
+            .unwrap();
+    };
+    let day = Duration::from_secs(25 * 60 * 60);
+    seed(
+        "0000000000b1",
+        "running",
+        &machine,
+        Value::Null,
+        Duration::ZERO,
+    );
+    seed("0000000000b2", "running", &machine, Value::Null, day);
+    seed(
+        "0000000000b3",
+        "exited",
+        &machine,
+        serde_json::json!(1),
+        day,
+    );
+    let other = format!("v1:{}", "1".repeat(64));
+    seed("0000000000b4", "running", &other, Value::Null, day);
+
+    // Retention collects earlier-boot history past its age, active or not,
+    // and dates an incomplete record by its last lifecycle write.
+    let preview = fixture.call(&["prune", "--dry-run"]);
+    assert_eq!(
+        preview["candidates"],
+        serde_json::json!(["0000000000b3", "0000000000b2"]),
+        "{preview}"
+    );
+    let report = fixture.call(&["prune"]);
+    assert_eq!(
+        report["removed"],
+        serde_json::json!(["0000000000b3", "0000000000b2"])
+    );
+
+    // A recent earlier-boot record is shown finished in the default view,
+    // with no exact completion time, and is not rewritten.
+    let path = fixture.state.join("0000000000b1/record.json");
+    let persisted = fs::read(&path).unwrap();
+    let jobs = fixture.call(&["list"])["jobs"].clone();
+    let job = |id: &str| {
+        jobs.as_array()
+            .unwrap()
+            .iter()
+            .find(|job| job["id"] == id)
+            .cloned()
+            .unwrap_or_else(|| panic!("{id} missing: {jobs}"))
+    };
+    let earlier_job = job("0000000000b1");
+    assert_eq!(earlier_job["state"], "interrupted", "{earlier_job}");
+    assert!(earlier_job["finished_at_ms"].is_null());
+    assert!(
+        earlier_job["error"]
+            .as_str()
+            .unwrap()
+            .contains("earlier boot of this machine"),
+        "{earlier_job}"
+    );
+    assert_eq!(
+        fixture.call(&["stop", "0000000000b1"])["job"]["state"],
+        "interrupted"
+    );
+    assert_eq!(fs::read(&path).unwrap(), persisted);
+    // Another machine sharing the state directory proves nothing: its job
+    // stays unverified and protected, and is never controlled from here.
+    assert_eq!(job("0000000000b4")["state"], "unknown");
+    assert!(fixture.state.join("0000000000b4").exists());
+    assert!(!fixture
+        .command(&["stop", "0000000000b4"])
+        .output()
+        .unwrap()
+        .status
+        .success());
+    for id in ["0000000000b1", "0000000000b4"] {
+        fs::remove_dir_all(fixture.state.join(id)).unwrap();
+    }
 }
 
 #[test]
@@ -3193,6 +3395,9 @@ fn bulk_human_output_summarizes_and_escapes_failures() {
         ("owner", serde_json::json!("h")),
         ("task", serde_json::json!("human")),
         ("name", serde_json::json!("x\u{1b}[31my\u{7}")),
+        // A live keeper PID keeps supervision unverified rather than
+        // observed absent. It is never signalled.
+        ("keeper_pid", serde_json::json!(std::process::id())),
         ("guardian_pid", Value::Null),
         ("command_pid", Value::Null),
     ] {
@@ -3369,15 +3574,12 @@ fn retention_protection_is_crash_released_and_never_blocks_launches() {
     // lock acquisition could leave it suspended while holding that lock.
     wait_for(Duration::from_secs(3), || {
         let root = fs::File::open(fixture.state.join(".lock")).ok()?;
-        fs2::FileExt::lock_exclusive(&root).unwrap();
+        root.lock().unwrap();
         let guard = fs::File::open(fixture.state.join(".retention")).ok()?;
-        match fs2::FileExt::try_lock_exclusive(&guard) {
+        match guard.try_lock() {
             Ok(()) => return None,
-            Err(error) => assert_eq!(
-                error.raw_os_error(),
-                fs2::lock_contended_error().raw_os_error(),
-                "{error}"
-            ),
+            Err(fs::TryLockError::WouldBlock) => (),
+            Err(error) => panic!("{error}"),
         }
         let pid = bulk.0.id() as libc::pid_t;
         assert_eq!(unsafe { libc::kill(pid, libc::SIGSTOP) }, 0);
@@ -3387,18 +3589,15 @@ fn retention_protection_is_crash_released_and_never_blocks_launches() {
             pid
         );
         assert!(libc::WIFSTOPPED(status), "bulk not stopped: {status}");
-        match fs2::FileExt::try_lock_exclusive(&guard) {
+        match guard.try_lock() {
             Ok(()) => {
                 bulk.0.kill().unwrap();
                 bulk.0.wait().unwrap();
                 bulk = spawn_bulk();
                 return None;
             }
-            Err(error) => assert_eq!(
-                error.raw_os_error(),
-                fs2::lock_contended_error().raw_os_error(),
-                "{error}"
-            ),
+            Err(fs::TryLockError::WouldBlock) => (),
+            Err(error) => panic!("{error}"),
         }
         Some(())
     });

@@ -7,6 +7,12 @@ use anyhow::Result;
 pub fn group_has_live_members(pgid: u32) -> Result<bool> {
     // proc_listpids(PROC_PGRP_ONLY) returns bytes. A retained zombie group leader
     // can make Darwin's killpg return EPERM even after every live member exited.
+    Ok(group_members(pgid)?.iter().any(|&(_, live)| live))
+}
+
+/// Members of a process group as `(pid, live)`, where zombies are not live.
+#[cfg(target_os = "macos")]
+fn group_members(pgid: u32) -> Result<Vec<(u32, bool)>> {
     let mut pids = vec![0i32; 256];
     loop {
         unsafe {
@@ -28,7 +34,7 @@ pub fn group_has_live_members(pgid: u32) -> Result<bool> {
             if !matches!(error.raw_os_error(), Some(0 | libc::ESRCH)) {
                 return Err(error.into());
             }
-            return Ok(false);
+            return Ok(Vec::new());
         }
         if bytes as usize >= std::mem::size_of_val(pids.as_slice()) {
             if pids.len() >= 65_536 {
@@ -37,6 +43,7 @@ pub fn group_has_live_members(pgid: u32) -> Result<bool> {
             pids.resize(pids.len() * 2, 0);
             continue;
         }
+        let mut members = Vec::new();
         for &pid in pids
             .iter()
             .take(bytes as usize / std::mem::size_of::<i32>())
@@ -57,8 +64,8 @@ pub fn group_has_live_members(pgid: u32) -> Result<bool> {
                 )
             };
             if result == size {
-                if info.pbi_pgid == pgid && info.pbi_status != libc::SZOMB {
-                    return Ok(true);
+                if info.pbi_pgid == pgid {
+                    members.push((pid as u32, info.pbi_status != libc::SZOMB));
                 }
             } else {
                 let error = std::io::Error::last_os_error();
@@ -67,8 +74,59 @@ pub fn group_has_live_members(pgid: u32) -> Result<bool> {
                 }
             }
         }
-        return Ok(false);
+        return Ok(members);
     }
+}
+
+/// Members of a process group as `(pid, live)`, read from procfs, where
+/// zombies are not live. Requires procfs from this process's own PID
+/// namespace, so its numbers mean what `getpgrp` means here. A process that
+/// exits between listing and reading is not a member.
+#[cfg(target_os = "linux")]
+fn group_members(pgid: u32) -> Result<Vec<(u32, bool)>> {
+    if !procfs_reports_own_namespace() {
+        anyhow::bail!("procfs does not report this PID namespace");
+    }
+    let mut members = Vec::new();
+    for entry in std::fs::read_dir("/proc")? {
+        let entry = entry?;
+        let Some(pid) = entry.file_name().to_str().and_then(positive_decimal) else {
+            continue;
+        };
+        let Some(stat) = read_bounded(&entry.path().join("stat"), SMALL_LIMIT) else {
+            continue;
+        };
+        let Some((state, group)) = stat_state_and_group(&stat) else {
+            continue;
+        };
+        if group == pgid {
+            members.push((pid, !matches!(state, "Z" | "X")));
+        }
+    }
+    Ok(members)
+}
+
+/// State (field 3) and process group (field 5) of a `/proc/PID/stat` line,
+/// counted after the command name's final closing parenthesis.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn stat_state_and_group(stat: &str) -> Option<(&str, u32)> {
+    let (_, rest) = stat.rsplit_once(')')?;
+    let mut fields = rest.split_whitespace();
+    let state = fields.next()?;
+    fields.next()?;
+    Some((state, positive_decimal(fields.next()?)?))
+}
+
+/// Whether the process group `pgid` has a live member other than `own`,
+/// which must itself be observed in the group as a sanity check of the view.
+/// Zombies are not live. Any error means members may be present: callers
+/// must then keep waiting rather than shorten a shutdown grace on a guess.
+pub fn group_has_other_live_members(pgid: u32, own: u32) -> Result<bool> {
+    let members = group_members(pgid)?;
+    if !members.iter().any(|&(pid, _)| pid == own) {
+        anyhow::bail!("this process was not observed in its process group");
+    }
+    Ok(members.iter().any(|&(pid, live)| live && pid != own))
 }
 
 use std::{
@@ -222,12 +280,7 @@ pub fn pid_context() -> Option<&'static str> {
     static CONTEXT: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
     CONTEXT
         .get_or_init(|| {
-            let pid = std::process::id();
-            if !procfs_is_own_namespace(
-                &read_bounded(Path::new("/proc/self/status"), STATUS_LIMIT)?,
-                &read_bounded(Path::new("/proc/self/stat"), SMALL_LIMIT)?,
-                pid,
-            ) {
+            if !procfs_reports_own_namespace() {
                 return None;
             }
             let boot = read_bounded(Path::new("/proc/sys/kernel/random/boot_id"), SMALL_LIMIT)?;
@@ -242,6 +295,151 @@ pub fn pid_context() -> Option<&'static str> {
 #[cfg(not(target_os = "linux"))]
 pub fn pid_context() -> Option<&'static str> {
     None
+}
+
+/// Whether procfs reports this process from its own PID namespace; see
+/// `pid_context`. Cached for the process lifetime.
+#[cfg(target_os = "linux")]
+fn procfs_reports_own_namespace() -> bool {
+    static OWN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *OWN.get_or_init(|| {
+        match (
+            read_bounded(Path::new("/proc/self/status"), STATUS_LIMIT),
+            read_bounded(Path::new("/proc/self/stat"), SMALL_LIMIT),
+        ) {
+            (Some(status), Some(stat)) => {
+                procfs_is_own_namespace(&status, &stat, std::process::id())
+            }
+            _ => false,
+        }
+    })
+}
+
+/// Opaque digests of this machine and of its current boot.
+pub struct BootContext {
+    pub machine: String,
+    pub boot: String,
+}
+
+/// This machine's identity and current boot, or `None` when either cannot be
+/// established completely. Only digests are kept.
+///
+/// Linux uses the machine ID together with the host name, so two hosts
+/// sharing a state directory are told apart even when one was cloned from the
+/// other's image, and the kernel's per-boot random `boot_id`. macOS uses the
+/// hardware UUID and the per-boot `kern.bootsessionuuid`. A changed host
+/// name or an unreadable source only withholds the inference built on this.
+pub fn boot_context() -> Option<&'static BootContext> {
+    static CONTEXT: std::sync::OnceLock<Option<BootContext>> = std::sync::OnceLock::new();
+    CONTEXT
+        .get_or_init(|| {
+            let (machine, boot) = boot_sources()?;
+            let machine: Vec<&[u8]> = machine.iter().map(Vec::as_slice).collect();
+            Some(BootContext {
+                machine: context_digest(b"proclease machine context v1\0", &machine),
+                boot: context_digest(b"proclease boot context v1\0", &[&boot]),
+            })
+        })
+        .as_ref()
+}
+
+/// Whether a record's saved machine and boot prove that it was written by an
+/// earlier boot of this machine, so none of its processes can still run.
+/// Requires both saved values and a complete current context, an identical
+/// machine and a different boot. Anything else, including records written
+/// before these fields existed and records from another machine sharing the
+/// state directory, proves nothing.
+pub fn from_earlier_boot(machine: Option<&str>, boot: Option<&str>) -> bool {
+    earlier_boot(machine, boot, boot_context())
+}
+
+fn earlier_boot(machine: Option<&str>, boot: Option<&str>, current: Option<&BootContext>) -> bool {
+    matches!(
+        (machine, boot, current),
+        (Some(machine), Some(boot), Some(current))
+            if machine == current.machine && boot != current.boot
+    )
+}
+
+/// Domain-separated digest of length-prefixed fields.
+fn context_digest(domain: &[u8], fields: &[&[u8]]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut digest = Sha256::new();
+    digest.update(domain);
+    for field in fields {
+        digest.update((field.len() as u64).to_be_bytes());
+        digest.update(field);
+    }
+    format!("v1:{:x}", digest.finalize())
+}
+
+/// A trimmed identifier of 1 to 64 printable ASCII characters.
+fn identifier(text: &str) -> Option<Vec<u8>> {
+    let text = text.trim();
+    (!text.is_empty() && text.len() <= 64 && text.bytes().all(|c| c.is_ascii_graphic()))
+        .then(|| text.as_bytes().to_vec())
+}
+
+#[cfg(target_os = "linux")]
+fn boot_sources() -> Option<(Vec<Vec<u8>>, Vec<u8>)> {
+    let machine_id = ["/etc/machine-id", "/var/lib/dbus/machine-id"]
+        .into_iter()
+        .find_map(|path| read_bounded(Path::new(path), SMALL_LIMIT))?;
+    let machine_id = machine_id.trim();
+    // An uninitialized or malformed machine ID is not an identity.
+    if machine_id.len() != 32
+        || !machine_id
+            .bytes()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        || machine_id.bytes().all(|c| c == b'0')
+    {
+        return None;
+    }
+    let mut host = [0u8; 256];
+    if unsafe { libc::gethostname(host.as_mut_ptr().cast(), host.len()) } != 0 {
+        return None;
+    }
+    let host = &host[..host.iter().position(|&c| c == 0)?];
+    if host.is_empty() {
+        return None;
+    }
+    let boot = identifier(&read_bounded(
+        Path::new("/proc/sys/kernel/random/boot_id"),
+        SMALL_LIMIT,
+    )?)?;
+    Some((vec![machine_id.as_bytes().to_vec(), host.to_vec()], boot))
+}
+
+#[cfg(target_os = "macos")]
+fn boot_sources() -> Option<(Vec<Vec<u8>>, Vec<u8>)> {
+    let mut uuid = [0u8; 16];
+    let wait = libc::timespec {
+        tv_sec: 1,
+        tv_nsec: 0,
+    };
+    if unsafe { libc::gethostuuid(uuid.as_mut_ptr(), &wait) } != 0 || uuid.iter().all(|&b| b == 0) {
+        return None;
+    }
+    let mut value = [0u8; 128];
+    let mut size = value.len();
+    let name = c"kern.bootsessionuuid";
+    if unsafe {
+        libc::sysctlbyname(
+            name.as_ptr(),
+            value.as_mut_ptr().cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    } != 0
+    {
+        return None;
+    }
+    let value = &value[..size.min(value.len())];
+    let text =
+        std::str::from_utf8(&value[..value.iter().position(|&c| c == 0).unwrap_or(value.len())])
+            .ok()?;
+    Some((vec![uuid.to_vec()], identifier(text)?))
 }
 
 /// Bound for small single-line procfs files.
@@ -272,12 +470,7 @@ fn read_bounded(path: &Path, limit: u64) -> Option<String> {
 /// a missing or repeated line and malformed values are all rejected.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn procfs_is_own_namespace(status: &str, stat: &str, pid: u32) -> bool {
-    fn positive(text: &str) -> Option<u32> {
-        if text.is_empty() || !text.bytes().all(|c| c.is_ascii_digit()) {
-            return None;
-        }
-        text.parse().ok().filter(|&value| value > 0)
-    }
+    let positive = positive_decimal;
     let mut lines = status
         .lines()
         .filter_map(|line| line.strip_prefix("NSpid:"));
@@ -291,6 +484,15 @@ fn procfs_is_own_namespace(status: &str, stat: &str, pid: u32) -> bool {
     };
     let stat_pid = stat.split_once(' ').and_then(|(value, _)| positive(value));
     single == Some(pid) && stat_pid == Some(pid)
+}
+
+/// A positive decimal number without sign or other characters.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn positive_decimal(text: &str) -> Option<u32> {
+    if text.is_empty() || !text.bytes().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    text.parse().ok().filter(|&value| value > 0)
 }
 
 /// Start time (field 22) from a `/proc/PID/stat` line, in clock ticks since
@@ -616,6 +818,72 @@ mod tests {
             assert!(pid_numbers_comparable(None));
         }
         assert!(!pid_numbers_comparable(Some("v1:from-another-context")));
+    }
+
+    #[test]
+    fn earlier_boot_requires_the_same_machine_and_a_different_boot() {
+        let current = BootContext {
+            machine: "v1:machine".into(),
+            boot: "v1:boot".into(),
+        };
+        let check = |machine, boot| earlier_boot(machine, boot, Some(&current));
+        assert!(check(Some("v1:machine"), Some("v1:earlier")));
+        // The same boot, another machine or incomplete records prove nothing.
+        assert!(!check(Some("v1:machine"), Some("v1:boot")));
+        assert!(!check(Some("v1:other"), Some("v1:earlier")));
+        assert!(!check(None, Some("v1:earlier")));
+        assert!(!check(Some("v1:machine"), None));
+        assert!(!earlier_boot(Some("v1:machine"), Some("v1:earlier"), None));
+        // A current context, when available, is complete and stable.
+        if let Some(context) = boot_context() {
+            assert!(context.machine.starts_with("v1:") && context.boot.starts_with("v1:"));
+            assert!(!from_earlier_boot(
+                Some(&context.machine),
+                Some(&context.boot)
+            ));
+        }
+    }
+
+    #[test]
+    fn other_group_members_exclude_the_caller_and_zombies() {
+        use std::os::unix::process::CommandExt;
+        #[cfg(target_os = "linux")]
+        if !procfs_reports_own_namespace() {
+            return;
+        }
+        struct Owned(std::process::Child);
+        impl Drop for Owned {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        let spawn = |group: i32| {
+            Owned(
+                std::process::Command::new("sleep")
+                    .arg("30")
+                    .process_group(group)
+                    .spawn()
+                    .unwrap(),
+            )
+        };
+        let mut leader = spawn(0);
+        let pgid = leader.0.id();
+        assert!(!group_has_other_live_members(pgid, pgid).unwrap());
+        let mut member = spawn(pgid as i32);
+        assert!(group_has_other_live_members(pgid, pgid).unwrap());
+        // An unreaped, exited member is a zombie, not a live member.
+        member.0.kill().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while group_has_other_live_members(pgid, pgid).unwrap() {
+            assert!(Instant::now() < deadline, "zombie counted as live");
+            thread::sleep(Duration::from_millis(10));
+        }
+        member.0.wait().unwrap();
+        // A view that does not include the caller is never trusted.
+        leader.0.kill().unwrap();
+        leader.0.wait().unwrap();
+        assert!(group_has_other_live_members(pgid, pgid).is_err());
     }
 
     #[test]
