@@ -2336,23 +2336,24 @@ fn grace_window_controls_return_lifecycle_results() {
         "--ttl",
         "20s",
         "--grace",
-        "700ms",
+        "3s",
+        // Wait until the fixture ignores TERM before sending the first stop.
+        "--wait-for-log",
+        "ignoring TERM",
         "--",
-        // Ignoring TERM keeps the group alive for the whole grace, so the
-        // stopping window cannot end early.
         "/bin/sh",
         "-c",
-        "trap '' TERM; exec /bin/sleep 20",
+        "trap '' TERM; printf 'ignoring TERM\\n'; exec /bin/sleep 20",
     ]);
     let id = result["job"]["id"].as_str().unwrap().to_owned();
     let mut first_stop = fixture.command(&["stop", &id]);
     let first = thread::spawn(move || first_stop.output().unwrap());
+    // Observe the atomic shutdown record directly so polling does not spend
+    // the grace window spawning list commands on a slow test runner.
+    let record_path = fixture.state.join(&id).join("record.json");
     wait(|| {
-        if fixture.job(&id)["state"] == "stopping" {
-            Some(())
-        } else {
-            None
-        }
+        let record: Value = serde_json::from_slice(&fs::read(&record_path).ok()?).ok()?;
+        (record["state"] == "stopping").then_some(())
     });
     let extend = fixture
         .command(&["extend", &id, "--by", "1s"])
