@@ -8,9 +8,11 @@ packaged command started before accepting its expiry, then waits for that job's
 own supervisors before deleting its state; it retains the directory and reports
 any that remain. No cross-compiled binary is
 represented as runtime-tested.
-Tag pushes build and draft a release. Relevant pull requests and manual workflow
-runs validate the archives without publishing; ordinary main pushes use the
-normal Rust and website checks. Every main push also deploys the current website
+Tag pushes build and draft a release. Relevant pull requests and branch
+dispatches use a read-only job to download and combine all four native
+archives and verify their checksums. The draft job uses those same download and
+verification steps before attestation. Main pushes use the usual Rust and
+website checks. Every main push also deploys the current website
 automatically; see [website publication](../website/README.md#publish).
 Website-only updates that keep the existing release pins need no binary or crate
 release.

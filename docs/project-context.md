@@ -223,7 +223,7 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- SOURCE  Skill handoff and exact-ID cleanup guidance
 |-- DONE    v0.1.10 GitHub prerelease and four native archives verified
 |-- SOURCE  Foreground signals recorded as requested stops
-|-- SOURCE  Pinned workflow actions and signed release provenance
+|-- SOURCE  Pinned actions, archive handoff checks and signed release provenance
 |-- SOURCE  Review fixes: earlier-boot reconciliation, early grace end, std locks
 `-- SOURCE  Review cleanups: bidi escaping, single group read, run module
 ```
