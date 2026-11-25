@@ -139,6 +139,10 @@ verification limits.
   version-labelled anchors become plain ones with the old IDs kept as aliases.
   Done by hand; the context-docs skill was not available in that session. See
   [verification](verification.md#documentation-trim-unreleased-source-2026-11-25).
+- **Owner-requested, 2026-11-25:** prepare the v0.1.11 experimental
+  prerelease from the reviewed changes on main, following the
+  [release procedure](releasing.md). Tagging, publishing the draft, merging
+  the candidate and any crates.io publication each wait for the owner.
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
   proxying, auto-restart and hosted dashboards.
 
@@ -153,6 +157,10 @@ and registry identity across Codex and Claude Code sessions and stops a fixed
 cleanup selection by ID after previewing it. crates.io and docs.rs carry v0.1.9,
 so the `cargo install` command still names it. Notes for each release are in
 [docs/releases](releases/).
+
+**v0.1.11 candidate.** The candidate branch `release-v0.1.11` stages version,
+installer and website pins and [release notes](releases/v0.1.11.md) for the
+changes below; it stays off main until the release is public.
 
 **Unreleased on main.** The 2026-11-25 independent review added
 [boot context](architecture.md#boot-context) reconciliation of earlier-boot and
@@ -256,7 +264,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- SOURCE  Pinned actions, archive handoff checks and signed release provenance
 |-- SOURCE  Review fixes: earlier-boot reconciliation, early grace end, std locks
 |-- SOURCE  Review cleanups: bidi escaping, single group read, run module
-`-- SOURCE  README and context trimmed to current behavior; release index
+|-- SOURCE  README and context trimmed to current behavior; release index
+`-- SOURCE  v0.1.11 release candidate: version, pins and notes
 ```
 
 **Release history.** Evidence for each step is in [verification](verification.md):
@@ -286,6 +295,7 @@ Goal: a usable ProcLease CLI, shared skill and public first release
   version metadata at `5d0c47b` ([publication](verification.md#v019-publication-2026-11-12),
   [notes](releases/v0.1.9.md)).
 - v0.1.10: skill handoff and exact-ID cleanup guidance.
+- v0.1.11 (candidate): the review changes above, with [notes](releases/v0.1.11.md).
 
 **Website and repository.** The website deploys
 [automatically from current main](verification.md#website-automatic-deployment-2026-11-08);
