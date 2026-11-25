@@ -1372,6 +1372,48 @@ will exercise attestation. Dependabot starts proposing updates after the config
 reaches the default branch. Update the branch-pinned `dtolnay/rust-toolchain`
 manually.
 
+## Review fixes (unreleased source), 2026-11-25
+
+Four findings from an independent Claude Code review were fixed on a branch
+after v0.1.10: earlier-boot and absent-supervisor reconciliation, an early end
+to the shutdown grace, standard-library file locks replacing `fs2`, and capped
+launch-metadata grace in the guardian and keeper. See the
+[architecture](architecture.md#boot-context-unreleased-source).
+
+- Natively on Linux x86_64 with stable Rust 1.100: formatting, Clippy with
+  warnings denied and all 100 tests (34 unit, 66 integration) passed in four
+  consecutive runs, with no remaining supervisors or fixture files.
+- New regressions: a service that exits on TERM stops well inside an 8-second
+  grace, while a TERM-ignoring group still waits out 1.5 seconds; earlier-boot
+  `running` and unfinalized `exited` records with live saved PIDs and a foreign
+  PID context are collected past 24 hours, a recent one is shown `interrupted`
+  without being rewritten, and a record from another machine stays `unknown`
+  and protected; group-membership checks exclude the caller and zombies and
+  reject a view that omits the caller.
+- Updated expectations: a `running` record whose keeper, group and command are
+  observed absent now reads `interrupted` (a live saved PID still reads
+  `unknown`); the grace-window and concurrent bulk-stop tests use a
+  TERM-ignoring group so their stopping window lasts the whole grace. Hosted
+  macOS release builds first exposed that dependency in the bulk-stop test.
+- Clippy with warnings denied also passed for `aarch64-apple-darwin` and
+  `x86_64-apple-darwin` as type checks, and `cargo check` passed with Rust 1.89
+  for Linux and macOS. Rust 1.89's Clippy reports one older
+  `nonminimal_bool` lint in unchanged retention code; CI runs Clippy on stable.
+
+A follow-up hardened both observations. A missing saved PID keeps a startup
+record unverified, and an invalid saved boot digest cannot make history
+eligible for collection. Linux early shutdown now requires an unfiltered
+procfs mount in the guardian's own PID namespace. It parses process names as
+bytes and defers to the full grace if a visible entry is unreadable, malformed
+or the scan exceeds its budget. Regression cases cover incomplete records,
+invalid boot digests, restricted mount options, non-UTF-8 process names and
+the zero process group that Linux reports for kernel threads.
+
+The original Linux validation used type checks for macOS. The follow-up
+passed formatting, Clippy and all 101 tests locally on macOS arm64, including
+the boot-context and group-membership checks. Earlier boots were simulated
+with seeded records. No real reboot was performed.
+
 ## Review cleanups (unreleased source), 2026-11-25
 
 Review item #8, three small changes without new features:
@@ -1391,7 +1433,9 @@ Review item #8, three small changes without new features:
 Natively on Linux x86_64 with stable Rust 1.100: formatting, Clippy with
 warnings denied and all 97 tests (33 unit, 64 integration) passed in three
 consecutive runs, with no remaining supervisors or fixture files. Clippy also
-passed as a type check for both macOS targets.
+passed as a type check for both macOS targets. After the review fixes merged,
+the combined source passed formatting, Clippy and all 102 tests (36 unit,
+66 integration) twice on Linux x86_64.
 
 ## Limits
 

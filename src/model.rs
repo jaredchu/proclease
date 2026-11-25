@@ -134,6 +134,16 @@ pub struct Record {
     /// written before it existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pid_context: Option<String>,
+    /// Opaque digests of the machine and of the boot in which the keeper
+    /// started; see `platform::boot_context`. A record proven to come from an
+    /// earlier boot of the same machine has no process left, so it is shown
+    /// as finished and collected by retention without interpreting saved
+    /// PIDs. Absent in records written before they existed, and whenever the
+    /// keeper could not establish them; such records prove nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_context: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boot_context: Option<String>,
     pub exit_code: Option<i32>,
     pub finished_at_ms: Option<u64>,
     /// Proof that no lifecycle writer remains and the managed group was
@@ -179,6 +189,8 @@ impl Record {
             guardian_pid: None,
             command_pid: None,
             pid_context: None,
+            machine_context: None,
+            boot_context: None,
             exit_code: None,
             finished_at_ms: None,
             finalized_by_keeper: false,
