@@ -1365,11 +1365,12 @@ the tag-only draft job signs SLSA build provenance for the four archives and
   a seven-day cooldown, minor and patch updates grouped, and major versions in
   separate pull requests. It takes effect once merged to the default branch.
 
-Limits: the attestation step runs only on a version tag, so it is first
-exercised by the next release; pull-request runs validate the workflow files
-and every other job. `actionlint` was not run locally. Dependabot's
-configuration is validated by GitHub only after merge; it does not update the
-branch-pinned `dtolnay/rust-toolchain`.
+The pull request passed CI, the four native package builds, website static
+checks and GitHub's Dependabot configuration check. The draft-release job and
+website deployment were skipped on the pull request. The next version-tag run
+will exercise attestation. Dependabot starts proposing updates after the config
+reaches the default branch. Update the branch-pinned `dtolnay/rust-toolchain`
+manually.
 
 ## Limits
 

@@ -32,8 +32,8 @@ For a new release:
 3. Download the draft assets, verify the combined checksums and inspect the notes.
    Verify each archive and `install.sh` with `gh attestation verify FILE --repo
    jaredchu/proclease --signer-workflow
-   jaredchu/proclease/.github/workflows/release.yml`; an archive without
-   provenance from that workflow must not be published.
+   jaredchu/proclease/.github/workflows/release.yml`. Publish the draft only
+   after provenance verification passes for every archive and the installer.
    Check build logs for failed stripping tools and inspect the shipped binaries;
    a successful Cargo build alone does not prove stripping succeeded.
    Test the host-native archive/installer in isolated state. Publish the draft
