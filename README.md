@@ -17,6 +17,10 @@ Website: [proclease.com](https://proclease.com).
 
 ## Install
 
+The usage sections below describe current `main`, including unreleased behavior.
+For an installed binary, check [Version notes](#version-notes) to see which
+features and changes its release includes.
+
 Download and review [the v0.1.10 installer](https://github.com/jaredchu/proclease/releases/download/v0.1.10/install.sh), then run:
 
 ```sh
