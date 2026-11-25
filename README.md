@@ -58,7 +58,7 @@ recommended. The prebuilt installer above does not need Rust. To build the CLI
 from the crates.io registry:
 
 ```sh
-cargo install proclease --version 0.1.9 --locked
+cargo install proclease --version 0.1.11 --locked
 proclease --version
 ```
 
