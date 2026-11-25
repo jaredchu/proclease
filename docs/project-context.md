@@ -116,6 +116,11 @@ verification limits.
   a one-byte stop request on the existing liveness pipes. Killing the
   invocation stays lost supervision. Not yet released; see
   [verification](verification.md#foreground-signal-stop-unreleased-source-2026-11-25).
+- **Owner-requested, 2026-11-25:** pin every workflow action to a commit SHA
+  and sign build provenance for release archives and the installer, with
+  Dependabot proposing weekly pin updates. Not yet
+  released; see the [release procedure](releasing.md) and
+  [verification](verification.md#pinned-actions-and-build-provenance-unreleased-source-2026-11-25).
 - **Owner-requested, 2026-11-25:** fix four findings from an independent
   review in source: reconcile jobs from an earlier boot of the same machine and
   `running` jobs whose supervisors and command are observed absent, end the
@@ -213,6 +218,7 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- SOURCE  Skill handoff and exact-ID cleanup guidance
 |-- DONE    v0.1.10 GitHub prerelease and four native archives verified
 |-- SOURCE  Foreground signals recorded as requested stops
+|-- SOURCE  Pinned workflow actions and signed release provenance
 `-- SOURCE  Review fixes: earlier-boot reconciliation, early grace end, std locks
 ```
 
