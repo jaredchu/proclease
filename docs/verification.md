@@ -1349,8 +1349,9 @@ launch-metadata grace in the guardian and keeper. See the
   reject a view that omits the caller.
 - Updated expectations: a `running` record whose keeper, group and command are
   observed absent now reads `interrupted` (a live saved PID still reads
-  `unknown`); the grace-window test uses a TERM-ignoring group so its stopping
-  window lasts the whole grace.
+  `unknown`); the grace-window and concurrent bulk-stop tests use a
+  TERM-ignoring group so their stopping window lasts the whole grace. Hosted
+  macOS release builds first exposed that dependency in the bulk-stop test.
 - Clippy with warnings denied also passed for `aarch64-apple-darwin` and
   `x86_64-apple-darwin` as type checks, and `cargo check` passed with Rust 1.89
   for Linux and macOS. Rust 1.89's Clippy reports one older

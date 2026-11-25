@@ -3164,8 +3164,11 @@ fn bulk_stop_waits_for_stopping_jobs_and_concurrent_bulk_stops_agree() {
         "--grace",
         "700ms",
         "--",
-        "/bin/sleep",
-        "20",
+        // Ignoring TERM keeps this job stopping for its whole grace, so the
+        // window observed below cannot end early.
+        "/bin/sh",
+        "-c",
+        "trap '' TERM; exec /bin/sleep 20",
     ])["job"]["id"]
         .as_str()
         .unwrap()
