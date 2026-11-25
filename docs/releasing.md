@@ -25,10 +25,15 @@ For a new release:
    Merging to main deploys the website, and its pin check fails before deployment
    if the release assets are not yet public.
 2. Commit and push the reviewed candidate branch, then tag that exact commit `vVERSION`.
-   Tag builds must all pass before the workflow assembles `SHA256SUMS` and creates
-   a **draft prerelease** titled `ProcLease vVERSION experimental preview`, with
+   Tag builds must all pass before the workflow assembles `SHA256SUMS`, signs
+   build provenance for the four archives and `install.sh`, and creates a
+   **draft prerelease** titled `ProcLease vVERSION experimental preview`, with
    four archives, their checksums and `install.sh`.
 3. Download the draft assets, verify the combined checksums and inspect the notes.
+   Verify each archive and `install.sh` with `gh attestation verify FILE --repo
+   jaredchu/proclease --signer-workflow
+   jaredchu/proclease/.github/workflows/release.yml`; an archive without
+   provenance from that workflow must not be published.
    Check build logs for failed stripping tools and inspect the shipped binaries;
    a successful Cargo build alone does not prove stripping succeeded.
    Test the host-native archive/installer in isolated state. Publish the draft
@@ -38,6 +43,14 @@ For a new release:
    page, installer and release downloads. If deployment fails, fix the cause
    (through main if it is in source) and run the website workflow manually on
    current main.
+
+Workflow actions are pinned to full commit SHAs, with the release tag in a
+trailing comment; `dtolnay/rust-toolchain` is pinned to a `master` commit with
+an explicit `toolchain`. Update a pin deliberately: resolve the new tag to its
+commit, review the change and update every workflow that uses that action.
+Provenance is signed with a short-lived certificate from the public Sigstore
+instance and stored by GitHub's attestations API; the draft job alone holds
+`id-token: write` and `attestations: write`.
 
 Release archives include `proclease`, the portable skill, README and MIT license.
 The packaging checks use Python 3.12 or newer, supplied in CI; users do not need

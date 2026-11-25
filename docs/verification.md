@@ -1329,6 +1329,24 @@ exercised. Direct host scans found no matching test processes with complete
 own-user visibility, without claiming supervisor finalization. Existing registries,
 installed binaries/skills and running jobs/watch were outside these isolated checks.
 
+## Pinned actions and build provenance (unreleased source), 2026-11-25
+
+Review item #6: every workflow action is now pinned to a full commit SHA, and
+the tag-only draft job signs SLSA build provenance for the four archives and
+`install.sh` with `actions/attest` before drafting the release.
+
+- Each pin is the commit its previously used moving tag resolved to on
+  2026-11-25 (`actions/checkout` v4.4.0, `setup-python` v5.6.0,
+  `upload-artifact` v4.6.2, `download-artifact` v4.3.0, `setup-node` v4.4.0),
+  so job behavior is unchanged. `dtolnay/rust-toolchain` is pinned to a
+  `master` commit; stable jobs now pass `toolchain: stable`, which is what the
+  `stable` branch defaulted to.
+- The website deployment job's existing pins are unchanged.
+
+Limits: the attestation step runs only on a version tag, so it is first
+exercised by the next release; pull-request runs validate the workflow files
+and every other job. `actionlint` was not run locally.
+
 ## Limits
 
 No direct system sleep/wake, clock-change or simultaneous destruction of both

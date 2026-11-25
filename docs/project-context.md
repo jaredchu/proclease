@@ -111,6 +111,10 @@ verification limits.
   publish sanitized findings in this repository and on the existing website.
   The harness is a public, standard-library black-box tool; raw diagnostics
   stay private. See [the experiments](experiments/v0.1.9/README.md).
+- **Owner-requested, 2026-11-25:** pin every workflow action to a commit SHA
+  and sign build provenance for release archives and the installer. Not yet
+  released; see the [release procedure](releasing.md) and
+  [verification](verification.md#pinned-actions-and-build-provenance-unreleased-source-2026-11-25).
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
   proxying, auto-restart and hosted dashboards.
 
@@ -199,7 +203,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- TESTED  v0.1.9 lifecycle experiments, primary v2 series: 570/570 each on macOS arm64 and Linux x86_64
 |-- DONE    Reproducible report and static experiments page, with versioned methods and data
 |-- SOURCE  Skill handoff and exact-ID cleanup guidance
-`-- DONE    v0.1.10 GitHub prerelease and four native archives verified
+|-- DONE    v0.1.10 GitHub prerelease and four native archives verified
+`-- SOURCE  Pinned workflow actions and signed release provenance
 ```
 
 On 2026-11-13, scripted [lifecycle experiments](experiments/v0.1.9/README.md)
