@@ -58,7 +58,7 @@ impl CleanupOnDrop {
     fn new(pgid: u32, grace_ms: u64) -> Self {
         Self {
             pgid,
-            grace: Duration::from_millis(grace_ms),
+            grace: grace_duration(grace_ms),
             armed: true,
         }
     }
@@ -332,6 +332,10 @@ pub fn keeper(store: &Store, id: &str) -> Result<()> {
     // Saved with the first PID so observers can tell whether these numbers
     // belong to their own PID space. The guardian is this keeper's child.
     record.pid_context = crate::platform::pid_context().map(str::to_owned);
+    if let Some(context) = crate::platform::boot_context() {
+        record.machine_context = Some(context.machine.clone());
+        record.boot_context = Some(context.boot.clone());
+    }
     store.save(&record)?;
     // A foreground keeper's stdin is the `run --foreground` liveness pipe.
     // End-of-file means that session ended, however it ended.
@@ -414,7 +418,7 @@ pub fn keeper(store: &Store, id: &str) -> Result<()> {
             Some("guardian exited unexpectedly; group cleanup enforced by keeper".into());
         store.save(&record)?;
         signal_group(guardian.id(), libc::SIGTERM)?;
-        thread::sleep(Duration::from_millis(launch.grace_ms));
+        thread::sleep(grace_duration(launch.grace_ms));
     }
     // The guardian is an unreaped child, so this cannot target a reused PGID.
     signal_group(guardian.id(), libc::SIGKILL)?;
@@ -474,13 +478,15 @@ struct LogSink {
     limit: u64,
 }
 
+/// Copy one output stream into the bounded capture. The returned thread
+/// finishes at end-of-file or on a capture failure.
 fn pump(
     mut reader: impl Read + Send + 'static,
     sink: Arc<Mutex<LogSink>>,
     truncated: Arc<AtomicBool>,
     failed: Arc<AtomicBool>,
     capture_marker: Arc<File>,
-) {
+) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut buffer = [0u8; 8192];
         loop {
@@ -516,7 +522,7 @@ fn pump(
             }
             sink.written += writable as u64;
         }
-    });
+    })
 }
 
 fn read_control(stream: &mut UnixStream, deadline: Instant) -> Result<Option<Control>> {
@@ -813,20 +819,22 @@ pub fn guard(store: &Store, id: &str) -> Result<()> {
     record.command_pid = Some(child.id());
     record.state = State::Running;
     store.save(&record)?;
-    pump(
-        child.stdout.take().context("missing stdout")?,
-        sink.clone(),
-        truncated.clone(),
-        log_failed.clone(),
-        capture_marker.clone(),
-    );
-    pump(
-        child.stderr.take().context("missing stderr")?,
-        sink,
-        truncated.clone(),
-        log_failed.clone(),
-        capture_marker,
-    );
+    let capture = [
+        pump(
+            child.stdout.take().context("missing stdout")?,
+            sink.clone(),
+            truncated.clone(),
+            log_failed.clone(),
+            capture_marker.clone(),
+        ),
+        pump(
+            child.stderr.take().context("missing stderr")?,
+            sink,
+            truncated.clone(),
+            log_failed.clone(),
+            capture_marker,
+        ),
+    ];
     loop {
         // The stop flag is set before `parent_gone`, so observing the keeper
         // gone also shows whether it forwarded an orderly stop.
@@ -878,7 +886,9 @@ pub fn guard(store: &Store, id: &str) -> Result<()> {
     let _ = store.save(&record);
     let pid = std::process::id();
     signal_group(pid, libc::SIGTERM)?;
-    thread::sleep(Duration::from_millis(launch.grace_ms));
+    await_group_exit(pid, grace_duration(launch.grace_ms), || {
+        capture.iter().all(thread::JoinHandle::is_finished)
+    });
     // The guardian intentionally remains the group leader through escalation.
     // Killing the group also kills this guardian; the keeper finalizes state.
     signal_group(pid, libc::SIGKILL)?;
@@ -892,6 +902,35 @@ const CONTROL_REPLY_LIMIT: usize = 1_048_576;
 /// Largest shutdown grace accepted by `run`. Waits derived from launch
 /// metadata are capped here, so altered metadata cannot overflow a deadline.
 pub const MAX_GRACE_MS: u64 = 10_000;
+
+/// A shutdown grace from launch metadata, capped at `MAX_GRACE_MS`.
+fn grace_duration(grace_ms: u64) -> Duration {
+    Duration::from_millis(grace_ms.min(MAX_GRACE_MS))
+}
+
+/// Wait out the guardian's shutdown grace after TERM, ending early once no
+/// live process other than this guardian remains in its group and captured
+/// output has reached end-of-file, so shutdown output is not cut off. Any
+/// failed or uncertain observation keeps waiting: the grace is never
+/// shortened on a guess. KILL follows either way.
+fn await_group_exit(pgid: u32, grace: Duration, drained: impl Fn() -> bool) {
+    let deadline = Instant::now() + grace;
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return;
+        }
+        if drained()
+            && matches!(
+                crate::platform::group_has_other_live_members(pgid, pgid),
+                Ok(false)
+            )
+        {
+            return;
+        }
+        thread::sleep(left.min(TICK));
+    }
+}
 
 /// Bound for confirming a stop after dispatch: grace (capped) plus two seconds.
 /// Observers also use it as the finalization window for a `stopping` record

@@ -121,6 +121,18 @@ verification limits.
   Dependabot proposing weekly pin updates. Not yet
   released; see the [release procedure](releasing.md) and
   [verification](verification.md#pinned-actions-and-build-provenance-unreleased-source-2026-11-25).
+- **Owner-requested, 2026-11-25:** fix four findings from an independent
+  review in source: reconcile jobs from an earlier boot of the same machine and
+  `running` jobs whose supervisors and command are observed absent, end the
+  shutdown grace once the group has exited, replace `fs2` with standard-library
+  file locks, and cap launch-metadata grace everywhere. Not yet released. See
+  [boot context](architecture.md#boot-context-unreleased-source) and
+  [verification](verification.md#review-fixes-unreleased-source-2026-11-25).
+- **Owner-requested, 2026-11-25:** review cleanups: escape bidirectional
+  formatting characters in terminal output, read process groups once per
+  resource sample, and move the `run` command out of `main.rs`. Not yet
+  released; see
+  [verification](verification.md#review-cleanups-unreleased-source-2026-11-25).
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
   proxying, auto-restart and hosted dashboards.
 
@@ -211,7 +223,9 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- SOURCE  Skill handoff and exact-ID cleanup guidance
 |-- DONE    v0.1.10 GitHub prerelease and four native archives verified
 |-- SOURCE  Foreground signals recorded as requested stops
-`-- SOURCE  Pinned workflow actions and signed release provenance
+|-- SOURCE  Pinned workflow actions and signed release provenance
+|-- SOURCE  Review fixes: earlier-boot reconciliation, early grace end, std locks
+`-- SOURCE  Review cleanups: bidi escaping, single group read, run module
 ```
 
 On 2026-11-13, scripted [lifecycle experiments](experiments/v0.1.9/README.md)

@@ -62,6 +62,9 @@ impl Sampler {
         let now = Instant::now();
         let elapsed = self.sampled_at.map(|previous| now.duration_since(previous));
         let cpu_ready = elapsed.is_some_and(|d| d >= sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+        // Process groups are read once per sample, and only when a job needs
+        // them, rather than once per job for every process on the system.
+        let mut groups: Option<HashMap<Pid, i32>> = None;
         // Saved PIDs from another or unverifiable PID space are never
         // attributed; their metrics are unavailable rather than guessed.
         for record in records.iter().filter(|r| {
@@ -83,6 +86,7 @@ impl Sampler {
             {
                 continue;
             }
+            let groups = groups.get_or_insert_with(|| process_groups(&self.system));
             let mut memory = 0u64;
             let mut cpu = 0f32;
             let mut count = 0;
@@ -96,7 +100,7 @@ impl Sampler {
                     // counters are already included in the owning process.
                     || process.thread_kind().is_some()
                     || process.status() == sysinfo::ProcessStatus::Zombie
-                    || unsafe { libc::getpgid(number as i32) } != guardian as i32
+                    || groups.get(&pid) != Some(&(guardian as i32))
                 {
                     continue;
                 }
@@ -138,4 +142,16 @@ impl Sampler {
         std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
         sampler.sample(records)
     }
+}
+
+/// The current process group of every process (not thread) in the snapshot
+/// whose PID fits `pid_t`. A process that has exited since the snapshot has no
+/// group (`getpgid` fails with -1) and so matches no job.
+fn process_groups(system: &System) -> HashMap<Pid, i32> {
+    system
+        .processes()
+        .iter()
+        .filter(|(pid, process)| pid.as_u32() <= i32::MAX as u32 && process.thread_kind().is_none())
+        .map(|(&pid, _)| (pid, unsafe { libc::getpgid(pid.as_u32() as i32) }))
+        .collect()
 }
