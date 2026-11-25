@@ -30,7 +30,7 @@ The guardian is the group's session leader. Its service inherits that group.
 On deadline, explicit stop, command exit, signal, or loss of the keeper's liveness
 pipe, the guardian records the shutdown reason, sends group TERM, waits a bounded
 grace, then sends group KILL. The guardian intentionally dies in that escalation.
-In unreleased source after v0.1.10, the grace ends early once no live process
+The grace ends early once no live process
 other than the guardian remains in its group and both output pipes have reached
 end-of-file, so shutdown output is still captured. Group membership is read
 with `proc_listpids` on macOS and from procfs on Linux, where procfs must belong
@@ -45,7 +45,7 @@ numeric ID being reused during cleanup. If the guardian crashes, the keeper
 enforces cleanup. If the keeper crashes, EOF causes the guardian to clean up.
 Simultaneous destruction of both supervisors is outside this fail-closed guarantee.
 Observers then report the job `unknown`, except as described under
-[boot context](#boot-context-unreleased-source).
+[boot context](#boot-context).
 
 Startup failures before the service is spawned are launch failures. If the CLI
 cannot spawn the keeper, it records the committed job as `failed` while holding
@@ -76,9 +76,9 @@ unverified state. Such observation never signals or adopts a process.
 
 <a id="boot-context-unreleased-source"></a>
 
-### Boot context (unreleased source)
+### Boot context
 
-In unreleased source after v0.1.10, the keeper saves `machine_context` and
+The keeper saves `machine_context` and
 `boot_context` with its first PID. Both are domain-separated SHA-256 digests.
 On Linux, the machine digest covers `/etc/machine-id` (or
 `/var/lib/dbus/machine-id`) together with the host name, so hosts cloned from
@@ -109,8 +109,9 @@ collection. Requiring the command PID too keeps a command that left the group,
 and a record whose saved PIDs now name unrelated live processes, `unknown`.
 
 <a id="pid-context-unreleased"></a>
+<a id="pid-context-v018"></a>
 
-### PID context (v0.1.8)
+### PID context
 
 Saved PID numbers are meaningful only in the PID space that saved them. From
 v0.1.8, a Linux keeper also saves an opaque `pid_context` token with
@@ -160,10 +161,11 @@ failure adds the same note. Neither message suggests widening a sandbox.
 Foreground jobs skip this probe; see below.
 
 <a id="foreground-sessions-unreleased-source"></a>
+<a id="foreground-sessions-v019"></a>
 
-### Foreground sessions (v0.1.9)
+### Foreground sessions
 
-`run --foreground` is available from v0.1.9. Launch and record files persist `mode` (`detached` or `foreground`)
+Launch and record files persist `mode` (`detached` or `foreground`)
 and `transport` (`socket` or `file`). Missing fields, as in every earlier
 record, mean `detached` and `socket`. Each mode has exactly one transport. A
 guardian refuses a launch whose pair is inconsistent, and no path falls back
@@ -182,7 +184,7 @@ then waits for the keeper to exit. The keeper exits only after its final
 lifecycle write. When the pipe closes, the keeper closes the guardian's pipe.
 The guardian then performs its ordinary TERM, grace, KILL shutdown with reason
 `supervision_lost`, and the keeper records that the foreground session ended.
-In unreleased source after v0.1.10, the pipes can also carry one byte, an
+The pipes can also carry one byte, an
 orderly stop request, written just before the writer closes its end. The
 keeper forwards it to the guardian before closing the guardian's pipe, and the
 guardian then shuts down with reason `requested`, so the job finishes
@@ -292,8 +294,8 @@ arguments, paths and environment entries cannot contain NUL.
 While history is retained, they return the original record, including terminal
 records, without renewal. Purging history ends that key's deduplication window.
 Changing a context while reusing a key is an error. There is no automatic
-command-text deduplication or cross-task ownership transfer. From v0.1.9,
-the launch mode is part of that policy: a key never switches between a
+command-text deduplication or cross-task ownership transfer. The launch mode
+is part of that policy: a key never switches between a
 detached and a foreground job, and the rejection names `mode`. The mode is
 compared even with `--reuse`, which relaxes only the environment comparison. A
 matching retry or `--reuse` of a foreground job, which must itself pass
@@ -331,8 +333,8 @@ History retention keeps confirmed finished jobs for at most 24 hours and caps
 them at the newest 100. Launches, list/watch, job completion and explicit `prune`
 perform opportunistic collection under the root launch lock. No idle background
 service is added. Active/unknown records and missing completion timestamps are
-protected. From v0.1.8, only the keeper's final write can set
-`finalized_by_keeper`. That write happens after the keeper has killed the
+protected. Only the keeper's final write can set `finalized_by_keeper`
+(records written before v0.1.8 never have it). That write happens after the keeper has killed the
 guardian's group, reaped the guardian, accounted for capture and removed the
 socket, so no lifecycle writer remains. The final write alone does not prove
 that every group member has gone: a descendant in uninterruptible sleep can
@@ -350,9 +352,9 @@ container restarts when that absence was observed. Finished records without the
 marker, from earlier versions, a keeper that did not complete its final write
 or one that could not observe its group absent, still need verified keeper and
 group absence. On
-Linux that requires a matching [PID context](#pid-context-unreleased), so after
+Linux that requires a matching [PID context](#pid-context), so after
 a reboot or from another PID namespace such records, and their retry keys, stay
-until the user removes them, unless their [boot context](#boot-context-unreleased-source)
+until the user removes them, unless their [boot context](#boot-context)
 proves an earlier boot of the same machine. Failed launches recorded by the CLI
 without any supervisor PID remain collectable. A keeper may collect its own record only
 after its final write and socket cleanup. Collection never signals processes. A verified candidate is atomically renamed into a reserved private
@@ -381,7 +383,7 @@ Repeated stop while stopping polls existing state instead of waiting for an idle
 shutdown socket. A transport failure racing with shutdown is reconciled against
 the latest record; extensions are never automatically replayed.
 
-Bulk stop (`stop --all`, available from v0.1.5) is a client-side fan-out over the same
+Bulk stop (`stop --all`) is a client-side fan-out over the same
 per-job sockets, not a new service. It takes the root launch lock only while
 scanning records, which orders the snapshot after in-flight launches and with
 collection; the lock is released before any control, so keepers can still finish.
@@ -415,8 +417,9 @@ This accounts for output emitted after TERM without making the guardian perform
 its final capture snapshot before the grace period.
 
 <a id="readiness-observation-unreleased-source"></a>
+<a id="readiness-observation-v016-and-later"></a>
 
-## Readiness observation (v0.1.6 and later)
+## Readiness observation
 
 `run --wait-for-port/--wait-for-log` is a CLI-side observation after launch, not
 lifecycle state. The launch lock is released before waiting. Lifecycle authority

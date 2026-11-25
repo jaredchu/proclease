@@ -166,7 +166,7 @@ and reports why:
 - `run` creates and binds a temporary control socket before reserving a job.
   When that fails, nothing launches, no record is written and the retry key
   stays unused.
-- Linux keepers save an opaque [PID context](architecture.md#pid-context-unreleased).
+- Linux keepers save an opaque [PID context](architecture.md#pid-context).
   A later call in another or unverifiable context never probes saved PIDs to
   infer shutdown, to collect history or to attribute metrics. Its `unknown`
   error names the connect failure and the PID-context mismatch. A `stopping`
@@ -275,7 +275,7 @@ own-user proc entries. That is observed absence, not control-protocol
 finalization; the records remain protected. No saved PID was signalled and no
 record was rewritten to manufacture completion. Earlier test histories were
 untouched. These results establish session-scoped control only, with the
-[documented lifetime and trust limits](architecture.md#foreground-sessions-unreleased-source).
+[documented lifetime and trust limits](architecture.md#foreground-sessions).
 
 After the blocked-output signal correction, a second run used the
 [corrected 96-test source and native binary](verification.md#foreground-sessions-and-file-control-unreleased-source-2026-11-12)

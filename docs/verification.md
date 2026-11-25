@@ -1437,6 +1437,30 @@ passed as a type check for both macOS targets. After the review fixes merged,
 the combined source passed formatting, Clippy and all 102 tests (36 unit,
 66 integration) twice on Linux x86_64.
 
+## Documentation trim (unreleased source), 2026-11-25
+
+Review item #7: the README described features through per-version prose
+("Available in v0.1.6 and later", "From v0.1.8", "In unreleased source after
+v0.1.10"), and the project context had grown into a release log with a stale
+"Version 0.1.9 is published" open question.
+
+- The README now states current behavior. A version-notes table lists the
+  release that introduced each feature or behavior change, including the
+  unreleased review changes, and links the per-release notes. Versions remain
+  only where they describe older binaries or records.
+- The project context keeps every decision and the progress tree. Its current
+  state is a short summary with a per-release evidence index; a scripted check
+  confirmed that every link in the previous text is still present.
+- Version- and "unreleased"-labelled headings in the architecture and README are
+  plain. Each previous anchor ID, explicit or generated from the old heading,
+  remains as an alias, so links from the website, published archives and
+  historical verification entries still resolve.
+- A scripted check resolved every relative and `blob/main` link and anchor in
+  the README, project context, architecture, compatibility matrix and skill.
+
+Limits: docs only; no code, test or website change. Historical verification
+entries and release notes keep their original wording and anchors.
+
 ## Limits
 
 No direct system sleep/wake, clock-change or simultaneous destruction of both

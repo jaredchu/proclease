@@ -86,7 +86,7 @@ verification limits.
 - **Selected, 2026-11-12:** treat the restricted Linux Codex and strict-Claude
   profiles as unsupported, not as targets for a workaround. Version 0.1.8
   adds a fail-closed control-socket preflight and a Linux
-  [PID context](architecture.md#pid-context-unreleased). The PID context stops
+  [PID context](architecture.md#pid-context). The PID context stops
   saved PIDs from another or unverifiable context being probed, used to infer
   shutdown or collect history, or used for metrics. Legacy Linux records fail
   closed the same way. A foreground mode was deferred from that defensive
@@ -104,7 +104,7 @@ verification limits.
   Bash task retains the foreground invocation. It ends with the session or
   lease; it does not promise supervision after client/sandbox exit. File
   controls do not expose application ports across private network namespaces.
-  See [the architecture](architecture.md#foreground-sessions-unreleased-source)
+  See [the architecture](architecture.md#foreground-sessions)
   and [the scoped client results](agent-compatibility.md#session-scoped-foreground-mode-unreleased-source-2026-11-12).
 - **Owner-authorized, 2026-11-13:** run expiry, failure-handling and retry
   experiments on the published v0.1.9 binaries on native macOS and Linux, and
@@ -126,46 +126,76 @@ verification limits.
   `running` jobs whose supervisors and command are observed absent, end the
   shutdown grace once the group has exited, replace `fs2` with standard-library
   file locks, and cap launch-metadata grace everywhere. Not yet released. See
-  [boot context](architecture.md#boot-context-unreleased-source) and
+  [boot context](architecture.md#boot-context) and
   [verification](verification.md#review-fixes-unreleased-source-2026-11-25).
 - **Owner-requested, 2026-11-25:** review cleanups: escape bidirectional
   formatting characters in terminal output, read process groups once per
   resource sample, and move the `run` command out of `main.rs`. Not yet
   released; see
   [verification](verification.md#review-cleanups-unreleased-source-2026-11-25).
+- **Owner-requested, 2026-11-25:** keep the README and project context to
+  current behavior: per-release feature notes move to a README version table
+  and [docs/releases](releases/), release history to a linked index, and
+  version-labelled anchors become plain ones with the old IDs kept as aliases.
+  Done by hand; the context-docs skill was not available in that session. See
+  [verification](verification.md#documentation-trim-unreleased-source-2026-11-25).
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
   proxying, auto-restart and hosted dashboards.
 
 ## Current state and progress
 
-The [v0.1.10 experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.10) packages the
-[updated skill guidance](../skills/proclease/SKILL.md), which carries the job
-ID and registry identity across Codex and Claude Code sessions. For a fixed
-cleanup selection it previews candidates, then stops the authorized jobs by
-ID. A bulk stop selects the matching set again when applied. The CLI's
-existing lifecycle behavior supplies both operations. The installer and
-website source pin v0.1.10. The [release workflow](https://github.com/jaredchu/proclease/actions/runs/44982560907)
+**Released.** The [v0.1.10 experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.10)
+is current on GitHub. Its [release workflow](https://github.com/jaredchu/proclease/actions/runs/44982560907)
 verified four native archives, including expiry and installer checksum
-rejection. The crates.io install command still uses v0.1.9.
+rejection, and the installer and website pin it. It packages the
+[updated skill guidance](../skills/proclease/SKILL.md), which carries the job ID
+and registry identity across Codex and Claude Code sessions and stops a fixed
+cleanup selection by ID after previewing it. crates.io and docs.rs carry v0.1.9,
+so the `cargo install` command still names it. Notes for each release are in
+[docs/releases](releases/).
 
-The earlier owner-requested v0.1.8 release is published on GitHub and crates.io, with a
-docs.rs overview, four verified native archives and matching live website pins.
-The published runtime and tests match reviewed `ef77123`; no host sandbox restriction
-was relaxed. Fresh binary and default Rust 1.89 registry installations passed
-explicit reuse and expiry checks. See [publication evidence](verification.md#v018-publication-2026-11-12)
-and [the release notes](releases/v0.1.8.md).
+**Unreleased on main.** The 2026-11-25 independent review added
+[boot context](architecture.md#boot-context) reconciliation of earlier-boot and
+absent-supervisor records, an early end to the shutdown grace,
+standard-library file locks, capped metadata grace, foreground signals recorded
+as requested stops, escaped bidirectional formatting characters, a single
+process-group read per resource sample, the `run` and `foreground` modules,
+SHA-pinned workflow actions, signed release provenance and Dependabot pin
+updates; Dependabot has since moved several pins to their v7 releases. Evidence: [review fixes](verification.md#review-fixes-unreleased-source-2026-11-25),
+[foreground signal stop](verification.md#foreground-signal-stop-unreleased-source-2026-11-25),
+[pinned actions and provenance](verification.md#pinned-actions-and-build-provenance-unreleased-source-2026-11-25)
+and [review cleanups](verification.md#review-cleanups-unreleased-source-2026-11-25).
+The provenance step first runs at the next version tag.
 
-The **v0.1.9 experimental prerelease** packages `run --foreground` with file
-controls from reviewed `88b5ea7`, with version metadata at `5d0c47b`. Four native
-archives, crates.io source, a docs.rs overview and matching website pins were
-published for v0.1.9. Its predecessor v0.1.8 predates this feature. All 96 tests pass
-on all four native release targets, and default Rust 1.89 packaged-source and
-registry installations pass. See [the release notes](releases/v0.1.9.md) and
-[publication verification](verification.md#v019-publication-2026-11-12). Both tested restricted Linux clients passed
-cross-call file controls, explicit extension/reuse, stop and expiry with native
-execution tasks. Early client exits can still leave `unknown` records; strict
-Claude's private localhost still prevents cross-call HTTP access. See
-[verification](verification.md#foreground-sessions-and-file-control-unreleased-source-2026-11-12).
+**Compatibility.** The [agent compatibility matrix](agent-compatibility.md)
+records scoped results. In the tested macOS Codex/Claude sandbox profiles, the
+Vite lifecycle passed with v0.1.7, and `run --reuse` with the Next.js polling
+opt-in then passed the retry and Next.js workflow, with a recorded Claude
+observer protocol deviation. On native Linux the default-Claude workflow
+passed; the tested Codex and strict-Claude profiles are
+[unsupported in default mode](agent-compatibility.md#native-linux-results-2026-11-12),
+with fail-closed [diagnostics](verification.md#linux-sandbox-diagnostics-unreleased-source-2026-11-12)
+and unverified Codex control state retained. Session-scoped foreground mode
+passed cross-call file controls, explicit extension and reuse, stop and expiry
+in both; early client exits can still leave `unknown` records, and strict
+Claude's private localhost still prevents cross-call HTTP access
+([verification](verification.md#foreground-sessions-and-file-control-unreleased-source-2026-11-12)).
+A comparative benchmark is needed before claiming measured superiority over
+another supervisor.
+
+**Lifecycle experiments.** On 2026-11-13, scripted
+[lifecycle experiments](experiments/v0.1.9/README.md) ran the published v0.1.9
+binaries 30 times per scenario on native macOS arm64 and Linux x86_64. Detached
+and foreground expiry, keeper/guardian SIGKILL, foreground SIGINT with blocked
+stdout, sequential and eight-way concurrent keyed retries, changed-environment
+`--reuse`, changed-command rejection and retries of expired jobs passed all
+1,020 product trials, and 120 observer control trials passed: 1,140 in the
+primary series under [protocol version 2](experiments/v0.1.9/protocol.md),
+which treats `ps` failures as errors and never counts a live PID without the
+trial token as stopped. A superseded protocol version 1 series also passed
+1,140 trials and stays published. These are host CLI tests, not agent sessions
+or a benchmark. The website's static `/experiments/` summary is checked at its
+directory URL, as documented in the [website README](../website/README.md#pages).
 
 ```text
 Goal: a usable ProcLease CLI, shared skill and public first release
@@ -225,137 +255,58 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- SOURCE  Foreground signals recorded as requested stops
 |-- SOURCE  Pinned actions, archive handoff checks and signed release provenance
 |-- SOURCE  Review fixes: earlier-boot reconciliation, early grace end, std locks
-`-- SOURCE  Review cleanups: bidi escaping, single group read, run module
+|-- SOURCE  Review cleanups: bidi escaping, single group read, run module
+`-- SOURCE  README and context trimmed to current behavior; release index
 ```
 
-On 2026-11-13, scripted [lifecycle experiments](experiments/v0.1.9/README.md)
-ran the published v0.1.9 binaries 30 times per scenario on native macOS arm64
-and Linux x86_64. Detached and foreground expiry, keeper/guardian SIGKILL,
-foreground SIGINT with blocked stdout, sequential and eight-way concurrent
-keyed retries, changed-environment `--reuse`, changed-command rejection and
-retries of expired jobs passed all 1,020 product trials. Another 120 observer
-control trials passed; the primary total is 1,140 across both platforms.
-Independent process and port observation judged cleanup. The primary series uses
-[protocol version 2](experiments/v0.1.9/protocol.md). It treats `ps` failures as
-errors and never counts a live PID without the trial token as stopped. An earlier
-protocol version 1 series also passed 1,140 trials and stays published
-separately as superseded evidence. These are host CLI tests, not agent sessions
-or a benchmark; the report lists limits. The website sources include a static
-`/experiments/` summary. The workflow's live-file check requests that directory
-URL for `experiments/index.html`, as documented in the
-[website README](../website/README.md#pages).
+**Release history.** Evidence for each step is in [verification](verification.md):
 
-The [v0.1.5 publication](verification.md#v015-publication-2026-11-08) packages bulk
-stop and its retention correction with matching installer, shared skill and live
-website pins. Four native builds passed all 51 tests; fresh binary and default
-Rust 1.89 registry installations passed scoped bulk-stop and expiry checks.
+- v0.1.3: [startup and retry corrections](verification.md#startup-and-retry-corrections-2026-11-07)
+  and [publication](verification.md#v013-publication-2026-11-07) at `bdbe785`.
+  A test-teardown race was
+  [corrected in the fixtures](verification.md#fixture-teardown-residue-2026-11-07)
+  without changing production code.
+- v0.1.4: the [Cargo 1.89 build-time stripping fix](verification.md#cargo-189-build-time-stripping-fix-2026-11-07)
+  and [publication](verification.md#v014-publication-2026-11-07); older 0.1.3
+  registry users retain its documented caveat. A later
+  [teardown-test observation race](verification.md#teardown-regression-observation-2026-11-07)
+  was corrected in test source only.
+- v0.1.5: [bulk `stop --all`](verification.md#bulk-stop-unreleased-source-2026-11-07)
+  with its [retention-race correction](verification.md#correction-retention-race-during-bulk-stop-2026-11-07)
+  and [publication](verification.md#v015-publication-2026-11-08).
+- v0.1.6: [readiness wait and the tool comparison](verification.md#readiness-wait-and-comparison-unreleased-source-2026-11-08)
+  ([comparison](comparison.md)) and [publication](verification.md#v016-publication-2026-11-08).
+- v0.1.7: [interrupted-history default views](verification.md#interrupted-history-default-views-2026-11-11)
+  and [publication](verification.md#v017-publication-2026-11-11).
+- v0.1.8: `run --reuse`, socket preflight, Linux PID context and
+  keeper-finalized retention, released from reviewed `ef77123`
+  ([publication](verification.md#v018-publication-2026-11-12),
+  [notes](releases/v0.1.8.md)).
+- v0.1.9: `run --foreground` with file controls from reviewed `88b5ea7`, with
+  version metadata at `5d0c47b` ([publication](verification.md#v019-publication-2026-11-12),
+  [notes](releases/v0.1.9.md)).
+- v0.1.10: skill handoff and exact-ID cleanup guidance.
 
-The initial implementation is public. Hosted macOS and Ubuntu checks pass;
-[verification](verification.md) records evidence and limits, including a real
-Codex preview session and the corrected registry-selection guidance. The
-[agent compatibility matrix](agent-compatibility.md) records scoped macOS
-Codex/Claude sandbox results: v0.1.7 Vite lifecycle passes with retry/Next.js
-failures, then passes of the unreleased `run --reuse` and Next.js polling
-workflow in the same profiles, with a recorded Claude observer protocol
-deviation. Native Linux default-Claude
-workflow checks passed; tested Codex and strict-Claude sandbox profiles are
-blocked, with unverified Codex control state retained. Pre-release
-[fail-closed diagnostics](verification.md#linux-sandbox-diagnostics-unreleased-source-2026-11-12)
-for those profiles first passed 76 tests in an initial candidate, which review
-then corrected. The corrected source passed formatting, Clippy with warnings
-denied, all 81 tests and an optimized build directly on macOS and natively on
-Linux. In the initial and final
-[native Linux diagnostic checks](agent-compatibility.md#native-linux-results-2026-11-12),
-strict Claude launched nothing after the socket denial, and Codex's later call
-reported `unknown` with the PID-context explanation. The final host check
-served the HTTP marker, expired with the keeper-finalized marker and closed its
-port. These are not workflow passes: both profiles remain unsupported, Codex
-control-protocol cleanup is unverified, and neither the default-Claude Linux
-nor the macOS real-client Vite/Next.js workflow was rerun with this source.
-These corrections are now distributed in v0.1.8; publication does not expand
-the measured real-agent compatibility scope.
-A comparative benchmark
-is needed before claiming measured superiority over another supervisor. The v0.1.3
-[startup and retry corrections](verification.md#startup-and-retry-corrections-2026-11-07)
-record their regressions and current verification limits. A test-teardown race
-that left partial fixture directories is
-[corrected in the test fixtures](verification.md#fixture-teardown-residue-2026-11-07);
-production lifecycle code was unchanged.
-The [v0.1.3 publication](verification.md#v013-publication-2026-11-07) records
-the release at `bdbe785`, verified assets, the main-branch fast-forward and
-anonymous HTTPS checks of the deployed website and installer.
-The website sources now include a lease-ring identity, a readable fluid type
-scale, em-dash-free copy and source-backed search metadata.
-[Website verification](verification.md#website-refresh-2026-11-07) records
-the original responsive checks; the later
-[controls correction](verification.md#registry-and-website-controls-2026-11-07)
-resolves the enlarged-text selector limitation and records the earlier narrow
-arrow removal. The later [Tabler SVG update](verification.md#tabler-interface-icons-2026-11-07)
-restores those interface arrows as SVGs and standardizes the other UI icons,
-with browser checks and locally bundled source/license provenance.
-[Design and SEO/GEO decisions](../website/README.md#identity-and-type) describe
-the implementation and supporting sources. The refresh is live on proclease.com.
-The [v0.1.4 publication](verification.md#v014-publication-2026-11-07) delivered the
-Cargo 1.89 build-time stripping fix without changing runtime behavior. Native
-archives, registry checksum/default installation, docs.rs and the matching live
-website were verified. Older 0.1.3 registry users retain its documented caveat.
-A subsequent [teardown-test observation race](verification.md#teardown-regression-observation-2026-11-07)
-is corrected in main's test source; published v0.1.4 bytes remain unchanged.
-User-authorized bulk `stop --all` with exact owner/task filters, dry run and an
-aggregate JSON envelope is reviewed and released in v0.1.5. It is not in v0.1.4.
-The initial review findings are resolved; hosted stable macOS/Ubuntu checks
-and both Rust 1.89 package installations pass.
-The [verification](verification.md#bulk-stop-unreleased-source-2026-11-07)
-records its tests and limits. A later probe found that completion retention could
-collect selected records before results were read; a
-[source correction](verification.md#correction-retention-race-during-bulk-stop-2026-11-07)
-adds a reviewed process-lifetime retention lock and regressions. All 51 tests,
-formatting, Clippy and optimized builds pass locally and in hosted macOS/Ubuntu
-checks; both default Rust 1.89 package installations pass.
-
-Owner-authorized and released in v0.1.6 on 2026-11-08: optional `run --wait-for-port`,
-`--wait-for-log` and `--wait-timeout` readiness observation, with no lease,
-ownership or health effect. The interface uses loopback-only TCP, literal text, a
-30s default and a 5m maximum. The same task added a source-backed
-[comparison](comparison.md) with GNU timeout, systemd-run and rentctl and a
-revised homepage intro and FAQ linking it. Readiness is absent from v0.1.5.
-The homepage changes were published by the first automatic website deployment
-without a new release. The [v0.1.6 publication](verification.md#v016-publication-2026-11-08) ships
-readiness with matching installer, downloads and skill guidance. Four native
-builds passed all 62 tests; fresh binary and default Rust 1.89 registry installs
-passed readiness, keyed-retry/deadline and expiry checks. The main push deployed
-the website automatically and all twelve live files matched the release commit.
-[Verification](verification.md#readiness-wait-and-comparison-unreleased-source-2026-11-08)
-records 62 local tests, default Rust 1.89 package installation, independent review
-and browser checks, with their limits.
-
-[Automatic website deployment](verification.md#website-automatic-deployment-2026-11-08)
-is configured and verified by its first hosted main-push run, which published
-the homepage changes and matched all twelve live files to the commit. A freshness
-check skips runs whose commit is no longer the head of main; the production
-environment and scoped environment secrets restrict publication to main.
+**Website and repository.** The website deploys
+[automatically from current main](verification.md#website-automatic-deployment-2026-11-08);
+a freshness check skips runs whose commit is no longer the head of main, and
+the production environment and scoped secrets restrict publication to main.
+The lease-ring identity, fluid type scale and source-backed search metadata
+are described in the [design and SEO/GEO decisions](../website/README.md#identity-and-type),
+with [website](verification.md#website-refresh-2026-11-07),
+[controls](verification.md#registry-and-website-controls-2026-11-07) and
+[Tabler icon](verification.md#tabler-interface-icons-2026-11-07) verification.
+The [GitHub discovery metadata](github-discovery.md) records the repository
+description, eleven topics and a custom social preview verified on 2026-11-09;
+no search-ranking or traffic improvement has been measured.
 
 The recent-job window and resource presentation are implementation choices for
-terminal usability. Resource reads never extend leases.
-See [resource units and limits](../README.md#resource-usage).
-The [interrupted-history correction](verification.md#interrupted-history-default-views-2026-11-11)
-is released in v0.1.7. Once both keeper and managed group are verified absent,
-a saved shutdown record uses its last lifecycle-write time for the default
-recent-job window. Exact completion time remains unknown; metadata, JSON and
-conservative retention are unchanged. Published v0.1.6 builds do not include
-this correction.
-The [v0.1.7 publication](verification.md#v017-publication-2026-11-11) records
-four native builds, matching package provenance, default Rust 1.89 registry
-installation, the live website and fresh installer verification.
+terminal usability; resource reads never extend leases. See
+[resource units and limits](../README.md#resource-usage).
 
 Context maintenance is adopted in `AGENTS.md`, reached by `CLAUDE.md` import.
 Instruction-discovery evidence and limits are recorded in
 [verification](verification.md#completed-checks).
-
-The [GitHub discovery metadata](github-discovery.md) records the repository
-description, eleven relevant topics and a custom social preview verified on
-2026-11-09. These GitHub settings are maintained separately from the website;
-no search-ranking or traffic improvement has been measured.
 
 ## Canonical references
 
@@ -382,9 +333,8 @@ no search-ranking or traffic improvement has been measured.
   [matrix](agent-compatibility.md) preserves the historical rows and separates
   this session-scoped result from full application/client-exit compatibility.
   Untested profiles still need direct testing.
-- Version 0.1.9 is published through
-  the [release procedure](releasing.md). Same-user local control is not
-  authenticated agent identity. The file queue's admission check is per client,
+- Releases follow the [release procedure](releasing.md). Same-user local
+  control is not authenticated agent identity. The file queue's admission check is per client,
   not an atomic global cap; the protocol relies on private same-user state.
 - macOS Developer ID signing/notarization is deferred for experimental releases
   and required before promotion to stable. See the
