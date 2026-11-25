@@ -34,7 +34,17 @@ to discover a new skill.
 For manual installation, download an archive from the
 [experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.10),
 verify it against `SHA256SUMS`, extract it and place `proclease` on PATH. Each
-archive includes the skill, README and MIT license. See the
+archive includes the skill, README and MIT license. Releases drafted after
+v0.1.10 also carry signed GitHub build provenance for every archive and the
+installer. With the GitHub CLI, confirm that a download was built by this
+repository's release workflow:
+
+```sh
+gh attestation verify proclease-VERSION-TARGET.tar.gz --repo jaredchu/proclease \
+  --signer-workflow jaredchu/proclease/.github/workflows/release.yml
+```
+
+v0.1.10 and earlier releases have checksums only. See the
 [release notes](https://github.com/jaredchu/proclease/blob/v0.1.10/docs/releases/v0.1.10.md)
 for tested platforms and signing limits.
 

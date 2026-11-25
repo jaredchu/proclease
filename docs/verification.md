@@ -1348,6 +1348,30 @@ request, so such a signal finishes the job `stopped` with reason `requested`.
 Limits: a signal whose handler cannot take the session lock within its bound
 exits without sending the request, which is then recorded as lost supervision.
 
+## Pinned actions and build provenance (unreleased source), 2026-11-25
+
+Review item #6: every workflow action is now pinned to a full commit SHA, and
+the tag-only draft job signs SLSA build provenance for the four archives and
+`install.sh` with `actions/attest` before drafting the release.
+
+- Each pin is the commit its previously used moving tag resolved to on
+  2026-11-25 (`actions/checkout` v4.4.0, `setup-python` v5.6.0,
+  `upload-artifact` v4.6.2, `download-artifact` v4.3.0, `setup-node` v4.4.0),
+  so job behavior is unchanged. `dtolnay/rust-toolchain` is pinned to a
+  `master` commit; stable jobs now pass `toolchain: stable`, which is what the
+  `stable` branch defaulted to.
+- The website deployment job's existing pins are unchanged.
+- `.github/dependabot.yml` enables weekly `github-actions` version updates with
+  a seven-day cooldown, minor and patch updates grouped, and major versions in
+  separate pull requests. It takes effect once merged to the default branch.
+
+The pull request passed CI, the four native package builds, website static
+checks and GitHub's Dependabot configuration check. The draft-release job and
+website deployment were skipped on the pull request. The next version-tag run
+will exercise attestation. Dependabot starts proposing updates after the config
+reaches the default branch. Update the branch-pinned `dtolnay/rust-toolchain`
+manually.
+
 ## Review cleanups (unreleased source), 2026-11-25
 
 Review item #8, three small changes without new features:
