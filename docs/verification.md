@@ -1602,3 +1602,46 @@ main-only deployment gate. Workflow YAML parsing and representative URL mappings
 passed. The unchanged Rust source separately passed formatting, Clippy with
 warnings denied and all 96 tests; these are regression checks, distinct from
 the published-binary measurements above.
+
+## v0.1.11 publication, 2026-11-25
+
+The owner-requested v0.1.11 experimental prerelease packages the 2026-11-25
+review changes from candidate commit `ed015a3` on `release-v0.1.11`, tagged
+`v0.1.11` (annotated) and published as a prerelease at 2026-11-25T07:07:17Z.
+See the [release notes](releases/v0.1.11.md).
+
+- Candidate, locally on Linux x86_64 with stable Rust 1.100: formatting, Clippy
+  with warnings denied (also as a macOS type check), all 102 tests, an
+  optimized build reporting `proclease 0.1.11`, packaging, the extracted-archive
+  expiry smoke test and the installer checks passed. The website checks,
+  `node --check` of `app.js`, `sh -n install.sh` and the byte-identical
+  installer mirror passed.
+- A branch [dispatch](https://github.com/jaredchu/proclease/actions/runs/45559967586)
+  built and tested all four native archives and passed the read-only artifact
+  handoff check, without a draft. The candidate's Rust checks also passed.
+- The [tag run](https://github.com/jaredchu/proclease/actions/runs/45560440633)
+  first failed one test on macOS ARM64: `grace_window_controls_return_lifecycle_results`
+  missed its 700 ms `stopping` window between `list` polls on a slow runner,
+  while the same commit passed it on every other target and in the dispatch.
+  Re-running the failed job passed all four builds, signed provenance and
+  created the draft. The test's window should be widened on main.
+- The draft's combined `SHA256SUMS` and each archive's `.sha256` matched.
+  `gh attestation verify` with this repository and the release workflow as
+  signer verified all four archives and `install.sh`: source ref
+  `refs/tags/v0.1.11`, commit `ed015a3`, GitHub-hosted runners. `install.sh`
+  and the packaged README, skill and license were byte-identical to the
+  candidate commit.
+- Both Linux binaries are stripped ELF executables. Both macOS binaries have
+  170 symbol-table entries, against 169 in v0.1.10, consistent with stripped
+  binaries keeping only dynamic imports; the tag logs show no strip failure.
+- The draft Linux x86_64 archive passed the smoke test and installer checks.
+- After publication, anonymous HTTPS downloads of `install.sh`, `SHA256SUMS`
+  and two archives returned 200 and matched the verified checksums and
+  installer. The public installer, run with an isolated `HOME` and
+  `--skills both`, installed `proclease 0.1.11`, linked the skill for both
+  hosts, and a test job recorded `boot_context`, expired at its deadline and
+  was finalized by its keeper.
+
+Limits: macOS archives were runtime-tested only by the hosted native builds.
+The live website changes when the candidate is merged to main. crates.io and
+docs.rs remain at v0.1.9.
