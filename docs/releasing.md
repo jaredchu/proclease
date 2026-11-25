@@ -46,8 +46,12 @@ For a new release:
 
 Workflow actions are pinned to full commit SHAs, with the release tag in a
 trailing comment; `dtolnay/rust-toolchain` is pinned to a `master` commit with
-an explicit `toolchain`. Update a pin deliberately: resolve the new tag to its
-commit, review the change and update every workflow that uses that action.
+an explicit `toolchain`. [Dependabot](../.github/dependabot.yml) proposes
+weekly pull requests that update tagged pins and their comments, after a
+seven-day cooldown, grouping minor and patch updates and keeping major versions
+separate. Review those like any change; CI must pass. Dependabot does not track
+the branch-pinned `dtolnay/rust-toolchain`, so update that pin by hand: resolve
+the new commit, review the change and update every workflow that uses it.
 Provenance is signed with a short-lived certificate from the public Sigstore
 instance and stored by GitHub's attestations API; the draft job alone holds
 `id-token: write` and `attestations: write`.

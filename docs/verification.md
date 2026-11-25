@@ -1342,10 +1342,15 @@ the tag-only draft job signs SLSA build provenance for the four archives and
   `master` commit; stable jobs now pass `toolchain: stable`, which is what the
   `stable` branch defaulted to.
 - The website deployment job's existing pins are unchanged.
+- `.github/dependabot.yml` enables weekly `github-actions` version updates with
+  a seven-day cooldown, minor and patch updates grouped, and major versions in
+  separate pull requests. It takes effect once merged to the default branch.
 
 Limits: the attestation step runs only on a version tag, so it is first
 exercised by the next release; pull-request runs validate the workflow files
-and every other job. `actionlint` was not run locally.
+and every other job. `actionlint` was not run locally. Dependabot's
+configuration is validated by GitHub only after merge; it does not update the
+branch-pinned `dtolnay/rust-toolchain`.
 
 ## Limits
 

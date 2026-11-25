@@ -112,7 +112,8 @@ verification limits.
   The harness is a public, standard-library black-box tool; raw diagnostics
   stay private. See [the experiments](experiments/v0.1.9/README.md).
 - **Owner-requested, 2026-11-25:** pin every workflow action to a commit SHA
-  and sign build provenance for release archives and the installer. Not yet
+  and sign build provenance for release archives and the installer, with
+  Dependabot proposing weekly pin updates. Not yet
   released; see the [release procedure](releasing.md) and
   [verification](verification.md#pinned-actions-and-build-provenance-unreleased-source-2026-11-25).
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse

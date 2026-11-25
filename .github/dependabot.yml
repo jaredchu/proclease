@@ -1,0 +1,22 @@
+# Keeps the commit-SHA pins in .github/workflows current. Dependabot updates
+# each pinned SHA together with its trailing version comment. Every update is
+# an ordinary pull request that must pass CI and review before it is merged.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # Let new releases age before they are proposed, so a compromised or
+    # quickly withdrawn release is less likely to be picked up.
+    cooldown:
+      default-days: 7
+    groups:
+      # Minor and patch updates share one pull request; major versions,
+      # which can change behavior, stay separate.
+      actions:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: ci
