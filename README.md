@@ -325,7 +325,8 @@ output is drained and discarded so neither disk usage nor a blocked output pipe
 can grow indefinitely. Status and log output expose `logs_truncated`, including
 output discarded during shutdown. Set
 `--log-limit BYTES` at launch, up to 16 MiB. Terminal control characters are escaped
-when displaying logs. Logs and argv may contain private application data; keep the
+when displaying logs; unreleased source after v0.1.10 also escapes Unicode
+bidirectional formatting characters, which can visually reorder text. Logs and argv may contain private application data; keep the
 state directory out of repositories. Full environment values are not persisted.
 Confirmed finished metadata and logs are automatically removed after **24 hours**
 or beyond the **100 newest finished jobs**, whichever comes first. Collection runs

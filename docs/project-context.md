@@ -116,6 +116,11 @@ verification limits.
   a one-byte stop request on the existing liveness pipes. Killing the
   invocation stays lost supervision. Not yet released; see
   [verification](verification.md#foreground-signal-stop-unreleased-source-2026-11-25).
+- **Owner-requested, 2026-11-25:** review cleanups: escape bidirectional
+  formatting characters in terminal output, read process groups once per
+  resource sample, and move the `run` command out of `main.rs`. Not yet
+  released; see
+  [verification](verification.md#review-cleanups-unreleased-source-2026-11-25).
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
   proxying, auto-restart and hosted dashboards.
 
@@ -205,7 +210,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- DONE    Reproducible report and static experiments page, with versioned methods and data
 |-- SOURCE  Skill handoff and exact-ID cleanup guidance
 |-- DONE    v0.1.10 GitHub prerelease and four native archives verified
-`-- SOURCE  Foreground signals recorded as requested stops
+|-- SOURCE  Foreground signals recorded as requested stops
+`-- SOURCE  Review cleanups: bidi escaping, single group read, run module
 ```
 
 On 2026-11-13, scripted [lifecycle experiments](experiments/v0.1.9/README.md)
