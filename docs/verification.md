@@ -1621,10 +1621,10 @@ See the [release notes](releases/v0.1.11.md).
   handoff check, without a draft. The candidate's Rust checks also passed.
 - The [tag run](https://github.com/jaredchu/proclease/actions/runs/45560440633)
   first failed one test on macOS ARM64: `grace_window_controls_return_lifecycle_results`
-  missed its 700 ms `stopping` window between `list` polls on a slow runner,
-  while the same commit passed it on every other target and in the dispatch.
-  Re-running the failed job passed all four builds, signed provenance and
-  created the draft. The test's window should be widened on main.
+  timed out waiting to observe `stopping` during a 700 ms grace window. The
+  same commit passed on every other target and in the dispatch. Re-running the
+  failed job passed all four builds, signed provenance and created the draft.
+  See the [shutdown test correction](#v0111-registry-publication-and-shutdown-test-2026-11-25).
 - The draft's combined `SHA256SUMS` and each archive's `.sha256` matched.
   `gh attestation verify` with this repository and the release workflow as
   signer verified all four archives and `install.sh`: source ref
@@ -1643,5 +1643,25 @@ See the [release notes](releases/v0.1.11.md).
   was finalized by its keeper.
 
 Limits: macOS archives were runtime-tested only by the hosted native builds.
-The live website changes when the candidate is merged to main. crates.io and
-docs.rs remain at v0.1.9.
+The candidate merged in [PR #13](https://github.com/jaredchu/proclease/pull/13).
+The [website workflow](https://github.com/jaredchu/proclease/actions/runs/45567907995)
+verified all 14 live files against main at `cbc195c`.
+
+## v0.1.11 registry publication and shutdown test, 2026-11-25
+
+The [crates.io package](https://crates.io/crates/proclease/0.1.11) was published
+from [`crates-v0.1.11`](https://github.com/jaredchu/proclease/tree/crates-v0.1.11),
+commit `d97743c`. Its source, tests, skill, original manifest, lockfile and
+license match the GitHub v0.1.11 release tag byte for byte. Its README pins
+Cargo installation to 0.1.11. The public download matched the prepared archive
+and the registry SHA-256
+`47445a4e12e805067a1320f3091d544ca76d961d5e779739f13ed19f6a49bc50`.
+Packaging and the publication dry run passed. All 102 locked tests passed in
+the extracted package on macOS ARM64 with Rust 1.89.0.
+
+The shutdown grace test now waits for the fixture to ignore TERM before issuing
+its first stop, uses a three-second grace window and reads the atomic record
+directly to observe the transient `stopping` state. The extend and repeated-stop
+assertions still go through the CLI. Formatting, Clippy with warnings denied,
+all 102 locked tests and five additional runs of the corrected test passed
+locally on macOS ARM64.

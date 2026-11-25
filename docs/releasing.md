@@ -120,8 +120,9 @@ runs `cargo rustdoc --lib`.
 ProcLease has only a binary target, so docs.rs shows a crate overview,
 README and source rather than an API. No docs.rs metadata is configured.
 
-Current registry release: [proclease 0.1.9](https://crates.io/crates/proclease/0.1.9),
-with a [docs.rs crate overview](https://docs.rs/crate/proclease/0.1.9).
+The current registry release is [proclease 0.1.11](https://crates.io/crates/proclease/0.1.11).
+Its [publication record](verification.md#v0111-registry-publication-and-shutdown-test-2026-11-25)
+records the verified source and package provenance.
 The [v0.1.9 publication](verification.md#v019-publication-2026-11-12) records
 session-scoped foreground/file control, four native builds, verified package
 provenance and fresh foreground/default-mode installation checks.

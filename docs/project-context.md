@@ -143,8 +143,8 @@ verification limits.
   prerelease from the reviewed changes on main, following the
   [release procedure](releasing.md). Tagging, publishing the draft, merging
   the candidate and any crates.io publication each wait for the owner. The
-  owner approved tagging and publication; v0.1.11 was published on 2026-11-25.
-  crates.io publication has not been requested.
+  owner approved tagging, prerelease publication and crates.io publication.
+  Both releases were published on 2026-11-25.
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
   proxying, auto-restart and hosted dashboards.
 
@@ -160,9 +160,11 @@ built and tested four native archives and signed build provenance for them and
 [v0.1.10 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.10)
 packaged the [updated skill guidance](../skills/proclease/SKILL.md), which carries
 the job ID and registry identity across Codex and Claude Code sessions and stops
-a fixed cleanup selection by ID after previewing it. crates.io and docs.rs carry
-v0.1.9, so the `cargo install` command still names it. Notes for each release are
-in [docs/releases](releases/).
+a fixed cleanup selection by ID after previewing it.
+[crates.io](https://crates.io/crates/proclease/0.1.11) also carries v0.1.11.
+Its [registry publication record](verification.md#v0111-registry-publication-and-shutdown-test-2026-11-25)
+records the source match and the follow-up shutdown test correction. Notes for
+each release are in [docs/releases](releases/).
 
 **Review changes in v0.1.11.** The 2026-11-25 independent review added
 [boot context](architecture.md#boot-context) reconciliation of earlier-boot and
@@ -266,7 +268,9 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- SOURCE  Review fixes: earlier-boot reconciliation, early grace end, std locks
 |-- SOURCE  Review cleanups: bidi escaping, single group read, run module
 |-- SOURCE  README and context trimmed to current behavior; release index
-`-- DONE    v0.1.11 GitHub prerelease, four native archives and provenance verified
+|-- DONE    v0.1.11 GitHub prerelease, four native archives and provenance verified
+|-- DONE    v0.1.11 crates.io release and package provenance verified
+`-- FIXED   Shutdown grace test waits for readiness and observes the shutdown record
 ```
 
 **Release history.** Evidence for each step is in [verification](verification.md):
