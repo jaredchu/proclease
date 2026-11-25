@@ -1,6 +1,6 @@
 # ProcLease project context
 
-Last reviewed: 2026-11-22.
+Last reviewed: 2026-11-25.
 
 ## Purpose and scope
 
@@ -139,22 +139,32 @@ verification limits.
   version-labelled anchors become plain ones with the old IDs kept as aliases.
   Done by hand; the context-docs skill was not available in that session. See
   [verification](verification.md#documentation-trim-unreleased-source-2026-11-25).
+- **Owner-requested, 2026-11-25:** prepare the v0.1.11 experimental
+  prerelease from the reviewed changes on main, following the
+  [release procedure](releasing.md). Tagging, publishing the draft, merging
+  the candidate and any crates.io publication each wait for the owner. The
+  owner approved tagging and publication; v0.1.11 was published on 2026-11-25.
+  crates.io publication has not been requested.
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
   proxying, auto-restart and hosted dashboards.
 
 ## Current state and progress
 
-**Released.** The [v0.1.10 experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.10)
-is current on GitHub. Its [release workflow](https://github.com/jaredchu/proclease/actions/runs/44982560907)
-verified four native archives, including expiry and installer checksum
-rejection, and the installer and website pin it. It packages the
-[updated skill guidance](../skills/proclease/SKILL.md), which carries the job ID
-and registry identity across Codex and Claude Code sessions and stops a fixed
-cleanup selection by ID after previewing it. crates.io and docs.rs carry v0.1.9,
-so the `cargo install` command still names it. Notes for each release are in
-[docs/releases](releases/).
+**Released.** The [v0.1.11 experimental prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.11)
+is current on GitHub, and the installer and website pin it. Its
+[tag workflow](https://github.com/jaredchu/proclease/actions/runs/45560440633)
+built and tested four native archives and signed build provenance for them and
+`install.sh`, the first release to carry it; see
+[publication](verification.md#v0111-publication-2026-11-25) and the
+[notes](releases/v0.1.11.md). The earlier
+[v0.1.10 prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.10)
+packaged the [updated skill guidance](../skills/proclease/SKILL.md), which carries
+the job ID and registry identity across Codex and Claude Code sessions and stops
+a fixed cleanup selection by ID after previewing it. crates.io and docs.rs carry
+v0.1.9, so the `cargo install` command still names it. Notes for each release are
+in [docs/releases](releases/).
 
-**Unreleased on main.** The 2026-11-25 independent review added
+**Review changes in v0.1.11.** The 2026-11-25 independent review added
 [boot context](architecture.md#boot-context) reconciliation of earlier-boot and
 absent-supervisor records, an early end to the shutdown grace,
 standard-library file locks, capped metadata grace, foreground signals recorded
@@ -165,7 +175,6 @@ updates; Dependabot has since moved several pins to their v7 releases. Evidence:
 [foreground signal stop](verification.md#foreground-signal-stop-unreleased-source-2026-11-25),
 [pinned actions and provenance](verification.md#pinned-actions-and-build-provenance-unreleased-source-2026-11-25)
 and [review cleanups](verification.md#review-cleanups-unreleased-source-2026-11-25).
-The provenance step first runs at the next version tag.
 
 **Compatibility.** The [agent compatibility matrix](agent-compatibility.md)
 records scoped results. In the tested macOS Codex/Claude sandbox profiles, the
@@ -256,7 +265,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- SOURCE  Pinned actions, archive handoff checks and signed release provenance
 |-- SOURCE  Review fixes: earlier-boot reconciliation, early grace end, std locks
 |-- SOURCE  Review cleanups: bidi escaping, single group read, run module
-`-- SOURCE  README and context trimmed to current behavior; release index
+|-- SOURCE  README and context trimmed to current behavior; release index
+`-- DONE    v0.1.11 GitHub prerelease, four native archives and provenance verified
 ```
 
 **Release history.** Evidence for each step is in [verification](verification.md):
@@ -286,6 +296,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
   version metadata at `5d0c47b` ([publication](verification.md#v019-publication-2026-11-12),
   [notes](releases/v0.1.9.md)).
 - v0.1.10: skill handoff and exact-ID cleanup guidance.
+- v0.1.11: the review changes above ([publication](verification.md#v0111-publication-2026-11-25),
+  [notes](releases/v0.1.11.md)).
 
 **Website and repository.** The website deploys
 [automatically from current main](verification.md#website-automatic-deployment-2026-11-08);
