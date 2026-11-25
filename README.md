@@ -59,12 +59,6 @@ cargo install proclease --version 0.1.9 --locked
 proclease --version
 ```
 
-Version 0.1.4 fixes the macOS Rust/Cargo 1.89 procedural-macro loading failure
-without requiring a profile override. Only build-time helpers are left unstripped;
-the installed CLI retains stripping and thin LTO. See
-[verification](https://github.com/jaredchu/proclease/blob/main/docs/verification.md#cargo-189-build-time-stripping-fix-2026-11-07)
-for the tested scope and the older 0.1.3 caveat.
-
 To build from a Git checkout instead:
 
 ```sh
@@ -121,8 +115,7 @@ means the program spawned, not that a web endpoint is ready.
 
 ### Readiness wait
 
-Available in v0.1.6 and later. `run` can optionally wait after launch until the
-service looks ready:
+`run` can optionally wait after launch until the service looks ready:
 
 ```sh
 proclease run --task preview --wait-for-port 5173 -- npm run dev
@@ -205,12 +198,11 @@ unavailable values are `null`. An unavailable group has `resources: null`.
 - `extend --by 1h` adds one hour to the current deadline, atomically.
 - Listing, reading logs and opening the terminal view do not renew a lease.
 - On expiry, stop or command exit, the supported process group receives TERM,
-  followed by KILL after a default two-second grace. `--grace` can be set up to 10s.
-  In unreleased source after v0.1.10, the grace is an upper bound: KILL follows
-  as soon as no other live process remains in the group and captured output has
-  reached end-of-file, so a service that exits on TERM stops promptly. A group
-  that ignores TERM still gets the whole grace. If the group cannot be observed
-  reliably, the whole grace is used.
+  then KILL. The grace between them (default two seconds, `--grace` up to 10s)
+  is an upper bound: KILL follows as soon as no other live process remains in
+  the group and captured output has reached end-of-file, so a service that exits
+  on TERM stops promptly. A group that ignores TERM, or one that cannot be
+  observed reliably, gets the whole grace.
 - Elapsed wall time includes sleep. An overdue job is stopped when execution
   resumes. No process can enforce a deadline while the machine is powered off.
   If startup is delayed past the deadline, the job finishes `expired` without
@@ -225,7 +217,7 @@ unavailable values are `null`. An unavailable group has `resources: null`.
   exits nonzero. Empty interrupted-launch reservations and those containing
   only private generated atomic-write temporary files are ignored without deleting
   state; unreadable/ambiguous launch metadata still fails closed.
-- From v0.1.8: a rejected keyed retry names the differing
+- A rejected keyed retry names the differing
   fields (`command`, `directory`, `owner`, `task`, `name`, `url`, `ttl`, `grace`,
   `log limit` or `environment`), never their values. Some agent hosts change
   per-call environment variables between tool calls, so an exact retry can differ
@@ -240,9 +232,9 @@ unavailable values are `null`. An unavailable group has `resources: null`.
   reject any environment change; use `--reuse` only when keeping the original
   environment is intended. If you want the application to run with a changed
   environment, that is a new request, not a retry. `--reuse` without `--key` is
-  a parser error. Real Codex CLI and Claude Code sessions in the tested macOS
-  sandbox profiles passed this retry with a local source build; see the
-  [compatibility matrix](https://github.com/jaredchu/proclease/blob/main/docs/agent-compatibility.md#fixed-workflow-results).
+  a parser error. The
+  [compatibility matrix](https://github.com/jaredchu/proclease/blob/main/docs/agent-compatibility.md#fixed-workflow-results)
+  records the agent profiles in which this retry was tested.
 - Stop during shutdown returns lifecycle state; extension of a stopping job is
   rejected. If a response is lost, inspect `list` before retrying an operation.
 
@@ -250,7 +242,7 @@ unavailable values are `null`. An unavailable group has `resources: null`.
 
 ### Bulk stop
 
-`stop --all` is available in v0.1.5 and later. `stop` requires exactly one target:
+`stop` requires exactly one target:
 a job ID, or `--all`. Filters and `--dry-run` are accepted only with `--all`.
 
 ```sh
@@ -296,8 +288,8 @@ proclease stop --all
   dispatched job is then polled together until its own grace (capped at 10
   seconds, the `run` maximum, even if metadata says otherwise) plus 2 seconds; a
   polling pass can add up to 0.5 seconds per unresponsive pending job. Typical
-  total time is at most the longest selected grace plus 2 seconds; with
-  unreleased source after v0.1.10 it is shorter when services exit on TERM. Many unresponsive
+  total time is at most the longest selected grace plus 2 seconds, and shorter
+  when services exit on TERM. Many unresponsive
   supervisors lengthen dispatch in batches of 8. Local file reads are not
   separately bounded. Shutdown is not atomic or instantaneous.
 - Exit status is 0 only when every selected job is confirmed finished (or, in a
@@ -340,41 +332,38 @@ Combined stdout/stderr capture defaults to **1 MiB per job**. Once full, newer
 output is drained and discarded so neither disk usage nor a blocked output pipe
 can grow indefinitely. Status and log output expose `logs_truncated`, including
 output discarded during shutdown. Set
-`--log-limit BYTES` at launch, up to 16 MiB. Terminal control characters are escaped
-when displaying logs; unreleased source after v0.1.10 also escapes Unicode
-bidirectional formatting characters, which can visually reorder text. Logs and argv may contain private application data; keep the
+`--log-limit BYTES` at launch, up to 16 MiB. Terminal control characters and
+Unicode bidirectional formatting characters are escaped when displaying logs. Logs and argv may contain private application data; keep the
 state directory out of repositories. Full environment values are not persisted.
 Confirmed finished metadata and logs are automatically removed after **24 hours**
 or beyond the **100 newest finished jobs**, whichever comes first. Collection runs
 on `run`, `list`, each `watch` refresh and job completion. Without CLI activity or
 job completion, overdue history is collected on the next use; there is no separate
 background cleanup service. Active jobs, unverified state and jobs whose supervisors
-cannot be verified absent are preserved. From v0.1.8, a job whose own
-keeper observed the managed process group absent before writing its final record
-is collected under these limits without checking saved PIDs, so new history
-stays bounded after a reboot or PID-namespace change. On Linux, finished records
-without that keeper marker (from earlier versions, or whose keeper did not
-complete its final write or could not observe its group absent) stay, with their
-retry keys, when their
-saved PIDs come from another or unverifiable [PID context](https://github.com/jaredchu/proclease/blob/main/docs/architecture.md#pid-context-unreleased),
-including after a reboot, until you remove them. Filesystem errors defer deletion with a
-warning, so protected or failed-cleanup data can exceed the normal history bound.
-On Linux, jobs active or stopping at reboot can remain `unknown` afterwards.
+cannot be verified absent are preserved. A job whose own keeper observed the
+managed process group absent before writing its final record is collected under
+these limits without checking saved PIDs, so history stays bounded after a
+reboot or PID-namespace change. Filesystem errors defer deletion with a warning,
+so protected or failed-cleanup data can exceed the normal history bound.
 <a id="earlier-boot-reconciliation"></a>
-In unreleased source after v0.1.10, the keeper also saves opaque digests of the
-machine and of its boot: on Linux the machine ID with the host name, and the
-kernel boot ID; on macOS the hardware UUID and the boot session UUID. A record
-proven to come from an earlier boot of the same machine has no process left. It
-is shown finished (`interrupted`, or the outcome its saved shutdown reason
-implies) with `finished_at_ms` still `null`, and is collected under the normal
-limits, dated by its last lifecycle write when it has no completion time. This
-lifts the two reboot limits above for jobs started by such a build. Records
-written earlier, records without a complete identity and records from another
-machine sharing the state directory prove nothing and are kept as before. A
+The keeper also saves opaque digests of the machine and of its boot: on Linux
+the machine ID with the host name, and the kernel boot ID; on macOS the hardware
+UUID and the boot session UUID. A record proven to come from an earlier boot of
+the same machine has no process left. It is shown finished (`interrupted`, or
+the outcome its saved shutdown reason implies) with `finished_at_ms` still
+`null`, and is collected under the normal limits, dated by its last lifecycle
+write when it has no completion time. Records from another machine sharing the
+state directory, and records without a complete identity, prove nothing. A
 `starting` or `running` record whose keeper, managed group and command are all
 observed absent from the same PID context is likewise shown `interrupted`
 instead of `unknown`. That display is never written back and does not make the
 record collectable; a live or uncertain saved PID keeps it `unknown`.
+Records written by older builds lack some of this evidence (see
+[version notes](#version-notes)). On Linux, their finished records without the
+keeper marker stay, with their retry keys, while their saved PIDs come from
+another or unverifiable [PID context](https://github.com/jaredchu/proclease/blob/main/docs/architecture.md#pid-context),
+including after a reboot, and their jobs active at a reboot can remain
+`unknown`, until you remove them.
 Unreadable procfs (for example, a restrictive `hidepid` mount) also prevents
 PID-derived absence checks and makes resource metrics unavailable. Protocol
 controls and expiry still work when their supervisors remain reachable.
@@ -428,13 +417,14 @@ still apply. A skill guides use; it does not intercept every command or grant
 local execution to a chat that does not already have it.
 
 <a id="foreground-sessions-unreleased-source"></a>
+<a id="foreground-sessions-v019"></a>
 
-## Foreground sessions (v0.1.9)
+## Foreground sessions
 
-Available in v0.1.9 and later. Earlier releases do not include `run --foreground`;
-check `proclease run --help` for `--foreground` before using an older installation.
-The default `run` is unchanged: it returns after startup, the job keeps running
-on its own, and control uses the job's Unix-domain socket.
+Before relying on `run --foreground`, check that `proclease run --help` lists
+`--foreground`; older installations do not have it. The default `run` returns
+after startup, the job keeps running on its own, and control uses the job's
+Unix-domain socket.
 
 Some agent sandboxes end every process a tool call started when that call
 returns, or deny Unix-domain sockets. A foreground session is for hosts that can
@@ -459,11 +449,10 @@ proclease --json run --foreground --ttl 45m --owner codex --task preview \
   or SIGHUP the invocation asks the keeper to stop the job and waits a bounded
   time for its final record; an unread stdout/stderr pipe or a blocked startup
   report cannot delay that cleanup or the exit, and the signal notices are best
-  effort. In unreleased source after v0.1.10, such a signal is recorded as a
-  requested stop (`stopped`, reason `requested`), like `proclease stop`;
-  earlier versions record `interrupted` with `supervision_lost`. If the
-  invocation is killed, the keeper sees its pipe close and stops the job,
-  unobserved, recorded as `interrupted` with `supervision_lost`. If the host destroys the whole
+  effort. Such a signal is recorded as a requested stop (`stopped`, reason
+  `requested`), like `proclease stop`. If the invocation is killed, the keeper
+  sees its pipe close and stops the job, unobserved, recorded as `interrupted`
+  with `supervision_lost`. If the host destroys the whole
   sandbox or client at once, the job and its supervisors can be killed before
   any final record is written; `list` then shows it as interrupted or
   `unknown`, never as verified cleanup.
@@ -545,8 +534,7 @@ ProcLease does not change application config, packages or bundlers itself.
      --wait-for-port 3000 -- npm run dev -- --hostname 127.0.0.1 --port 3000
    ```
 
-   With a build that supports `--reuse`, retry with the same prefix and command
-   plus `--reuse`. Host permission rules may need to allow that exact prefix.
+   Retry with the same prefix and command plus `--reuse`. Host permission rules may need to allow that exact prefix.
 
 In one probe, Turbopack polling alone ended in a Watchpack `EMFILE` error
 without serving a page. Polling does not repair native FSEvents. The tested
@@ -560,25 +548,20 @@ The targets are macOS and Linux foreground Node/Vite/Next-style servers. Runtime
 tests have run on macOS arm64, a non-root Linux aarch64 container and native
 Linux x86_64; agent-profile limits are recorded below.
 Hosted macOS and Ubuntu checks run in [GitHub Actions](https://github.com/jaredchu/proclease/actions/workflows/ci.yml).
-The [real-agent compatibility matrix](https://github.com/jaredchu/proclease/blob/main/docs/agent-compatibility.md) records the
-macOS Codex/Claude profiles tested with v0.1.7 and their retry and default
-Next.js failures. It also records passes for the same profiles with pre-v0.1.8 source builds of
-`run --reuse` and the [Next.js polling opt-in](#nextjs-in-agent-sandboxes).
-Native Linux testing passed the default-Claude workflow and found blockers in
-the tested Codex workspace sandbox and strict Claude sandbox; see the matrix
-for profile versions, retained `unknown` state and cleanup limits.
-Those two profiles are unsupported. ProcLease needs a Unix-domain control socket
-and supervisors that outlive the launching tool call, which requires a
-host-documented persistent execution context. Version 0.1.8 adds fail-closed
-diagnostics but does not make these profiles work. `run` now launches nothing
+The [real-agent compatibility matrix](https://github.com/jaredchu/proclease/blob/main/docs/agent-compatibility.md)
+records each tested macOS and Linux Codex/Claude profile with its version,
+failures, passes (including `run --reuse` and the
+[Next.js polling opt-in](#nextjs-in-agent-sandboxes)), retained `unknown`
+state and cleanup limits.
+Default mode needs a Unix-domain control socket and supervisors that outlive the
+launching tool call, which requires a host-documented persistent execution
+context. The tested Linux Codex workspace sandbox and strict Claude sandbox do
+not provide it, so default mode is unsupported there. `run` launches nothing
 when it cannot create a control socket. Saved PIDs from another or unverifiable
 PID context, such as a per-call PID namespace, are never probed, used for
-metrics or used to infer shutdown. See [PID context](https://github.com/jaredchu/proclease/blob/main/docs/architecture.md#pid-context-unreleased).
-Native Linux checks of the initial remediation build in both profiles reported
-these fail-closed results; they are diagnostics, not compatibility passes.
-Version 0.1.9 adds [foreground sessions](#foreground-sessions-unreleased-source)
-with file-based control for hosts that can keep one command running; they
-last only as long as that session, and default mode still needs the socket.
+metrics or used to infer shutdown. See [PID context](https://github.com/jaredchu/proclease/blob/main/docs/architecture.md#pid-context).
+[Foreground sessions](#foreground-sessions) use file-based control for hosts
+that can keep one command running; they last only as long as that session.
 There is no privileged or login-wide execution daemon. Jobs are supervised only
 after being launched through ProcLease. A descendant that deliberately creates a
 new session/process group can escape group cleanup. Docker, PID adoption,
@@ -596,6 +579,21 @@ Existing tools already cover much of general process management. See the
 and [architecture](https://github.com/jaredchu/proclease/blob/main/docs/architecture.md)
 for ProcLease's narrower expiry focus and the evidence needed before making
 comparative claims.
+
+## Version notes
+
+`proclease --version` shows the installed release. Features and behavior
+changes arrived in these releases; an older binary lacks the later rows. Each
+release's notes are in [docs/releases](https://github.com/jaredchu/proclease/tree/main/docs/releases).
+
+| Release | Features and changes |
+| --- | --- |
+| v0.1.5 | `stop --all` bulk stop with owner/task filters and `--dry-run` |
+| v0.1.6 | `run --wait-for-port`, `--wait-for-log` and `--wait-timeout` readiness |
+| v0.1.7 | Interrupted shutdown records leave the default view once supervision is verified absent |
+| v0.1.8 | Rejected keyed retries name the differing fields; `run --reuse`; `run` launches nothing without a control socket; Linux PID context; keeper-finalized history is collected without saved-PID checks |
+| v0.1.9 | `run --foreground` with file-based control |
+| Unreleased (after v0.1.10) | Records from an earlier boot of the same machine are finished and collected; absent supervision reads `interrupted`, not `unknown`; the shutdown grace ends once the group has exited; a signalled foreground session records `stopped`/`requested` instead of `interrupted`/`supervision_lost`; bidirectional formatting characters are escaped; release archives carry signed build provenance |
 
 ## Development
 
