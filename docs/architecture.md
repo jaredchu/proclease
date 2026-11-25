@@ -183,10 +183,19 @@ then waits for the keeper to exit. The keeper exits only after its final
 lifecycle write. When the pipe closes, the keeper closes the guardian's pipe.
 The guardian then performs its ordinary TERM, grace, KILL shutdown with reason
 `supervision_lost`, and the keeper records that the foreground session ended.
+In unreleased source after v0.1.10, the pipes can also carry one byte, an
+orderly stop request, written just before the writer closes its end. The
+keeper forwards it to the guardian before closing the guardian's pipe, and the
+guardian then shuts down with reason `requested`, so the job finishes
+`stopped`. Each reader sets its stop flag before its end-of-file flag, and the
+guardian reads the stop flag after observing end-of-file, so an orderly stop is
+never mistaken for lost supervision. A pipe that closes without the byte, or
+carries any other byte to the guardian, is still lost supervision.
 If the guardian has not exited within the stop bound, the keeper kills the
 group that its unreaped guardian still anchors. The pipe closes however `run`
-ends, including SIGKILL. On SIGINT, SIGTERM or SIGHUP, `run` closes the pipe
-itself and waits up to the stop bound plus 3 seconds before exiting with
+ends, including SIGKILL. On SIGINT, SIGTERM or SIGHUP, `run` writes the stop
+request (a single byte that cannot block on that otherwise empty pipe), closes
+the pipe itself and waits up to the stop bound plus 3 seconds before exiting with
 128 + the signal number. That path takes no report lock and writes nothing
 itself: its notices (and, before any startup report, the `--json` error
 object) come from a detached thread that it waits for at most 250 ms, and it

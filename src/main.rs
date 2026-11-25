@@ -711,11 +711,11 @@ fn exit_now(code: i32) -> ! {
 /// Bounded wait for best-effort notices before exiting.
 const NOTICE_WAIT: Duration = Duration::from_millis(250);
 
-/// Handle the first ordinary signal for a foreground session: close the
-/// keeper's liveness pipe, wait up to `bound` for its final record, and exit
-/// with 128 + the signal number. Takes no report lock and performs no stdout
-/// or stderr write itself, so neither an unread output pipe nor a report
-/// blocked in another thread can delay cleanup or exit.
+/// Handle the first ordinary signal for a foreground session: send the keeper
+/// a stop request and close its liveness pipe, wait up to `bound` for its final
+/// record, and exit with 128 + the signal number. Takes no report lock and
+/// performs no stdout or stderr write itself, so neither an unread output pipe
+/// nor a report blocked in another thread can delay cleanup or exit.
 fn end_on_signal(
     signal: i32,
     session: &std::sync::Mutex<lifecycle::ForegroundSession>,
@@ -751,9 +751,11 @@ fn end_on_signal(
             Err(TryLockError::WouldBlock) => break None,
         }
     };
-    let confirmed = held
-        .as_mut()
-        .is_some_and(|session| session.end(deadline.saturating_duration_since(Instant::now())));
+    // An ordinary signal is an orderly request to end the session, so the
+    // job finishes as a requested stop.
+    let confirmed = held.as_mut().is_some_and(|session| {
+        session.request_stop(deadline.saturating_duration_since(Instant::now()))
+    });
     if !confirmed {
         notices.extend(notify(
             None,

@@ -448,8 +448,11 @@ proclease --json run --foreground --ttl 45m --owner codex --task preview \
   or SIGHUP the invocation asks the keeper to stop the job and waits a bounded
   time for its final record; an unread stdout/stderr pipe or a blocked startup
   report cannot delay that cleanup or the exit, and the signal notices are best
-  effort. If the invocation is killed, the keeper sees its
-  pipe close and stops the job, unobserved. If the host destroys the whole
+  effort. In unreleased source after v0.1.10, such a signal is recorded as a
+  requested stop (`stopped`, reason `requested`), like `proclease stop`;
+  earlier versions record `interrupted` with `supervision_lost`. If the
+  invocation is killed, the keeper sees its pipe close and stops the job,
+  unobserved, recorded as `interrupted` with `supervision_lost`. If the host destroys the whole
   sandbox or client at once, the job and its supervisors can be killed before
   any final record is written; `list` then shows it as interrupted or
   `unknown`, never as verified cleanup.
