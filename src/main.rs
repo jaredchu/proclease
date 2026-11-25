@@ -209,11 +209,25 @@ fn default_state() -> Result<PathBuf> {
     .join(".local/state/proclease"))
 }
 
+/// Unicode bidirectional formatting characters. They are not control
+/// characters, but they visually reorder the surrounding text in a terminal,
+/// so untrusted output could disguise what it shows ("Trojan Source",
+/// CVE-2021-42574). Other format characters, such as the zero-width joiner in
+/// emoji sequences, are left alone.
+fn is_bidi_control(c: char) -> bool {
+    matches!(
+        c,
+        '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+    )
+}
+
+/// Untrusted text made safe for a terminal: control characters other than
+/// newline and tab, and bidirectional formatting characters, are escaped.
 fn clean(value: &str) -> String {
     value
         .chars()
         .flat_map(|c| {
-            if c.is_control() && c != '\n' && c != '\t' {
+            if (c.is_control() && c != '\n' && c != '\t') || is_bidi_control(c) {
                 c.escape_default().collect::<Vec<_>>()
             } else {
                 vec![c]
@@ -1297,6 +1311,24 @@ mod tests {
             mode: Mode::Detached,
             transport: model::Transport::Socket,
         }
+    }
+
+    #[test]
+    fn terminal_text_escapes_controls_and_bidi_reordering_only() {
+        // A right-to-left override would make this read differently on screen.
+        let disguised = "safe\u{202E}txt.exe\u{2066}x\u{2069}\u{200F}\u{061C}\u{1b}[2J";
+        let shown = clean(disguised);
+        assert_eq!(
+            shown,
+            "safe\\u{202e}txt.exe\\u{2066}x\\u{2069}\\u{200f}\\u{61c}\\u{1b}[2J"
+        );
+        assert!(!shown.chars().any(|c| is_bidi_control(c) || c.is_control()));
+        // Newlines and tabs stay for logs; cells flatten them to spaces.
+        assert_eq!(clean("a\nb\tc"), "a\nb\tc");
+        assert_eq!(cell("a\nb\tc"), "a b c");
+        // Other format characters are kept: a zero-width joiner joins emoji.
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} 預覽 café";
+        assert_eq!(clean(family), family);
     }
 
     #[test]
