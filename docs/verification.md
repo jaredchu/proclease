@@ -1414,6 +1414,29 @@ passed formatting, Clippy and all 101 tests locally on macOS arm64, including
 the boot-context and group-membership checks. Earlier boots were simulated
 with seeded records. No real reboot was performed.
 
+## Review cleanups (unreleased source), 2026-11-25
+
+Review item #8, three small changes without new features:
+
+- Terminal output also escapes Unicode bidirectional formatting characters
+  (U+061C, U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069), which can
+  visually reorder untrusted text. Other format characters, such as the
+  zero-width joiner in emoji sequences, are kept. A unit test covers both.
+- Resource sampling reads each process's group once per sample instead of once
+  per active job for every process on the system.
+- The `run` command moved from `src/main.rs` to `src/run.rs`, and foreground
+  session handling to `src/foreground.rs`. This is code motion: a
+  whitespace-normalized line comparison against the previous `main.rs` showed
+  only renames, visibility, argument plumbing and imports, and `--help` output
+  for the top level and all seven commands is byte-identical.
+
+Natively on Linux x86_64 with stable Rust 1.100: formatting, Clippy with
+warnings denied and all 97 tests (33 unit, 64 integration) passed in three
+consecutive runs, with no remaining supervisors or fixture files. Clippy also
+passed as a type check for both macOS targets. After the review fixes merged,
+the combined source passed formatting, Clippy and all 102 tests (36 unit,
+66 integration) twice on Linux x86_64.
+
 ## Limits
 
 No direct system sleep/wake, clock-change or simultaneous destruction of both
