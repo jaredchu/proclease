@@ -25,6 +25,13 @@ use std::{
 
 const TICK: Duration = Duration::from_millis(25);
 
+/// The one byte a liveness pipe carries: an orderly stop request, written just
+/// before the pipe is closed. `run --foreground` sends it to the keeper on an
+/// ordinary signal; the keeper forwards it to the guardian, which records a
+/// requested stop. A pipe that closes without it, because its writer was
+/// killed or crashed, still means lost supervision.
+const STOP_REQUEST: u8 = b'S';
+
 fn detach(command: &mut Command) {
     // Only an async-signal-safe syscall is made between fork and exec.
     unsafe {
@@ -120,6 +127,17 @@ impl ForegroundSession {
     /// observation and slack for its final write.
     pub fn end_bound(&self) -> Duration {
         stop_bound(self.grace_ms) + Duration::from_secs(3)
+    }
+
+    /// Ask the keeper for an orderly stop, then end the session within
+    /// `bound` as `end` does. The job then finishes as a requested stop rather
+    /// than as lost supervision. The one-byte write cannot block on an
+    /// otherwise empty pipe, and a keeper that has already gone is ignored.
+    pub fn request_stop(&mut self, bound: Duration) -> bool {
+        if let Some(pipe) = self.liveness.as_mut() {
+            let _ = pipe.write_all(&[STOP_REQUEST]);
+        }
+        self.end(bound)
     }
 
     /// Close the liveness pipe and wait, within `bound`, for the keeper to
@@ -319,16 +337,22 @@ pub fn keeper(store: &Store, id: &str) -> Result<()> {
     // End-of-file means that session ended, however it ended.
     let foreground = launch.mode == Mode::Foreground;
     let frontend_gone = Arc::new(AtomicBool::new(false));
+    // Set before `frontend_gone` when the session ends with a stop request.
+    let stop_requested = Arc::new(AtomicBool::new(false));
     if foreground {
-        let flag = frontend_gone.clone();
+        let (gone, stop) = (frontend_gone.clone(), stop_requested.clone());
         thread::spawn(move || {
             let mut byte = [0u8; 1];
             loop {
                 match std::io::stdin().read(&mut byte) {
-                    Ok(1..) => continue,
+                    Ok(1..) => {
+                        if byte[0] == STOP_REQUEST {
+                            stop.store(true, Ordering::SeqCst);
+                        }
+                    }
                     Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
                     _ => {
-                        flag.store(true, Ordering::Relaxed);
+                        gone.store(true, Ordering::SeqCst);
                         return;
                     }
                 }
@@ -366,8 +390,14 @@ pub fn keeper(store: &Store, id: &str) -> Result<()> {
         if child_exited_without_reaping(&guardian)? {
             break;
         }
-        if frontend_gone.load(Ordering::Relaxed) {
-            if liveness.take().is_some() {
+        if frontend_gone.load(Ordering::SeqCst) {
+            if let Some(mut pipe) = liveness.take() {
+                // Forward an orderly stop before closing; a guardian that
+                // has already exited is ignored.
+                if stop_requested.load(Ordering::SeqCst) {
+                    let _ = pipe.write_all(&[STOP_REQUEST]);
+                }
+                drop(pipe);
                 force_at = Some(Instant::now() + stop_bound(launch.grace_ms));
             } else if force_at.is_some_and(|at| Instant::now() >= at) {
                 force_at = None;
@@ -393,7 +423,7 @@ pub fn keeper(store: &Store, id: &str) -> Result<()> {
     guardian.wait()?;
     record.logs_truncated |= store.capture_truncated(id)?;
     if foreground
-        && frontend_gone.load(Ordering::Relaxed)
+        && frontend_gone.load(Ordering::SeqCst)
         && record.reason == Some(Reason::SupervisionLost)
         && record.error.is_none()
     {
@@ -623,6 +653,7 @@ fn serve_control(listener: &UnixListener, record: &mut Record, store: &Store) ->
 struct GuardSetup {
     interrupted: Arc<AtomicBool>,
     parent_gone: Arc<AtomicBool>,
+    stop_requested: Arc<AtomicBool>,
     endpoint: Endpoint,
     sink: Arc<Mutex<LogSink>>,
     capture_marker: Arc<File>,
@@ -645,14 +676,18 @@ fn prepare_guard(
     signal_hook::flag::register(libc::SIGINT, interrupted.clone())?;
     signal_hook::flag::register(libc::SIGHUP, interrupted.clone())?;
     let parent_gone = Arc::new(AtomicBool::new(false));
-    let parent_flag = parent_gone.clone();
+    // Set before `parent_gone` when the keeper forwards a stop request.
+    let stop_requested = Arc::new(AtomicBool::new(false));
+    let (parent_flag, stop_flag) = (parent_gone.clone(), stop_requested.clone());
     thread::spawn(move || {
         let mut byte = [0u8; 1];
         loop {
             match std::io::stdin().read(&mut byte) {
+                Ok(1..) if byte[0] == STOP_REQUEST => stop_flag.store(true, Ordering::SeqCst),
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                // End-of-file, an error or any other byte: the keeper is gone.
                 _ => {
-                    parent_flag.store(true, Ordering::Relaxed);
+                    parent_flag.store(true, Ordering::SeqCst);
                     return;
                 }
             }
@@ -702,6 +737,7 @@ fn prepare_guard(
     Ok(GuardSetup {
         interrupted,
         parent_gone,
+        stop_requested,
         endpoint,
         sink,
         capture_marker: Arc::new(capture_marker),
@@ -715,6 +751,7 @@ pub fn guard(store: &Store, id: &str) -> Result<()> {
     let GuardSetup {
         interrupted,
         parent_gone,
+        stop_requested,
         mut endpoint,
         sink,
         capture_marker,
@@ -791,8 +828,15 @@ pub fn guard(store: &Store, id: &str) -> Result<()> {
         capture_marker,
     );
     loop {
-        if parent_gone.load(Ordering::Relaxed) {
-            record.reason = Some(Reason::SupervisionLost);
+        // The stop flag is set before `parent_gone`, so observing the keeper
+        // gone also shows whether it forwarded an orderly stop.
+        let gone = parent_gone.load(Ordering::SeqCst);
+        if gone || stop_requested.load(Ordering::SeqCst) {
+            record.reason = Some(if stop_requested.load(Ordering::SeqCst) {
+                Reason::Requested
+            } else {
+                Reason::SupervisionLost
+            });
             break;
         }
         if interrupted.load(Ordering::Relaxed) {
