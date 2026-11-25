@@ -4193,7 +4193,14 @@ fn foreground_expiry_and_frontend_signals_clean_the_owned_group() {
     let info = ready_file(&ready);
     session.signal(libc::SIGKILL);
     session.exit_within(Duration::from_secs(5));
-    let record = fixture.terminal(&id);
+    fixture.terminal(&id);
+    // On macOS a derived view can report the group gone before the keeper's
+    // final write adds its note, so read the persisted final record.
+    let path = fixture.state.join(&id).join("record.json");
+    let record = wait(|| {
+        let record: Value = serde_json::from_slice(&fs::read(&path).ok()?).ok()?;
+        (record["state"] != "stopping").then_some(record)
+    });
     assert_eq!(record["state"], "interrupted", "{record}");
     assert_eq!(record["reason"], "supervision_lost", "{record}");
     assert!(
