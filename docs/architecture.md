@@ -34,10 +34,10 @@ In unreleased source after v0.1.10, the grace ends early once no live process
 other than the guardian remains in its group and both output pipes have reached
 end-of-file, so shutdown output is still captured. Group membership is read
 with `proc_listpids` on macOS and from procfs on Linux, where procfs must belong
-to the guardian's own PID namespace; zombies are not members. The guardian must
-see itself in that view. A failed or uncertain observation waits out the whole
-grace, and KILL is sent either way. Launch-metadata grace is capped at 10 seconds
-in the guardian and keeper as well as in observers.
+to the guardian's PID namespace and show all process entries. Only live members
+count. The guardian must see itself in that view. Restricted procfs, unreadable
+entries and other uncertain observations use the full grace before KILL. The
+guardian, keeper and observers cap launch-metadata grace at 10 seconds.
 
 The keeper waits with `waitid(..., WNOWAIT)` and retains its exited guardian as an
 unreaped child until group KILL is complete. This prevents the session leader's
@@ -82,15 +82,14 @@ In unreleased source after v0.1.10, the keeper saves `machine_context` and
 `boot_context` with its first PID. Both are domain-separated SHA-256 digests.
 On Linux, the machine digest covers `/etc/machine-id` (or
 `/var/lib/dbus/machine-id`) together with the host name, so hosts cloned from
-one image and sharing a state directory are still told apart, and the boot
-digest covers the kernel's random `boot_id`. On macOS they cover the hardware
-UUID from `gethostuuid` and `kern.bootsessionuuid`. A missing, malformed or
-uninitialized source produces no context. Raw identifiers are never stored.
+one image and sharing a state directory are told apart if their host names
+differ. The boot digest covers the kernel's random `boot_id`. On macOS the
+digests cover the hardware UUID from `gethostuuid` and `kern.bootsessionuuid`. A
+missing, malformed or uninitialized source produces no context. Raw identifiers are never stored.
 
-A record whose machine digest equals the observer's and whose boot digest
-differs comes from an earlier boot of this machine, so none of its processes can
-still run. With its endpoint unavailable, it is shown finished through the usual
-reason mapping (`interrupted` without a recorded reason), with `finished_at_ms`
+A record whose machine digest equals the observer's and whose valid boot
+digest differs is treated as an earlier-boot record. When its endpoint is
+unavailable, it is shown finished through the usual reason mapping (`interrupted` without a recorded reason), with `finished_at_ms`
 left `null` and its last lifecycle write anchoring the recent-history window.
 Retention collects it under the normal age and count limits whatever its saved
 state, PID context or keeper marker, dated by `finished_at_ms` or else by that
@@ -102,8 +101,8 @@ also sharing a state directory, which the
 [filesystem requirements](../README.md#state-and-output) already exclude.
 
 Separately, a `starting` (after its 5-second startup allowance) or `running`
-record whose keeper PID, guardian process group and command PID are all
-observed absent from a comparable PID context is shown `interrupted` with a
+record whose keeper PID, guardian process group and command PID are all saved
+and observed absent from a comparable PID context is shown `interrupted` with a
 note, instead of `unknown`. This mirrors the existing `stopping` derivation and
 is display only: the record is never rewritten and stays protected from
 collection. Requiring the command PID too keeps a command that left the group,

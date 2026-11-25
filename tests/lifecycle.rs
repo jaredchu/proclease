@@ -507,8 +507,16 @@ fn default_views_show_recent_completion_then_history_but_keep_unverified_jobs() 
         "interrupted"
     );
     assert_eq!(fs::read(&record_path).unwrap(), persisted);
-    // Only observed absence counts. A live saved supervisor PID leaves
-    // supervision unverified, and that stays visible.
+    // An incomplete startup record can predate a successful spawn.
+    let command_pid = record["command_pid"].take();
+    record["state"] = serde_json::json!("starting");
+    record["created_at_ms"] = serde_json::json!(1);
+    fs::write(&record_path, serde_json::to_vec(&record).unwrap()).unwrap();
+    assert_eq!(fixture.call(&["list"])["jobs"][0]["state"], "unknown");
+
+    // A live supervisor also keeps a running record unverified.
+    record["command_pid"] = command_pid;
+    record["state"] = serde_json::json!("running");
     record["keeper_pid"] = serde_json::json!(std::process::id());
     fs::write(&record_path, serde_json::to_vec(&record).unwrap()).unwrap();
     for view in [&["list"][..], &["watch", "--once"][..]] {
@@ -2407,60 +2415,86 @@ fn earlier_boot_records_are_finished_and_collected_but_other_machines_are_not() 
     // Live PIDs prove that nothing here is decided from saved PIDs, and that
     // nothing is signalled. A foreign PID context is what Linux sees after a
     // reboot.
-    let seed = |id: &str, state: &str, machine: &str, finished: Value, age: Duration| {
-        fixture.seed_history(id, &template, &launch, 1);
-        let mut record = template.clone();
-        for (field, value) in [
-            ("id", serde_json::json!(id)),
-            ("state", serde_json::json!(state)),
-            ("keeper_pid", serde_json::json!(std::process::id())),
-            (
-                "guardian_pid",
-                serde_json::json!(unsafe { libc::getpgrp() }),
-            ),
-            ("command_pid", serde_json::json!(std::process::id())),
-            ("pid_context", serde_json::json!(FOREIGN_PID_CONTEXT)),
-            ("machine_context", serde_json::json!(machine)),
-            ("boot_context", serde_json::json!(earlier)),
-            ("finished_at_ms", finished),
-        ] {
-            record[field] = value;
-        }
-        if state != "exited" {
-            record["reason"] = Value::Null;
-            record["exit_code"] = Value::Null;
-        }
-        record
-            .as_object_mut()
-            .unwrap()
-            .remove("finalized_by_keeper");
-        let path = fixture.state.join(id).join("record.json");
-        fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
-        fs::File::options()
-            .write(true)
-            .open(path)
-            .unwrap()
-            .set_modified(SystemTime::now() - age)
-            .unwrap();
-    };
+    let seed =
+        |id: &str, state: &str, machine: &str, saved_boot: &str, finished: Value, age: Duration| {
+            fixture.seed_history(id, &template, &launch, 1);
+            let mut record = template.clone();
+            for (field, value) in [
+                ("id", serde_json::json!(id)),
+                ("state", serde_json::json!(state)),
+                ("keeper_pid", serde_json::json!(std::process::id())),
+                (
+                    "guardian_pid",
+                    serde_json::json!(unsafe { libc::getpgrp() }),
+                ),
+                ("command_pid", serde_json::json!(std::process::id())),
+                ("pid_context", serde_json::json!(FOREIGN_PID_CONTEXT)),
+                ("machine_context", serde_json::json!(machine)),
+                ("boot_context", serde_json::json!(saved_boot)),
+                ("finished_at_ms", finished),
+            ] {
+                record[field] = value;
+            }
+            if state != "exited" {
+                record["reason"] = Value::Null;
+                record["exit_code"] = Value::Null;
+            }
+            record
+                .as_object_mut()
+                .unwrap()
+                .remove("finalized_by_keeper");
+            let path = fixture.state.join(id).join("record.json");
+            fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+            fs::File::options()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_modified(SystemTime::now() - age)
+                .unwrap();
+        };
     let day = Duration::from_secs(25 * 60 * 60);
     seed(
         "0000000000b1",
         "running",
         &machine,
+        &earlier,
         Value::Null,
         Duration::ZERO,
     );
-    seed("0000000000b2", "running", &machine, Value::Null, day);
+    seed(
+        "0000000000b2",
+        "running",
+        &machine,
+        &earlier,
+        Value::Null,
+        day,
+    );
     seed(
         "0000000000b3",
         "exited",
         &machine,
+        &earlier,
         serde_json::json!(1),
         day,
     );
     let other = format!("v1:{}", "1".repeat(64));
-    seed("0000000000b4", "running", &other, Value::Null, day);
+    seed(
+        "0000000000b4",
+        "running",
+        &other,
+        &earlier,
+        Value::Null,
+        day,
+    );
+
+    seed(
+        "0000000000b5",
+        "running",
+        &machine,
+        "v1:corrupt",
+        Value::Null,
+        day,
+    );
 
     // Retention collects earlier-boot history past its age, active or not,
     // and dates an incomplete record by its last lifecycle write.
@@ -2514,7 +2548,9 @@ fn earlier_boot_records_are_finished_and_collected_but_other_machines_are_not() 
         .unwrap()
         .status
         .success());
-    for id in ["0000000000b1", "0000000000b4"] {
+    assert_eq!(job("0000000000b5")["state"], "unknown");
+    assert!(fixture.state.join("0000000000b5").exists());
+    for id in ["0000000000b1", "0000000000b4", "0000000000b5"] {
         fs::remove_dir_all(fixture.state.join(id)).unwrap();
     }
 }

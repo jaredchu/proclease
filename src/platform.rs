@@ -78,26 +78,43 @@ fn group_members(pgid: u32) -> Result<Vec<(u32, bool)>> {
     }
 }
 
-/// Members of a process group as `(pid, live)`, read from procfs, where
-/// zombies are not live. Requires procfs from this process's own PID
-/// namespace, so its numbers mean what `getpgrp` means here. A process that
-/// exits between listing and reading is not a member.
+/// Members of a process group as `(pid, live)`, read from procfs. Only
+/// disappeared entries can be skipped. If procfs hides processes or a live
+/// entry cannot be read, the caller must use the full shutdown grace.
 #[cfg(target_os = "linux")]
 fn group_members(pgid: u32) -> Result<Vec<(u32, bool)>> {
-    if !procfs_reports_own_namespace() {
-        anyhow::bail!("procfs does not report this PID namespace");
+    if !procfs_reports_own_namespace()
+        || !read_bounded(Path::new("/proc/self/mountinfo"), STATUS_LIMIT)
+            .as_deref()
+            .is_some_and(procfs_mount_has_full_visibility)
+    {
+        anyhow::bail!("procfs does not expose all processes in this PID namespace");
     }
+    let deadline = Instant::now() + Duration::from_millis(25);
     let mut members = Vec::new();
     for entry in std::fs::read_dir("/proc")? {
+        if Instant::now() >= deadline {
+            return Err(timed_out().into());
+        }
         let entry = entry?;
         let Some(pid) = entry.file_name().to_str().and_then(positive_decimal) else {
             continue;
         };
-        let Some(stat) = read_bounded(&entry.path().join("stat"), SMALL_LIMIT) else {
-            continue;
-        };
+        let mut stat = Vec::new();
+        match std::fs::File::open(entry.path().join("stat"))
+            .and_then(|file| file.take(SMALL_LIMIT + 1).read_to_end(&mut stat))
+        {
+            Ok(_) => (),
+            Err(error) if matches!(error.raw_os_error(), Some(libc::ENOENT | libc::ESRCH)) => {
+                continue;
+            }
+            Err(error) => return Err(error.into()),
+        }
+        if stat.len() as u64 > SMALL_LIMIT {
+            anyhow::bail!("oversized procfs stat record");
+        }
         let Some((state, group)) = stat_state_and_group(&stat) else {
-            continue;
+            anyhow::bail!("invalid procfs stat record");
         };
         if group == pgid {
             members.push((pid, !matches!(state, "Z" | "X")));
@@ -106,12 +123,45 @@ fn group_members(pgid: u32) -> Result<Vec<(u32, bool)>> {
     Ok(members)
 }
 
-/// State (field 3) and process group (field 5) of a `/proc/PID/stat` line,
-/// counted after the command name's final closing parenthesis.
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-fn stat_state_and_group(stat: &str) -> Option<(&str, u32)> {
-    let (_, rest) = stat.rsplit_once(')')?;
-    let mut fields = rest.split_whitespace();
+/// Find the unfiltered procfs mount at /proc. A namespace check alone cannot
+/// detect hidepid modes, in which other users' entries can be missing entirely.
+#[cfg(any(target_os = "linux", test))]
+fn procfs_mount_has_full_visibility(mountinfo: &str) -> bool {
+    let mut mounts = mountinfo.lines().filter_map(|line| {
+        let (mount, filesystem) = line.split_once(" - ")?;
+        let mut mount = mount.split_ascii_whitespace().skip(3);
+        let root = mount.next()?;
+        let target = mount.next()?;
+        let options = mount.next()?;
+        (target == "/proc").then_some((root, options, filesystem))
+    });
+    let Some(("/", options, filesystem)) = mounts.next() else {
+        return false;
+    };
+    if mounts.next().is_some() {
+        return false;
+    }
+    let mut fields = filesystem.split_ascii_whitespace();
+    let (Some("proc"), Some(_), Some(super_options)) =
+        (fields.next(), fields.next(), fields.next())
+    else {
+        return false;
+    };
+    options
+        .split(',')
+        .chain(super_options.split(','))
+        .filter_map(|option| option.strip_prefix("hidepid="))
+        .all(|value| matches!(value, "0" | "off"))
+}
+
+/// State (field 3) and process group (field 5) of a /proc/PID/stat line.
+/// The command name can contain arbitrary bytes. Only the numeric tail needs
+/// to be text.
+#[cfg(any(target_os = "linux", test))]
+fn stat_state_and_group(stat: &[u8]) -> Option<(&str, u32)> {
+    let close = stat.iter().rposition(|&byte| byte == b')')?;
+    let tail = std::str::from_utf8(&stat[close + 1..]).ok()?;
+    let mut fields = tail.split_ascii_whitespace();
     let state = fields.next()?;
     fields.next()?;
     Some((state, positive_decimal(fields.next()?)?))
@@ -357,8 +407,17 @@ fn earlier_boot(machine: Option<&str>, boot: Option<&str>, current: Option<&Boot
     matches!(
         (machine, boot, current),
         (Some(machine), Some(boot), Some(current))
-            if machine == current.machine && boot != current.boot
+            if machine == current.machine && valid_context_digest(boot) && boot != current.boot
     )
+}
+
+fn valid_context_digest(digest: &str) -> bool {
+    digest.strip_prefix("v1:").is_some_and(|hex| {
+        hex.len() == 64
+            && hex
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    })
 }
 
 /// Domain-separated digest of length-prefixed fields.
@@ -823,17 +882,20 @@ mod tests {
     #[test]
     fn earlier_boot_requires_the_same_machine_and_a_different_boot() {
         let current = BootContext {
-            machine: "v1:machine".into(),
-            boot: "v1:boot".into(),
+            machine: context_digest(b"machine", &[b"this host"]),
+            boot: context_digest(b"boot", &[b"this boot"]),
         };
+        let earlier = context_digest(b"boot", &[b"earlier"]);
         let check = |machine, boot| earlier_boot(machine, boot, Some(&current));
-        assert!(check(Some("v1:machine"), Some("v1:earlier")));
-        // The same boot, another machine or incomplete records prove nothing.
-        assert!(!check(Some("v1:machine"), Some("v1:boot")));
-        assert!(!check(Some("v1:other"), Some("v1:earlier")));
-        assert!(!check(None, Some("v1:earlier")));
-        assert!(!check(Some("v1:machine"), None));
-        assert!(!earlier_boot(Some("v1:machine"), Some("v1:earlier"), None));
+        assert!(check(Some(&current.machine), Some(&earlier)));
+        assert!(!check(Some(&current.machine), Some(&current.boot)));
+        assert!(!check(Some("v1:other"), Some(&earlier)));
+        assert!(!check(None, Some(&earlier)));
+        assert!(!check(Some(&current.machine), None));
+        for invalid in ["", "v1:", "v1:corrupt", "v2:unsupported"] {
+            assert!(!check(Some(&current.machine), Some(invalid)));
+        }
+        assert!(!earlier_boot(Some(&current.machine), Some(&earlier), None));
         // A current context, when available, is complete and stable.
         if let Some(context) = boot_context() {
             assert!(context.machine.starts_with("v1:") && context.boot.starts_with("v1:"));
@@ -845,10 +907,37 @@ mod tests {
     }
 
     #[test]
+    fn procfs_observation_requires_visible_processes_and_handles_raw_names() {
+        let mount = "12 1 0:10 / /proc rw,nosuid - proc proc";
+        assert!(procfs_mount_has_full_visibility(&format!("{mount} rw")));
+        assert!(procfs_mount_has_full_visibility(&format!(
+            "{mount} rw,hidepid=0"
+        )));
+        for restricted in ["1", "2", "4", "invisible", "ptraceable"] {
+            assert!(!procfs_mount_has_full_visibility(&format!(
+                "{mount} rw,hidepid={restricted}"
+            )));
+        }
+        assert!(!procfs_mount_has_full_visibility(""));
+        assert!(!procfs_mount_has_full_visibility(&format!(
+            "{mount} rw\n{mount} rw"
+        )));
+        assert_eq!(
+            stat_state_and_group(b"123 (name) \xff) S 2 123 4 0"),
+            Some(("S", 123))
+        );
+        assert_eq!(stat_state_and_group(b"123 (name) S 2"), None);
+    }
+
+    #[test]
     fn other_group_members_exclude_the_caller_and_zombies() {
         use std::os::unix::process::CommandExt;
         #[cfg(target_os = "linux")]
-        if !procfs_reports_own_namespace() {
+        if !procfs_reports_own_namespace()
+            || !read_bounded(Path::new("/proc/self/mountinfo"), STATUS_LIMIT)
+                .as_deref()
+                .is_some_and(procfs_mount_has_full_visibility)
+        {
             return;
         }
         struct Owned(std::process::Child);

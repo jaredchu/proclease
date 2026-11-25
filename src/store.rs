@@ -669,16 +669,15 @@ fn never_supervised(record: &Record) -> bool {
         && record.command_pid.is_none()
 }
 
-/// Whether every saved supervision PID is observed absent: the keeper, the
-/// guardian's process group and the command itself, which may have left that
-/// group. Only meaningful for PIDs from this PID context. A live, reused or
-/// uncertain observation, or no saved keeper, is not absence.
+/// Whether the keeper, guardian's process group and command are all observed
+/// absent in this PID context. A missing PID can mean its writer died before
+/// recording it, so it cannot establish absence.
 fn supervision_absent(record: &Record) -> bool {
     process_is_absent(record.keeper_pid)
         && record
             .guardian_pid
-            .is_none_or(|pid| pid > 1 && group_is_absent(pid))
-        && record.command_pid.is_none_or(process_is_absent)
+            .is_some_and(|pid| pid > 1 && group_is_absent(pid))
+        && record.command_pid.is_some_and(process_is_absent)
 }
 
 fn group_is_absent(pid: u32) -> bool {

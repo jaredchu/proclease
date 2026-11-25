@@ -1376,6 +1376,14 @@ launch-metadata grace in the guardian and keeper. See the
   for Linux and macOS. Rust 1.89's Clippy reports one older
   `nonminimal_bool` lint in unchanged retention code; CI runs Clippy on stable.
 
+A follow-up hardened both observations. A missing saved PID keeps a startup
+record unverified, and an invalid saved boot digest cannot make history
+eligible for collection. Linux early shutdown now requires an unfiltered
+procfs mount in the guardian's own PID namespace. It parses process names as
+bytes and defers to the full grace if a visible entry is unreadable, malformed
+or the scan exceeds its budget. Tests exercise these cases with incomplete
+records, invalid digests, restricted mount options and a non-UTF-8 process name.
+
 Limits: macOS runtime behavior (`gethostuuid`, `kern.bootsessionuuid` and
 `proc_listpids` group membership) was type-checked but not run locally and
 relies on hosted macOS CI. No real reboot was performed; earlier boots were
