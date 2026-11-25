@@ -1329,6 +1329,25 @@ exercised. Direct host scans found no matching test processes with complete
 own-user visibility, without claiming supervisor finalization. Existing registries,
 installed binaries/skills and running jobs/watch were outside these isolated checks.
 
+## Foreground signal stop (unreleased source), 2026-11-25
+
+Review item #5: an ordinary SIGINT, SIGTERM or SIGHUP to `run --foreground`
+was recorded as `interrupted` with `supervision_lost`, indistinguishable in
+`list --json` from a crash. The liveness pipes now carry a one-byte stop
+request, so such a signal finishes the job `stopped` with reason `requested`.
+
+- Natively on Linux x86_64 with stable Rust 1.100: formatting, Clippy with
+  warnings denied and all 96 tests passed in three consecutive runs, with no
+  remaining supervisors or fixture files. Clippy also passed as a type check
+  for both macOS targets.
+- Updated regressions: SIGINT, and SIGTERM or SIGHUP with blocked stdout or
+  stderr, finish `stopped`/`requested` with no error, the keeper-finalized
+  marker and the documented exit status `128 + n`. SIGKILL of the invocation
+  still finishes `interrupted`/`supervision_lost` with the foreground note.
+
+Limits: a signal whose handler cannot take the session lock within its bound
+exits without sending the request, which is then recorded as lost supervision.
+
 ## Limits
 
 No direct system sleep/wake, clock-change or simultaneous destruction of both

@@ -4170,19 +4170,19 @@ fn foreground_expiry_and_frontend_signals_clean_the_owned_group() {
     session.signal(libc::SIGINT);
     let status = session.exit_within(Duration::from_secs(15));
     assert_eq!(status.code(), Some(130), "{}", session.diagnostics());
-    // The frontend returned only after the keeper's final record.
+    // The frontend returned only after the keeper's final record. An
+    // ordinary signal is an orderly request, recorded as a requested stop.
     let record: Value =
         serde_json::from_slice(&fs::read(fixture.state.join(&id).join("record.json")).unwrap())
             .unwrap();
-    assert_eq!(record["state"], "interrupted", "{record}");
-    assert_eq!(record["reason"], "supervision_lost");
-    assert!(record["error"]
-        .as_str()
-        .unwrap()
-        .contains("foreground session ended"));
+    assert_eq!(record["state"], "stopped", "{record}");
+    assert_eq!(record["reason"], "requested", "{record}");
+    assert!(record["error"].is_null(), "{record}");
+    assert_eq!(record["finalized_by_keeper"], true, "{record}");
     assert_port_closed(&info);
 
-    // Abrupt loss of the frontend still closes the keeper's liveness pipe.
+    // Abrupt loss of the frontend still closes the keeper's liveness pipe,
+    // without a stop request: that is lost supervision, not a stop.
     let ready = fixture.ready_path();
     let mut session = Session::start(
         &fixture,
@@ -4193,7 +4193,16 @@ fn foreground_expiry_and_frontend_signals_clean_the_owned_group() {
     let info = ready_file(&ready);
     session.signal(libc::SIGKILL);
     session.exit_within(Duration::from_secs(5));
-    assert_eq!(fixture.terminal(&id)["state"], "interrupted");
+    let record = fixture.terminal(&id);
+    assert_eq!(record["state"], "interrupted", "{record}");
+    assert_eq!(record["reason"], "supervision_lost", "{record}");
+    assert!(
+        record["error"]
+            .as_str()
+            .unwrap()
+            .contains("foreground session ended"),
+        "{record}"
+    );
     assert_port_closed(&info);
 }
 
@@ -4355,15 +4364,10 @@ fn first_signal_ends_session_despite_blocked_output(blocked: Blocked, json: bool
     let record: Value =
         serde_json::from_slice(&fs::read(fixture.state.join(&id).join("record.json")).unwrap())
             .unwrap();
-    assert_eq!(record["state"], "interrupted", "{record}");
-    assert_eq!(record["reason"], "supervision_lost", "{record}");
-    assert!(
-        record["error"]
-            .as_str()
-            .unwrap()
-            .contains("foreground session ended"),
-        "{record}"
-    );
+    // Every ordinary signal is recorded as a requested stop.
+    assert_eq!(record["state"], "stopped", "{record}");
+    assert_eq!(record["reason"], "requested", "{record}");
+    assert!(record["error"].is_null(), "{record}");
     assert!(fixture.supervisors().is_empty());
     assert_port_closed(&info);
 

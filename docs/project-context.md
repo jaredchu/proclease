@@ -111,6 +111,11 @@ verification limits.
   publish sanitized findings in this repository and on the existing website.
   The harness is a public, standard-library black-box tool; raw diagnostics
   stay private. See [the experiments](experiments/v0.1.9/README.md).
+- **Owner-requested, 2026-11-25:** record an ordinary signal to
+  `run --foreground` as a requested stop instead of lost supervision, through
+  a one-byte stop request on the existing liveness pipes. Killing the
+  invocation stays lost supervision. Not yet released; see
+  [verification](verification.md#foreground-signal-stop-unreleased-source-2026-11-25).
 - **Deferred:** Docker, arbitrary PID adoption, automatic cross-task reuse, reverse
   proxying, auto-restart and hosted dashboards.
 
@@ -199,7 +204,8 @@ Goal: a usable ProcLease CLI, shared skill and public first release
 |-- TESTED  v0.1.9 lifecycle experiments, primary v2 series: 570/570 each on macOS arm64 and Linux x86_64
 |-- DONE    Reproducible report and static experiments page, with versioned methods and data
 |-- SOURCE  Skill handoff and exact-ID cleanup guidance
-`-- DONE    v0.1.10 GitHub prerelease and four native archives verified
+|-- DONE    v0.1.10 GitHub prerelease and four native archives verified
+`-- SOURCE  Foreground signals recorded as requested stops
 ```
 
 On 2026-11-13, scripted [lifecycle experiments](experiments/v0.1.9/README.md)

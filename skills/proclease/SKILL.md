@@ -121,7 +121,10 @@ ends.
   Report that as a host limit; do not claim the service is reachable.
 - The job lasts at most as long as the session and its lease; do not promise
   it continues after the session ends. Ending the session, interrupting the
-  command or closing the client stops it on a best-effort basis. A forced
+  command or closing the client stops it on a best-effort basis. Newer builds
+  record an interrupt or termination signal as `stopped` (reason
+  `requested`); `interrupted` with `supervision_lost` means the session was
+  killed or lost, or the build predates that change. A forced
   client or sandbox teardown can leave it `interrupted` or `unknown` without a
   final record. Report that; never signal PIDs.
 - If an `extend` reply is lost, it reports an unknown outcome and is not
