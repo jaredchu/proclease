@@ -1,5 +1,9 @@
 # Verification
 
+These dated entries describe the build and release status at each checkpoint.
+Sections marked “unreleased source” describe the code at the source checkpoint.
+Later entries and the [release notes](releases/) record what shipped.
+
 Verified on 2026-11-06, locally on macOS arm64 and Linux aarch64 using Rust 1.99.1,
 and in hosted macOS/Ubuntu CI.
 
@@ -129,6 +133,13 @@ Native macOS 15 validation exposed a test-fixture permission issue: a read-only
 job root could fail before the expected quarantine rename. The fault now uses a
 locked nested directory, preserving the root's ability to move and testing partial
 deletion as intended. Production retention code was unchanged.
+
+The [v0.1.2 release](releases/v0.1.2.md) included compact colored tables,
+adaptive narrow-terminal layout and grouped CPU/RSS totals. Its default
+view could briefly show up to five recent completions for 30 seconds.
+v0.1.7 applied the same window and cap to interrupted jobs without a recorded
+finish time when the keeper and process group had been verified absent.
+[Interrupted history default views](#interrupted-history-default-views-2026-11-11)
 
 ## Review corrections
 
@@ -1602,6 +1613,13 @@ main-only deployment gate. Workflow YAML parsing and representative URL mappings
 passed. The unchanged Rust source separately passed formatting, Clippy with
 warnings denied and all 96 tests; these are regression checks, distinct from
 the published-binary measurements above.
+
+## v0.1.10 publication, 2026-11-22
+
+The [GitHub prerelease](https://github.com/jaredchu/proclease/releases/tag/v0.1.10)
+from commit `36dfef4` shipped skill handoff and exact-ID cleanup guidance with
+the v0.1.9 lifecycle implementation. GitHub lists four native archives, their
+checksums, and the installer. [Version notes](releases/v0.1.10.md)
 
 ## v0.1.11 publication, 2026-11-25
 
