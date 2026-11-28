@@ -6,6 +6,8 @@ ProcLease is a Rust CLI and a portable skill for Codex and Claude Code. Start a
 foreground service with a deadline; inspect its status and bounded logs from later
 tool calls; explicitly extend it or let it expire. Reading logs never renews it.
 
+![A coding agent sets a timer for its dev server and says, “Two hours. Then bedtime.” The server, wearing a nightcap and holding a pillow, replies, “But I was going to run all weekend!”](https://raw.githubusercontent.com/jaredchu/proclease/main/website/dist/assets/dev-server-timer-comic.jpg)
+
 **Status:** experimental, MIT-licensed open source. Runtime tests cover macOS
 arm64, Linux aarch64 in a non-root container, and native Linux x86_64. Real-agent
 results depend on the [execution profile](https://github.com/jaredchu/proclease/blob/main/docs/agent-compatibility.md). Install a
